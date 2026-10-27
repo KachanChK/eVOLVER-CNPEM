@@ -18,7 +18,7 @@ Todos os componentes abaixo rodam na mesma máquina no piloto. O simulador Pytho
 ![Diagrama de contexto da arquitetura externa](https://github.com/user-attachments/assets/bcc3deb3-2922-4a41-b377-49eb698b84be)
 
 
-A atualização ao vivo da interface pode usar SSE ou WebSocket, a definir durante a implementação. A API continua sendo o caminho de consulta e autoridade para o estado persistido; o navegador não acessa diretamente o banco.
+A atualização ao vivo da interface usa SSE (definido no T03): a ingestão avisa a API por `LISTEN/NOTIFY` do PostgreSQL, entregue somente após o commit, e a API envia ao navegador o dado lido do banco. Após reconexão, API e navegador recarregam o estado pelo banco/API. A API continua sendo o caminho de consulta e autoridade para o estado persistido; o navegador não acessa diretamente o banco.
 
 ## Diagrama de componentes e fronteiras
 
@@ -119,11 +119,16 @@ Comandos expirados durante desconexão são recusados pelo simulador e permanece
 - Fila durável no produtor, ACK de aplicação após commit, deduplicação por identidade estável e histórico que aceita dados atrasados.
 - Separação entre temperatura medida e setpoint; entre publicar, receber e executar comando simulado.
 
+### Decidido no T03
+
+- FastAPI, `aiomqtt`/paho-mqtt, Vue 3 + Vite e Chart.js.
+- Atualização ao vivo por SSE; aviso ingestão → API por `LISTEN/NOTIFY`, com recarga do estado pelo banco após reconexão.
+- Unicidade por `event_id` em tabela de IDs processados, gravada na mesma transação da medição.
+
 ### Pendente de decisão técnica/revisão
 
-- Framework Python, framework web, biblioteca MQTT e mecanismo de atualização ao vivo (SSE/WebSocket).
 - Convenção de tópicos, QoS, autenticação local e ACLs do broker.
-- Esquema/versionamento final, chaves de idempotência e tabelas/índices.
+- Esquema/versionamento final e demais tabelas/índices.
 - Formato e capacidade da fila, política para disco cheio, retentativas e quarentena.
 - Validade dos comandos, timeouts, estados persistidos e política manual para resultado desconhecido.
 - Backup, destino seguro, frequência e procedimento de restauração.

@@ -33,6 +33,8 @@ Nenhum impedimento foi identificado para as escolhas sugeridas na issue; todas f
 | Acesso ao banco | **SQLAlchemy 2** + driver **psycopg 3** | ORM/Core maduro, compatível com async e com SQL explícito quando a consulta temporal exigir. |
 | Migrações | **Alembic** | Padrão do SQLAlchemy; migrações versionadas no repositório. Hypertables e índices do TimescaleDB entram como SQL dentro das migrações (`op.execute`). |
 | Atualização ao vivo | **SSE (Server-Sent Events)** | Fluxo unidirecional servidor → navegador basta: comandos seguem por HTTP. Reconexão nativa no navegador (`EventSource`); após reconectar, a interface recarrega o estado pela API. Atualizações são enviadas **depois** da gravação no banco; atrasos de alguns segundos são aceitáveis. |
+| Aviso ingestão → API | **PostgreSQL `LISTEN/NOTIFY`** | A ingestão emite `NOTIFY` dentro da transação que grava o evento; o PostgreSQL só entrega a notificação após o commit. A notificação leva apenas identificadores; a API lê o dado no banco antes de enviá-lo pelo SSE. Notificações emitidas enquanto a API estiver desconectada se perdem, então, ao (re)conectar, a API recarrega o estado pelo banco. Consultar o banco periodicamente é a alternativa, se `LISTEN/NOTIFY` se mostrar inadequado. |
+| Unicidade de eventos | **Tabela de IDs processados** (tabela comum, não hypertable), com `event_id` como chave primária | Em hypertables, índices únicos precisam incluir a coluna de particionamento (tempo), então `event_id` sozinho não pode ser único na tabela de medições. A ingestão grava o `event_id` nessa tabela e a medição **na mesma transação**; conflito na chave identifica a duplicata. |
 | Fila do Store and Forward | **SQLite** (arquivo local do simulador) | Durável, transacional, sem serviço extra; sobrevive a reinício do processo. |
 | Servidor ASGI | **Uvicorn** | Padrão para FastAPI. |
 | Configuração | Variáveis de ambiente + arquivo `.env` (lido por `pydantic-settings`); `.env.example` versionado | Mesma configuração serve aos dois modos de execução. |
@@ -60,13 +62,13 @@ Faixas-alvo para iniciar o projeto. As versões exatas ficam fixadas nos arquivo
 | PostgreSQL | 17 |
 | TimescaleDB | 2.x compatível com PG 17 (imagem `timescale/timescaledb:<2.x>-pg17`, tag fixa) |
 | Eclipse Mosquitto | 2.0.x (imagem `eclipse-mosquitto:2.0.x`) |
-| Node.js | 22 LTS |
+| Node.js | 22 LTS, **22.12 ou superior** (mínimo do Vite atual nessa linha); versão validada registrada em `.nvmrc` e em `engines` do `package.json` |
 | Vue | 3.5.x |
 | Vite | versão estável atual, fixada no lock |
 | Chart.js / vue-chartjs | 4.x / 5.x |
 | Docker Engine / Compose | Docker Desktop recente com Compose v2 (`docker compose`) |
 
-Critério de compatibilidade: o TimescaleDB deve suportar a versão do PostgreSQL da imagem; Python 3.12 deve ser suportado por todas as bibliotecas; Node na linha LTS em uso.
+Critério de compatibilidade: o TimescaleDB deve suportar a versão do PostgreSQL da imagem; Python 3.12 deve ser suportado por todas as bibliotecas; Node na linha LTS em uso e no mínimo exigido pela versão do Vite fixada no lock.
 
 ## Estrutura do repositório
 
@@ -118,6 +120,8 @@ cd frontend && npm install && npm run dev   # terminal 4 (porta 5173, proxy /api
 
 Uso: desenvolvimento, depuração e testes de integração (`uv run pytest`, que usa o banco e o broker do Compose).
 
+**Windows nativo:** o loop padrão do `asyncio` no Windows (`ProactorEventLoop`) não oferece `add_reader`, exigido pelo `aiomqtt` e pelo psycopg assíncrono. No Windows, simulador, ingestão, API e testes precisam rodar com `SelectorEventLoop`: por exemplo, `asyncio.run(main(), loop_factory=asyncio.SelectorEventLoop)` nos pontos de entrada próprios, a configuração de loop equivalente do Uvicorn para a API e a do `pytest-asyncio` para os testes. O esqueleto da aplicação deve validar esse modo. Nos contêineres (Linux) a questão não se aplica.
+
 ### Modo 2 — Compose completo (reprodução)
 
 Todos os componentes em contêineres, para reproduzir o piloto em outra máquina ou executar a demonstração.
@@ -155,7 +159,8 @@ Processo: registrar a mudança proposta e o motivo em uma issue, verificar contr
 ## Pendências desta decisão
 
 - Fixar as tags exatas das imagens e gerar os locks ao criar o esqueleto (próxima task de implementação).
-- Confirmar que todas as máquinas da equipe rodam Docker Desktop com Compose v2 e têm Python 3.12 e Node 22 instalados (ou usam só o Modo 2).
+- Confirmar que todas as máquinas da equipe rodam Docker Desktop com Compose v2 e têm Python 3.12 e Node 22.12+ instalados (ou usam só o Modo 2).
+- Validar no esqueleto a execução nativa no Windows com `SelectorEventLoop` (simulador, ingestão, API e testes).
 - Definir convenção de tópicos, QoS e ACLs do broker (pendência do T02).
 
 ## Concluída quando

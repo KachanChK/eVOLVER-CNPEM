@@ -71,13 +71,20 @@ Executar o roteiro em ambiente local limpo ou anotar quais dados já existiam. A
 | A7 — Comandos | Enviar um setpoint e comandos de ligar e desligar para cada uma das bombas 1, 2 e 3; consultar o histórico de comandos e as respostas. Testar também um comando de bomba que expire durante uma desconexão. | Cada pedido registra `command_id`, alvo, ação e autor disponível no piloto; a resposta do simulador usa o mesmo ID. É possível conferir a ação de cada bomba separadamente. A tela diferencia pedido, aceitação/rejeição, envio, recebimento e resultado simulado ou desconhecido. O comando expirado não é executado após reconexão. Guardar pedidos, respostas e consulta de auditoria. |
 | A8 — Restauração | Antes do backup, anotar a contagem e os IDs das leituras, comandos e metadados usados no teste. Fazer o backup, restaurar em outro ambiente local de verificação e repetir as mesmas consultas. | Contagens e IDs conferem com o inventário anterior; última leitura e histórico continuam acessíveis, e comandos e eventos mantêm seus vínculos com os metadados. Guardar comandos/procedimento usados, inventário anterior e consultas após a restauração. |
 
-**Resultado do aceite:** a equipe registra, para cada ID de A1 a A8, aprovado, reprovado ou bloqueado; anexa a evidência indicada, versão/configuração usada e o que divergiu do esperado. Se um requisito P0 falhar, o piloto não é aceito: registrar a pendência e o próximo passo. Um cenário bloqueado também precisa da causa registrada e de nova execução antes da decisão final.
+**Resultado do aceite:** o executor da demonstração registra, para cada ID de A1 a A8, aprovado, reprovado ou bloqueado; anexa a evidência indicada, versão/configuração usada e o que divergiu do esperado. Se um requisito P0 falhar, o piloto não é aceito: registrar a pendência e o próximo passo. Um cenário bloqueado também precisa da causa registrada e de nova execução antes da decisão final. A decisão final cabe ao responsável pelo aceite (ver abaixo).
+
+## Responsabilidades do aceite
+
+- **Responsável pela decisão de aceite:** pendente de indicação pelo projeto/laboratório. Acompanha ou revisa as evidências e registra a decisão final (aceito/não aceito), a data e eventuais ressalvas.
+- **Executor da demonstração:** pendente de indicação. Prepara o ambiente, executa A1–A8 e reúne as evidências.
+- **Revisores do escopo e dos critérios:** pendentes de indicação.
 
 ## Pendências explícitas para revisão
 
-1. Aprovar a semântica mínima dos comandos: setpoint de temperatura e ações liga/desliga nas bombas 1, 2 e 3; parâmetros adicionais de bomba ficam fora até decisão explícita.
-2. Fixar, antes da execução, número de fontes/posições simuladas, duração e cadência do teste, além do limite da fila. São parâmetros de demonstração, não objetivos de produção.
-3. Definir o procedimento de backup/restauração, o local de verificação e qual inventário/contagens serão usados como evidência, de acordo com a implementação local.
-4. Definir onde serão guardadas evidências e o registro final do aceite; estabelecer o tempo após o qual uma leitura será marcada como antiga.
-5. Revisar este escopo e roteiro até **27/10/2026**.
+1. Indicar nominalmente o responsável pela decisão de aceite, o executor da demonstração e os revisores.
+2. Aprovar a semântica mínima dos comandos: setpoint de temperatura e ações liga/desliga nas bombas 1, 2 e 3; parâmetros adicionais de bomba ficam fora até decisão explícita.
+3. Fixar, antes da execução, número de fontes/posições simuladas, duração e cadência do teste, além do limite da fila. São parâmetros de demonstração, não objetivos de produção.
+4. Definir o procedimento de backup/restauração, o local de verificação e qual inventário/contagens serão usados como evidência, de acordo com a implementação local.
+5. Definir onde serão guardadas evidências e o registro final do aceite; estabelecer o tempo após o qual uma leitura será marcada como antiga.
+6. Revisar este escopo e roteiro até **27/10/2026**.
 
