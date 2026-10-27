@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Identifier": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "const": "1.0",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "producer_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "equipment_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "vial_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "experiment_run_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Identifier"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "measurement_type": {
+      "enum": [
+        "od",
+        "ph",
+        "temperature"
+      ],
+      "title": "Measurement Type",
+      "type": "string"
+    },
+    "value": {
+      "title": "Value",
+      "type": "number"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "producer_id",
+    "equipment_id",
+    "vial_id",
+    "measurement_type",
+    "value",
+    "generated_at",
+    "sequence"
+  ],
+  "title": "TelemetryEvent",
+  "type": "object"
+}

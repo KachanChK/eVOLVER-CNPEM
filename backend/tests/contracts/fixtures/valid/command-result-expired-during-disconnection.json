@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "command_id": "77777777-7777-4777-8777-777777777777",
+  "equipment_id": "evolver-sim-01",
+  "status": "rejected",
+  "simulated": true,
+  "reason_code": "expired",
+  "detail": "Command expired while the simulator was disconnected.",
+  "reported_at": "2026-10-27T13:12:00Z"
+}
