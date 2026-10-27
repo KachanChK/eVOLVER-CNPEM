@@ -30,10 +30,10 @@ git rebase --continue
 
 `git rebase --abort` cancela o rebase. `git push --force` não é usado.
 
-## Mensagem
+## Observações
 
-- Frase curta, em português, no imperativo.
-- Referência à issue no corpo: `Refs #N` ou `Closes #N`.
+- Na mensagem do commit: frase curta, em português, no imperativo.
+- Caso esteja trabalhando em uma issue, sempre faça referência à issue no commit: `Refs #N` ou `Closes #N`.
 
 ## Integração
 
