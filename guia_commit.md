@@ -1,9 +1,12 @@
-# Instruções de commit
+# Como trabalhar com commits
 
 ## Branches
 
-- `main` e `develop` não recebem commits diretos.
-- Os commits são feitos na branch da etapa ou feature em andamento (ex.: `etapa-1`).
+| Branch | Uso |
+| --- | --- |
+| `main` | Versão estável. Não recebe commits diretos. |
+| `develop` | Integração das etapas concluídas. Não recebe commits diretos. |
+| `etapa-N` | Branch de trabalho da etapa ou funcionalidade em andamento (ex.: `etapa-1`). **Os commits são todos feitos aqui.** |
 
 ## Fluxo
 
