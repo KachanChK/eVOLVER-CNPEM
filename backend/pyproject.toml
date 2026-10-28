@@ -1,27 +1,16 @@
 [project]
 name = "evolver-cnpem-backend"
 version = "0.1.0"
-description = "Serviços externos do piloto simulado eVOLVER CNPEM"
+description = "API e ingestão do piloto simulado eVOLVER CNPEM"
 requires-python = ">=3.12,<3.13"
-dependencies = [
-  "pydantic>=2.10,<3",
-]
+dependencies = ["evolver-contracts"]
 
-[dependency-groups]
-dev = [
-  "jsonschema>=4.23,<5",
-  "pytest>=8,<9",
-  "pytest-asyncio>=0.24,<1",
-  "ruff>=0.8,<1",
-]
+[tool.uv.sources]
+evolver-contracts = { workspace = true }
 
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
 
-[tool.ruff]
-target-version = "py312"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+[tool.setuptools.packages.find]
+where = ["src"]
