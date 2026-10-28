@@ -26,11 +26,19 @@ Espere ambos os serviços aparecerem como `healthy` antes de continuar.
 ## Diagnóstico do Mosquitto
 
 ```bash
-docker compose exec mosquitto mosquitto_pub -V mqttv5 -h 127.0.0.1 -p 1883 -t evolver/health -m diagnostic -q 1
+docker compose exec mosquitto sh -c 'mosquitto_pub -V mqttv5 -h 127.0.0.1 -p 1883 -u evolver-health -P "$MQTT_HEALTH_PASSWORD" -t evolver/health -m diagnostic -q 1'
 ```
 
-O sucesso confirma que o broker aceitou uma publicação MQTT 5, QoS 1 e não retida.
-Não confirma persistência no banco nem processamento por uma aplicação.
+O sucesso confirma que o broker aceitou uma publicação MQTT 5 autenticada, QoS 1 e
+não retida. Não confirma persistência no banco nem processamento por uma aplicação.
+Para conferir autenticação e ACLs por tópico:
+
+```bash
+docker compose exec mosquitto sh /mosquitto/config/smoke-test.sh
+```
+
+Se o Mosquitto não iniciar após atualizar o repositório, confira se o `.env` tem as
+variáveis `MQTT_*_PASSWORD` de `.env.example`.
 
 ## Diagnóstico do TimescaleDB
 

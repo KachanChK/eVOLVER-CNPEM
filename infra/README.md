@@ -1,8 +1,11 @@
 # Infraestrutura local
 
-Este diretório contém somente a infraestrutura necessária para a E2-T03:
+Este diretório contém a infraestrutura local da E2-T03 e a configuração MQTT da E2-T05:
 
 - `mosquitto/mosquitto.conf`: broker local para transporte MQTT;
+- `mosquitto/acl`: permissões por tópico de cada cliente;
+- `mosquitto/docker-entrypoint.sh`: gera o arquivo de senhas a partir do `.env`;
+- `mosquitto/smoke-test.sh`: verificação de autenticação, ACLs e retenção;
 - `db/init/001-enable-timescaledb.sql`: habilitação da extensão TimescaleDB em um
   banco novo.
 
@@ -19,9 +22,45 @@ operacionais e registrar a alteração junto ao projeto.
 
 ## Limites desta configuração
 
-O broker aceita conexões anônimas porque a porta publicada fica vinculada a
-`127.0.0.1`. Essa configuração é apenas para desenvolvimento local. Identidades,
-senhas e ACLs por tópico pertencem à issue de configuração MQTT (#5).
+A porta publicada fica vinculada a `127.0.0.1` e o broker recusa conexões anônimas.
+Essa configuração é apenas para desenvolvimento local; TLS fica para uma implantação
+remota (#12).
+
+## Identidades e permissões
+
+Cada processo usa o próprio usuário, com senha definida no `.env`. Ao iniciar, o
+`mosquitto/docker-entrypoint.sh` gera o arquivo de senhas dentro do contêiner; ele
+não é versionado. As permissões estão em `mosquitto/acl` e seguem os tópicos do
+[contrato](../backend/src/evolver/contracts/README.md):
+
+| Usuário | Publica | Assina |
+| --- | --- | --- |
+| `evolver-sim-01` | `evolver/v1/evolver-sim-01/telemetry`, `.../command-results` | `.../telemetry/ack`, `.../telemetry/rejection`, `.../commands` do próprio equipamento |
+| `evolver-ingestion` | `evolver/v1/+/telemetry/ack`, `evolver/v1/+/telemetry/rejection` | `evolver/v1/+/telemetry`, `evolver/v1/+/command-results` |
+| `evolver-api` | `evolver/v1/+/commands` | nada |
+| `evolver-health` | `evolver/health` | nada |
+
+O usuário do simulador é o `equipment_id`, para que um simulador não publique nem
+leia tópicos de outro equipamento. Um novo equipamento exige um bloco em
+`mosquitto/acl`, uma linha em `docker-entrypoint.sh` e uma senha no `.env`. Tudo o
+que não está na ACL é negado.
+
+Comandos nunca são retidos: o broker tem `retain_available false`. O prazo de
+validade continua no campo `expires_at` do payload, verificado pelo simulador; o
+broker não descarta comandos por prazo.
+
+## Verificar o broker
+
+Com o Compose no ar:
+
+```bash
+docker compose exec mosquitto sh /mosquitto/config/smoke-test.sh
+```
+
+O script usa `mosquitto_pub`/`mosquitto_sub` para conferir os cinco fluxos do
+contrato, as permissões negadas, a recusa de cliente anônimo e de senha errada e que
+uma mensagem retida não é entregue. Para testar queda e retorno, execute
+`docker compose restart mosquitto`, espere o estado `healthy` e rode o script de novo.
 
 Os clientes do piloto devem usar MQTT 5. O broker limita o QoS a 1 e desabilita
 mensagens retidas, de acordo com os contratos atuais. O PUBACK do MQTT confirma
