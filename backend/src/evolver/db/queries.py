@@ -14,9 +14,9 @@ CURRENT_MEASUREMENTS_SQL = text(
     SELECT event_id, generated_at, received_at, equipment_id, position_id,
            experiment_run_id, producer_id, sequence, measurement_type, value, schema_version
     FROM latest_measurements
-    WHERE (:equipment_id IS NULL OR equipment_id = :equipment_id)
-      AND (:position_id IS NULL OR position_id = :position_id)
-      AND (:measurement_type IS NULL OR measurement_type = :measurement_type)
+    WHERE (CAST(:equipment_id AS varchar) IS NULL OR equipment_id = :equipment_id)
+      AND (CAST(:position_id AS uuid) IS NULL OR position_id = :position_id)
+      AND (CAST(:measurement_type AS varchar) IS NULL OR measurement_type = :measurement_type)
     ORDER BY equipment_id, position_id, measurement_type
     """
 )
@@ -26,11 +26,11 @@ MEASUREMENT_HISTORY_SQL = text(
     SELECT event_id, generated_at, received_at, equipment_id, position_id,
            experiment_run_id, producer_id, sequence, measurement_type, value, schema_version
     FROM measurements
-    WHERE (:equipment_id IS NULL OR equipment_id = :equipment_id)
-      AND (:position_id IS NULL OR position_id = :position_id)
-      AND (:measurement_type IS NULL OR measurement_type = :measurement_type)
-      AND (:since IS NULL OR generated_at >= :since)
-      AND (:until IS NULL OR generated_at < :until)
+    WHERE (CAST(:equipment_id AS varchar) IS NULL OR equipment_id = :equipment_id)
+      AND (CAST(:position_id AS uuid) IS NULL OR position_id = :position_id)
+      AND (CAST(:measurement_type AS varchar) IS NULL OR measurement_type = :measurement_type)
+      AND (CAST(:since AS timestamptz) IS NULL OR generated_at >= :since)
+      AND (CAST(:until AS timestamptz) IS NULL OR generated_at < :until)
     ORDER BY generated_at ASC, sequence ASC, event_id ASC
     LIMIT :limit
     """

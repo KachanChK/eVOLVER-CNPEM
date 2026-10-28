@@ -22,15 +22,18 @@ def upgrade() -> None:
             id uuid PRIMARY KEY,
             equipment_id varchar(64) NOT NULL REFERENCES equipment(id) ON DELETE RESTRICT,
             position_code varchar(64) NOT NULL,
-            vial_id varchar(64) NOT NULL UNIQUE,
+            vial_id varchar(64) NOT NULL,
             enabled boolean NOT NULL DEFAULT true,
             created_at timestamptz NOT NULL,
-            CONSTRAINT uq_positions_equipment_code UNIQUE (equipment_id, position_code)
+            CONSTRAINT uq_positions_equipment_code UNIQUE (equipment_id, position_code),
+            CONSTRAINT uq_positions_equipment_id_id UNIQUE (equipment_id, id)
         );
+        CREATE UNIQUE INDEX uq_positions_enabled_vial
+            ON positions (vial_id) WHERE enabled;
 
         CREATE TABLE cultures (
             id uuid PRIMARY KEY,
-            vial_id varchar(64) NOT NULL UNIQUE,
+            vial_id varchar(64) NOT NULL,
             organism varchar(120),
             label varchar(120),
             metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -39,25 +42,33 @@ def upgrade() -> None:
 
         CREATE TABLE experiment_runs (
             id varchar(64) PRIMARY KEY,
-            equipment_id varchar(64) NOT NULL REFERENCES equipment(id) ON DELETE RESTRICT,
-            position_id uuid NOT NULL REFERENCES positions(id) ON DELETE RESTRICT,
+            equipment_id varchar(64) NOT NULL,
+            position_id uuid NOT NULL,
             culture_id uuid REFERENCES cultures(id) ON DELETE SET NULL,
             started_at timestamptz NOT NULL,
             ended_at timestamptz,
             metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-            CONSTRAINT ck_run_time_order CHECK (ended_at IS NULL OR ended_at >= started_at)
+            CONSTRAINT ck_run_time_order CHECK (ended_at IS NULL OR ended_at >= started_at),
+            CONSTRAINT fk_experiment_runs_equipment_position
+                FOREIGN KEY (equipment_id, position_id)
+                REFERENCES positions (equipment_id, id) ON DELETE RESTRICT
         );
         CREATE INDEX ix_experiment_runs_position_started
             ON experiment_runs (position_id, started_at DESC);
 
         CREATE TABLE processed_event_ids (
             event_id uuid PRIMARY KEY,
-            equipment_id varchar(64) NOT NULL REFERENCES equipment(id) ON DELETE RESTRICT,
-            producer_id varchar(64) NOT NULL,
-            generated_at timestamptz NOT NULL,
+            equipment_id varchar(64),
+            producer_id varchar(64),
+            generated_at timestamptz,
             received_at timestamptz NOT NULL,
             outcome varchar(16) NOT NULL DEFAULT 'persisted',
-            CONSTRAINT ck_processed_event_outcome CHECK (outcome IN ('persisted', 'quarantined'))
+            CONSTRAINT ck_processed_event_outcome CHECK (outcome IN ('persisted', 'quarantined')),
+            CONSTRAINT ck_processed_event_persisted_fields CHECK (
+                outcome = 'quarantined' OR
+                (equipment_id IS NOT NULL AND producer_id IS NOT NULL AND generated_at IS NOT NULL)
+            ),
+            CONSTRAINT uq_processed_event_ids_event_generated UNIQUE (event_id, generated_at)
         );
         CREATE INDEX ix_processed_event_ids_received_at ON processed_event_ids (received_at DESC);
 
@@ -65,17 +76,22 @@ def upgrade() -> None:
             event_id uuid NOT NULL,
             generated_at timestamptz NOT NULL,
             received_at timestamptz NOT NULL,
-            equipment_id varchar(64) NOT NULL REFERENCES equipment(id) ON DELETE RESTRICT,
-            position_id uuid NOT NULL REFERENCES positions(id) ON DELETE RESTRICT,
+            equipment_id varchar(64) NOT NULL,
+            position_id uuid NOT NULL,
             experiment_run_id varchar(64) REFERENCES experiment_runs(id) ON DELETE SET NULL,
             producer_id varchar(64) NOT NULL,
-            sequence bigint NOT NULL CHECK (sequence >= 0),
+            sequence bigint NOT NULL,
             measurement_type varchar(32) NOT NULL,
             value double precision NOT NULL,
             schema_version varchar(16) NOT NULL,
             CONSTRAINT fk_measurements_processed_event
-                FOREIGN KEY (event_id) REFERENCES processed_event_ids(event_id) ON DELETE RESTRICT,
+                FOREIGN KEY (event_id, generated_at)
+                REFERENCES processed_event_ids(event_id, generated_at) ON DELETE RESTRICT,
+            CONSTRAINT fk_measurements_equipment_position
+                FOREIGN KEY (equipment_id, position_id)
+                REFERENCES positions(equipment_id, id) ON DELETE RESTRICT,
             CONSTRAINT pk_measurements PRIMARY KEY (event_id, generated_at),
+            CONSTRAINT ck_measurement_sequence CHECK (sequence >= 0),
             CONSTRAINT ck_measurement_type CHECK (measurement_type IN ('od', 'ph', 'temperature'))
         );
         SELECT create_hypertable('measurements', 'generated_at', if_not_exists => TRUE);
@@ -127,12 +143,27 @@ def upgrade() -> None:
         CREATE INDEX ix_audit_actor_time ON audit_events (actor_id, occurred_at DESC);
 
         CREATE VIEW latest_measurements AS
-        SELECT DISTINCT ON (equipment_id, position_id, measurement_type)
-            event_id, generated_at, received_at, equipment_id, position_id,
-            experiment_run_id, producer_id, sequence, measurement_type, value, schema_version
-        FROM measurements
-        ORDER BY equipment_id, position_id, measurement_type,
-                 generated_at DESC, sequence DESC, received_at DESC, event_id DESC;
+        SELECT latest.event_id, latest.generated_at, latest.received_at,
+               latest.equipment_id, latest.position_id, latest.experiment_run_id,
+               latest.producer_id, latest.sequence, latest.measurement_type,
+               latest.value, latest.schema_version
+        FROM positions AS position
+        CROSS JOIN (VALUES ('od'::varchar), ('ph'::varchar), ('temperature'::varchar))
+            AS measurement_types(measurement_type)
+        CROSS JOIN LATERAL (
+            SELECT measurement.event_id, measurement.generated_at, measurement.received_at,
+                   measurement.equipment_id, measurement.position_id,
+                   measurement.experiment_run_id, measurement.producer_id,
+                   measurement.sequence, measurement.measurement_type,
+                   measurement.value, measurement.schema_version
+            FROM measurements AS measurement
+            WHERE measurement.equipment_id = position.equipment_id
+              AND measurement.position_id = position.id
+              AND measurement.measurement_type = measurement_types.measurement_type
+            ORDER BY measurement.generated_at DESC, measurement.sequence DESC,
+                     measurement.received_at DESC, measurement.event_id DESC
+            LIMIT 1
+        ) AS latest;
         """
     )
 

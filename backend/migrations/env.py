@@ -17,8 +17,10 @@ target_metadata = Base.metadata
 
 
 def database_url() -> str:
-    """Use DATABASE_URL or build a local URL from the Compose variables."""
+    """Use DATABASE_URL, Alembic's configured URL, or the local Compose defaults."""
     configured_url = os.getenv("DATABASE_URL")
+    if not configured_url:
+        configured_url = config.get_main_option("sqlalchemy.url")
     if configured_url:
         return configured_url
     return URL.create(
