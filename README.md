@@ -24,9 +24,49 @@ momento, `compose.yaml` inicia:
 Simulador, ingestão, API e frontend ainda não são executáveis. Seus diretórios
 registram apenas responsabilidades e fronteiras para as tasks seguintes.
 
+## Preparar a máquina
+
+Programas necessários para rodar o piloto localmente. Os comandos abaixo são para
+Windows; em Linux ou macOS, instale os mesmos programas pelo gerenciador de pacotes
+do sistema.
+
+| Programa | Uso | Instalação no Windows |
+| --- | --- | --- |
+| Docker Desktop (WSL 2) | Mosquitto e PostgreSQL/TimescaleDB | `winget install --id Docker.DockerDesktop` |
+| uv | Python 3.12, dependências e testes do backend | `winget install --id astral-sh.uv` |
+| GitHub CLI (opcional) | Issues e Pull Requests pelo terminal | `winget install --id GitHub.cli` |
+
+Depois de instalar, feche e abra o terminal para que os comandos sejam encontrados.
+
+### Docker Desktop
+
+1. Se o WSL 2 ainda não estiver instalado (`wsl --status` falha), execute
+   `wsl --install` e reinicie o Windows.
+2. Abra o Docker Desktop pelo menu Iniciar e espere aparecer **Engine running**.
+3. Confira com `docker info`: a seção `Server:` deve aparecer sem erro.
+
+O erro `failed to connect to the docker API at npipe:////./pipe/docker_engine`
+indica que o Docker Desktop está fechado ou ainda iniciando.
+
+Para o Docker Desktop não abrir sozinho ao ligar o computador, desmarque **Start
+Docker Desktop when you sign in** em Settings → General. Nesse caso, abra-o antes de
+usar `docker compose`. Para parar os serviços, veja
+[operations/README.md](operations/README.md#parar).
+
+### uv e Python
+
+O `uv` baixa o Python 3.12 exigido pelo backend na primeira execução de
+`uv sync`; não é preciso instalar o Python separadamente.
+
+### GitHub CLI
+
+Opcional. Para autenticar, execute `gh auth login` e escolha GitHub.com, HTTPS e
+login pelo navegador. Para acessar o GitHub Project, acrescente o escopo com
+`gh auth refresh -s project`.
+
 ## Início rápido da infraestrutura
 
-Pré-requisito: Docker Desktop com Docker Compose v2.
+Pré-requisito: Docker Desktop em execução (ver [Preparar a máquina](#preparar-a-máquina)).
 
 No PowerShell:
 
