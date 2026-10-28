@@ -1,0 +1,27 @@
+# Permissões por tópico dos contratos MQTT v1 (backend/src/evolver/contracts/README.md).
+# Cada cliente só lê e escreve os tópicos do seu papel; o que não está listado é negado.
+# As senhas vêm do .env e são carregadas por docker-entrypoint.sh.
+
+# Verificação de saúde do Compose.
+user evolver-health
+topic write evolver/health
+
+# Ingestão: recebe telemetria e resultados de todos os equipamentos e devolve ACK/rejeição.
+user evolver-ingestion
+topic read evolver/v1/+/telemetry
+topic read evolver/v1/+/command-results
+topic write evolver/v1/+/telemetry/ack
+topic write evolver/v1/+/telemetry/rejection
+
+# API: somente publica comandos; consulta resultados pelo banco.
+user evolver-api
+topic write evolver/v1/+/commands
+
+# Simulador: o usuário é o equipment_id e só acessa os próprios tópicos.
+# Para outro equipamento, repetir o bloco com o novo equipment_id.
+user evolver-sim-01
+topic write evolver/v1/evolver-sim-01/telemetry
+topic read evolver/v1/evolver-sim-01/telemetry/ack
+topic read evolver/v1/evolver-sim-01/telemetry/rejection
+topic read evolver/v1/evolver-sim-01/commands
+topic write evolver/v1/evolver-sim-01/command-results
