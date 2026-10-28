@@ -13,16 +13,16 @@ serviços.
 
 ## Estado atual
 
-A E2-T03 prepara somente a infraestrutura local e a organização do monorepo. Neste
-momento, `compose.yaml` inicia:
+`compose.yaml` inicia a infraestrutura local:
 
 | Serviço | Imagem fixada | Porta local | Persistência |
 | --- | --- | --- | --- |
 | Mosquitto | `eclipse-mosquitto:2.0.22` | `127.0.0.1:1883` | volume `mosquitto_data` |
 | PostgreSQL + TimescaleDB | `timescale/timescaledb:2.31.0-pg17` | `127.0.0.1:5432` | volume `postgres_data` |
 
-Simulador, ingestão, API e frontend ainda não são executáveis. Seus diretórios
-registram apenas responsabilidades e fronteiras para as tasks seguintes.
+O banco de aplicação tem migrations Alembic em `backend/migrations/`, incluindo
+metadados, medições em hypertable TimescaleDB, IDs processados, comandos e auditoria.
+Simulador, ingestão, API e frontend seguem sem pontos de entrada executáveis.
 
 ## Início rápido da infraestrutura
 
@@ -63,11 +63,25 @@ uv run pytest tests/contracts
 Os modelos Pydantic continuam sendo a fonte de verdade. A infraestrutura não muda
 schemas, exemplos ou semântica das mensagens MQTT.
 
+## Criar o schema do banco
+
+Com TimescaleDB saudável e na pasta `backend`, aplique as migrations:
+
+```powershell
+uv sync --group dev --frozen
+uv run alembic upgrade head
+```
+
+Alembic usa `DATABASE_URL` ou os valores locais padrão documentados em
+`.env.example`. Consultas e procedimento de backup/restauração estão em
+[banco de dados](backend/src/evolver/db/README.md), [migrações](backend/migrations/README.md)
+e [operações](operations/README.md).
+
 ## Estrutura preparada
 
 ```text
 backend/                  pacote Python e contratos existentes
-  migrations/             reservado para Alembic
+  migrations/             revisões Alembic do schema
   src/evolver/api/        reservado para FastAPI e SSE
   src/evolver/db/         reservado para SQLAlchemy e Alembic
   src/evolver/ingestion/  reservado para o processo de ingestão
