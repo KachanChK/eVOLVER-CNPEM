@@ -6,15 +6,25 @@ services:
     restart: unless-stopped
     ports:
       - "${MQTT_BIND_HOST:-127.0.0.1}:${MQTT_PORT:-1883}:1883"
+    environment:
+      MQTT_HEALTH_PASSWORD: ${MQTT_HEALTH_PASSWORD:?defina no .env}
+      MQTT_INGESTION_PASSWORD: ${MQTT_INGESTION_PASSWORD:?defina no .env}
+      MQTT_API_PASSWORD: ${MQTT_API_PASSWORD:?defina no .env}
+      MQTT_SIMULATOR_PASSWORD: ${MQTT_SIMULATOR_PASSWORD:?defina no .env}
+    entrypoint: ["/bin/sh", "/mosquitto/config/docker-entrypoint.sh"]
+    command: ["mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
     volumes:
       - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/acl:/mosquitto/config/acl:ro
+      - ./infra/mosquitto/docker-entrypoint.sh:/mosquitto/config/docker-entrypoint.sh:ro
+      - ./infra/mosquitto/smoke-test.sh:/mosquitto/config/smoke-test.sh:ro
       - mosquitto_data:/mosquitto/data
     healthcheck:
       test:
         - CMD-SHELL
         - >-
           mosquitto_pub -V mqttv5 -h 127.0.0.1 -p 1883 -t evolver/health
-          -m healthcheck -q 1
+          -u evolver-health -P "$${MQTT_HEALTH_PASSWORD}" -m healthcheck -q 1
       interval: 10s
       timeout: 5s
       retries: 5
