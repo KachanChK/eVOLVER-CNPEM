@@ -87,17 +87,22 @@ docker compose cp timescaledb:/tmp/evolver.dump ./backups/evolver.dump
 ```
 
 Armazene a cópia em outro disco ou destino protegido; o dump dentro do mesmo host
-não substitui uma cópia externa. Para restaurar em um banco já criado e saudável,
-copie o arquivo para o container e restaure os objetos do dump:
+não substitui uma cópia externa. Para restaurar o dump completo em um banco de destino
+saudável com a extensão TimescaleDB disponível, copie o arquivo para o container e
+execute as funções de preparação da extensão antes e depois do `pg_restore`:
 
 ```powershell
 docker compose cp ./backups/evolver.dump timescaledb:/tmp/evolver.dump
-docker compose exec timescaledb pg_restore --clean --if-exists --no-owner -U evolver -d evolver /tmp/evolver.dump
+docker compose exec timescaledb psql -U evolver -d evolver -c "SELECT timescaledb_pre_restore();"
+docker compose exec timescaledb pg_restore --clean --if-exists --no-owner --exit-on-error -U evolver -d evolver /tmp/evolver.dump
+docker compose exec timescaledb psql -U evolver -d evolver -c "SELECT timescaledb_post_restore();"
 ```
 
-Se a restauração for para um banco vazio, suba o ambiente, crie o schema de aplicação
-via `uv run alembic upgrade head` ou deixe `pg_restore` criar os objetos do dump. Faça
-uma restauração de conferência em outro banco antes de depender do backup. Troque
+O arquivo é um dump completo, com schema e dados. Em um banco vazio, deixe o `pg_restore`
+recriar os objetos; não rode `alembic upgrade head` antes. Para recriar o schema com
+Alembic e restaurar somente os dados, aplique primeiro `uv run alembic upgrade head`
+e troque `pg_restore` por `pg_restore --data-only --no-owner --exit-on-error ...`.
+Faça uma restauração de conferência em outro banco antes de depender do backup. Troque
 usuário, banco e caminho em ambos os comandos quando `.env` não usar os padrões. Não
 use `docker compose down -v` como método de restauração: ele remove o volume.
 
@@ -108,13 +113,13 @@ Quando forem implementados pelas tasks correspondentes, o desenvolvimento diári
 usará a infraestrutura em Compose e o código Python/Vue executado na máquina.
 
 Os comandos previstos abaixo são apenas referência e ainda não funcionam porque os
-pontos de entrada e o projeto Vue não foram implementados:
+pontos de entrada e o projeto Vue não foram implementados. Cada projeto Python tem
+seu próprio pacote no workspace `uv` da raiz:
 
 ```bash
-cd backend
-uv run python -m evolver.ingestion
-uv run uvicorn evolver.api.main:app --reload
-uv run python -m evolver.simulator
+uv run --package evolver-cnpem-backend python -m evolver.ingestion
+uv run --package evolver-cnpem-backend uvicorn evolver.api.main:app --reload
+uv run --package evolver-cnpem-simulator python -m evolver_simulator
 ```
 
 ```bash

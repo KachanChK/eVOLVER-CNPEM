@@ -13,7 +13,9 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
+    PrimaryKeyConstraint,
     String,
     UniqueConstraint,
     Uuid,
@@ -44,12 +46,19 @@ class Position(Base):
         UniqueConstraint(
             "equipment_id", "position_code", name="uq_positions_equipment_code"
         ),
+        UniqueConstraint("equipment_id", "id", name="uq_positions_equipment_id_id"),
+        Index(
+            "uq_positions_enabled_vial",
+            "vial_id",
+            unique=True,
+            postgresql_where=text("enabled"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     equipment_id: Mapped[str] = mapped_column(ForeignKey("equipment.id", ondelete="RESTRICT"))
     position_code: Mapped[str] = mapped_column(String(64), nullable=False)
-    vial_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    vial_id: Mapped[str] = mapped_column(String(64), nullable=False)
     enabled: Mapped[bool] = mapped_column(
         default=True, server_default=text("true"), nullable=False
     )
@@ -60,7 +69,7 @@ class Culture(Base):
     __tablename__ = "cultures"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
-    vial_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    vial_id: Mapped[str] = mapped_column(String(64), nullable=False)
     organism: Mapped[str | None] = mapped_column(String(120))
     label: Mapped[str | None] = mapped_column(String(120))
     metadata_json: Mapped[dict[str, Any]] = mapped_column(
@@ -72,13 +81,19 @@ class Culture(Base):
 class ExperimentRun(Base):
     __tablename__ = "experiment_runs"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["equipment_id", "position_id"],
+            ["positions.equipment_id", "positions.id"],
+            name="fk_experiment_runs_equipment_position",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint("ended_at IS NULL OR ended_at >= started_at", name="ck_run_time_order"),
-        Index("ix_experiment_runs_position_started", "position_id", "started_at"),
+        Index("ix_experiment_runs_position_started", "position_id", text("started_at DESC")),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    equipment_id: Mapped[str] = mapped_column(ForeignKey("equipment.id", ondelete="RESTRICT"))
-    position_id: Mapped[UUID] = mapped_column(ForeignKey("positions.id", ondelete="RESTRICT"))
+    equipment_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    position_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     culture_id: Mapped[UUID | None] = mapped_column(ForeignKey("cultures.id", ondelete="SET NULL"))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -92,16 +107,24 @@ class ProcessedEvent(Base):
 
     __tablename__ = "processed_event_ids"
     __table_args__ = (
+        UniqueConstraint(
+            "event_id", "generated_at", name="uq_processed_event_ids_event_generated"
+        ),
         CheckConstraint(
             "outcome IN ('persisted', 'quarantined')", name="ck_processed_event_outcome"
         ),
-        Index("ix_processed_event_ids_received_at", "received_at"),
+        CheckConstraint(
+            "outcome = 'quarantined' OR (equipment_id IS NOT NULL AND "
+            "producer_id IS NOT NULL AND generated_at IS NOT NULL)",
+            name="ck_processed_event_persisted_fields",
+        ),
+        Index("ix_processed_event_ids_received_at", text("received_at DESC")),
     )
 
     event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
-    equipment_id: Mapped[str] = mapped_column(ForeignKey("equipment.id", ondelete="RESTRICT"))
-    producer_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    equipment_id: Mapped[str | None] = mapped_column(String(64))
+    producer_id: Mapped[str | None] = mapped_column(String(64))
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     outcome: Mapped[str] = mapped_column(
         String(16), default="persisted", server_default=text("'persisted'"), nullable=False
@@ -111,32 +134,44 @@ class ProcessedEvent(Base):
 class Measurement(Base):
     __tablename__ = "measurements"
     __table_args__ = (
-        ForeignKeyConstraint(["event_id"], ["processed_event_ids.event_id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["event_id", "generated_at"],
+            ["processed_event_ids.event_id", "processed_event_ids.generated_at"],
+            name="fk_measurements_processed_event",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["equipment_id", "position_id"],
+            ["positions.equipment_id", "positions.id"],
+            name="fk_measurements_equipment_position",
+            ondelete="RESTRICT",
+        ),
         ForeignKeyConstraint(
             ["experiment_run_id"], ["experiment_runs.id"], ondelete="SET NULL"
         ),
+        PrimaryKeyConstraint("event_id", "generated_at", name="pk_measurements"),
         CheckConstraint("sequence >= 0", name="ck_measurement_sequence"),
         CheckConstraint(
             "measurement_type IN ('od', 'ph', 'temperature')", name="ck_measurement_type"
         ),
-        Index("ix_measurements_equipment_time", "equipment_id", "generated_at"),
-        Index("ix_measurements_position_time", "position_id", "generated_at"),
-        Index("ix_measurements_type_time", "measurement_type", "generated_at"),
+        Index("ix_measurements_equipment_time", "equipment_id", text("generated_at DESC")),
+        Index("ix_measurements_position_time", "position_id", text("generated_at DESC")),
+        Index("ix_measurements_type_time", "measurement_type", text("generated_at DESC")),
         Index(
             "ix_measurements_equipment_position_type_time",
             "equipment_id",
             "position_id",
             "measurement_type",
-            "generated_at",
+            text("generated_at DESC"),
         ),
-        Index("ix_measurements_received_at", "received_at"),
+        Index("ix_measurements_received_at", text("received_at DESC")),
     )
 
     event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    equipment_id: Mapped[str] = mapped_column(ForeignKey("equipment.id", ondelete="RESTRICT"))
-    position_id: Mapped[UUID] = mapped_column(ForeignKey("positions.id", ondelete="RESTRICT"))
+    equipment_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    position_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     experiment_run_id: Mapped[str | None] = mapped_column(String(64))
     producer_id: Mapped[str] = mapped_column(String(64), nullable=False)
     sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -154,7 +189,7 @@ class Command(Base):
             "'executed', 'failed', 'unknown', 'expired')",
             name="ck_command_status",
         ),
-        Index("ix_commands_equipment_created", "equipment_id", "created_at"),
+        Index("ix_commands_equipment_created", "equipment_id", text("created_at DESC")),
         Index("ix_commands_status_expiry", "status", "expires_at"),
     )
 
@@ -180,11 +215,16 @@ class Command(Base):
 class AuditEvent(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
-        Index("ix_audit_entity_time", "entity_type", "entity_id", "occurred_at"),
-        Index("ix_audit_actor_time", "actor_id", "occurred_at"),
+        Index(
+            "ix_audit_entity_time",
+            "entity_type",
+            "entity_id",
+            text("occurred_at DESC"),
+        ),
+        Index("ix_audit_actor_time", "actor_id", text("occurred_at DESC")),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actor_id: Mapped[str | None] = mapped_column(String(64))
     action: Mapped[str] = mapped_column(String(64), nullable=False)

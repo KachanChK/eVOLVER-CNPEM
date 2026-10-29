@@ -33,7 +33,12 @@ Não derive `generated_at` de `received_at`.
 processados é uma tabela PostgreSQL normal porque `event_id` precisa ser único
 globalmente; TimescaleDB exige que constraints únicas de hypertables incluam a coluna
 de particionamento. A unicidade lógica é garantida pelo ledger global e pela
-transação, mesmo quando duas linhas teriam o mesmo `event_id`.
+transação. A FK composta entre ledger e hypertable também garante que `generated_at`
+seja o mesmo nas duas linhas.
+
+Eventos em quarentena também ocupam `event_id` no ledger para que uma reentrega seja
+reconhecida. Nos registros que não puderam ser validados, equipamento, produtor e
+horário de produção podem ficar nulos; eventos persistidos exigem esses três campos.
 
 ## Esquema e consultas
 
@@ -44,6 +49,10 @@ transação, mesmo quando duas linhas teriam o mesmo `event_id`.
   mas não substitui a atual.
 - `evolver.db.queries.get_measurement_history`: consulta por equipamento, posição,
   tipo e intervalo de `generated_at`, com limite de linhas.
+
+A view consulta cada posição e tipo suportado com `LATERAL ... ORDER BY ... LIMIT 1`,
+aproveitando o índice composto da hypertable. Assim, a leitura atual evita ordenar e
+agrupar todos os chunks a cada chamada.
 
 Exemplo de inserção de uma série simulada em uma sessão SQLAlchemy:
 
@@ -91,3 +100,28 @@ uv run alembic downgrade -1
 
 `downgrade -1` remove o schema desta revisão, incluindo os dados; faça backup antes.
 Para subir de novo, execute `uv run alembic upgrade head`.
+
+## Teste de integração
+
+Os testes de banco precisam de um database descartável com TimescaleDB habilitado;
+não aponte-os para o banco local `evolver`, pois o teste aplica a migration. Crie-o
+no serviço Compose:
+
+```powershell
+docker compose exec timescaledb createdb -U evolver evolver_test
+docker compose exec timescaledb psql -U evolver -d evolver_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+```
+
+Na pasta `backend`, configure a URL e rode o teste de integração:
+
+```powershell
+$env:EVOLVER_TEST_DATABASE_URL = "postgresql+psycopg://evolver:evolver-local-only@127.0.0.1:5432/evolver_test"
+uv run pytest tests/db -m integration
+```
+
+Sem `EVOLVER_TEST_DATABASE_URL`, o teste é ignorado. Apague o database de teste quando
+terminar, se não precisar dele:
+
+```powershell
+docker compose exec timescaledb dropdb -U evolver evolver_test
+```
