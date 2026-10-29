@@ -103,6 +103,9 @@ class ExperimentRun(Base):
         "metadata", JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
     )
 
+    position: Mapped[Position] = relationship()
+    culture: Mapped[Culture | None] = relationship()
+
 
 class ProcessedEvent(Base):
     """Global idempotency ledger; insert this before the measurement in one transaction."""
@@ -182,8 +185,10 @@ class Measurement(Base):
     schema_version: Mapped[str] = mapped_column(String(16), nullable=False)
 
     # Sem relationship, o flush não sabe que ledger e posição precisam ser inseridos antes.
+    # Vale para toda FK do modelo; tests/db/test_models.py verifica isso.
     processed_event: Mapped[ProcessedEvent] = relationship()
     position: Mapped[Position] = relationship()
+    experiment_run: Mapped[ExperimentRun | None] = relationship()
 
 
 class Command(Base):
@@ -216,6 +221,9 @@ class Command(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    equipment: Mapped[Equipment] = relationship()
+    experiment_run: Mapped[ExperimentRun | None] = relationship()
 
 
 class AuditEvent(Base):

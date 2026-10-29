@@ -11,7 +11,15 @@ from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from evolver.db.models import Equipment, Measurement, Position, ProcessedEvent
+from evolver.db.models import (
+    Command,
+    Culture,
+    Equipment,
+    ExperimentRun,
+    Measurement,
+    Position,
+    ProcessedEvent,
+)
 from evolver.db.queries import get_current_measurements, get_measurement_history
 
 
@@ -40,6 +48,8 @@ def test_migration_quarantine_and_measurement_queries(monkeypatch: pytest.Monkey
             older_event_id = uuid4()
             latest_event_id = uuid4()
             quarantined_event_id = uuid4()
+            culture_id = uuid4()
+            run_id = f"run-{uuid4()}"
 
             with Session(
                 bind=connection,
@@ -55,8 +65,30 @@ def test_migration_quarantine_and_measurement_queries(monkeypatch: pytest.Monkey
                         created_at=now,
                     )
                 )
+                # Filhos antes dos pais: o flush precisa reordenar pelas relationships.
                 session.add_all(
                     [
+                        Command(
+                            command_id=uuid4(),
+                            equipment_id=equipment_id,
+                            experiment_run_id=run_id,
+                            author_id="integration-test",
+                            target_type="position",
+                            target_id=str(position_id),
+                            action="noop",
+                            status="requested",
+                            created_at=now,
+                            expires_at=now + timedelta(minutes=1),
+                            updated_at=now,
+                        ),
+                        ExperimentRun(
+                            id=run_id,
+                            equipment_id=equipment_id,
+                            position_id=position_id,
+                            culture_id=culture_id,
+                            started_at=older_at,
+                        ),
+                        Culture(id=culture_id, vial_id=f"vial-{uuid4()}", created_at=now),
                         ProcessedEvent(
                             event_id=older_event_id,
                             equipment_id=equipment_id,
@@ -95,6 +127,7 @@ def test_migration_quarantine_and_measurement_queries(monkeypatch: pytest.Monkey
                             received_at=now,
                             equipment_id=equipment_id,
                             position_id=position_id,
+                            experiment_run_id=run_id,
                             producer_id="integration-test",
                             sequence=2,
                             measurement_type="od",
