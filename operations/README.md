@@ -59,53 +59,6 @@ docker compose down
 Não use `docker compose down -v` como rotina: a opção `-v` apaga os volumes locais
 e seus dados. Logs adicionais podem ser consultados com `docker compose logs`.
 
-## Migrações
-
-Com PostgreSQL saudável, aplique o schema da aplicação a partir da pasta
-`backend`:
-
-```powershell
-uv sync --group dev
-uv run alembic upgrade head
-```
-
-Para configuração local padrão, Alembic usa os mesmos valores de `.env.example`.
-Se o banco foi personalizado, exporte `DATABASE_URL` para a sessão antes de
-executar Alembic. A extensão TimescaleDB é habilitada pelo script inicial somente
-quando o volume de banco nasce; revisões da aplicação são aplicadas separadamente.
-
-## Backup e restauração
-
-O volume `postgres_data` persiste através de `docker compose down`, mas não cobre
-falha ou perda do disco do host. Faça backup lógico periódico para uma pasta segura
-fora do container. Exemplo no PowerShell, usando os valores padrão locais:
-
-```powershell
-New-Item -ItemType Directory -Force backups | Out-Null
-docker compose exec timescaledb pg_dump -U evolver -d evolver -Fc -f /tmp/evolver.dump
-docker compose cp timescaledb:/tmp/evolver.dump ./backups/evolver.dump
-```
-
-Armazene a cópia em outro disco ou destino protegido; o dump dentro do mesmo host
-não substitui uma cópia externa. Para restaurar o dump completo em um banco de destino
-saudável com a extensão TimescaleDB disponível, copie o arquivo para o container e
-execute as funções de preparação da extensão antes e depois do `pg_restore`:
-
-```powershell
-docker compose cp ./backups/evolver.dump timescaledb:/tmp/evolver.dump
-docker compose exec timescaledb psql -U evolver -d evolver -c "SELECT timescaledb_pre_restore();"
-docker compose exec timescaledb pg_restore --clean --if-exists --no-owner --exit-on-error -U evolver -d evolver /tmp/evolver.dump
-docker compose exec timescaledb psql -U evolver -d evolver -c "SELECT timescaledb_post_restore();"
-```
-
-O arquivo é um dump completo, com schema e dados. Em um banco vazio, deixe o `pg_restore`
-recriar os objetos; não rode `alembic upgrade head` antes. Para recriar o schema com
-Alembic e restaurar somente os dados, aplique primeiro `uv run alembic upgrade head`
-e troque `pg_restore` por `pg_restore --data-only --no-owner --exit-on-error ...`.
-Faça uma restauração de conferência em outro banco antes de depender do backup. Troque
-usuário, banco e caminho em ambos os comandos quando `.env` não usar os padrões. Não
-use `docker compose down -v` como método de restauração: ele remove o volume.
-
 ## Aplicação
 
 Simulador, ingestão, API e frontend ainda não existem como serviços executáveis.
