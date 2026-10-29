@@ -5,21 +5,23 @@
 | Branch | Uso |
 | --- | --- |
 | `main` | Versão estável. Não recebe commits diretos. |
-| `develop` | Integração das etapas concluídas. Não recebe commits diretos. |
-| `etapa-N` | Branch de trabalho da etapa ou funcionalidade em andamento (ex.: `etapa-1`). **Os commits são todos feitos aqui.** |
+| `develop` | Integração das tarefas concluídas. Não recebe commits diretos. |
+| `eN-tNN-descricao` | Branch de uma tarefa, criada a partir da `develop` atualizada (ex.: `e2-t03-separar-simulador`). |
 
 ## Fluxo
 
 ```bash
-git checkout etapa-1
+git switch develop
+git pull --ff-only origin develop
+git switch -c e2-t03-separar-simulador
 git add <arquivos>
 git commit -m "Mensagem do commit"
-git pull --rebase origin etapa-1
-git push origin HEAD:etapa-1
+git push -u origin e2-t03-separar-simulador
 ```
 
-- `git pull --rebase` atualiza a árvore local antes do envio.
-- `git push origin HEAD:<branch>` envia o commit atual para a branch remota indicada.
+- Cada tarefa usa uma branch própria criada a partir de `develop`.
+- Novas correções do mesmo PR são enviadas como commits adicionais na mesma branch.
+- Não faça commit nem push diretamente em `develop` ou `main`.
 
 ## Conflitos no rebase
 
@@ -37,4 +39,5 @@ git rebase --continue
 
 ## Integração
 
-A branch da etapa segue para `develop` e depois para `main` por Pull Request.
+A branch da tarefa segue para `develop` por Pull Request e é removida após o merge.
+Versões validadas seguem de `develop` para `main` por outro Pull Request.

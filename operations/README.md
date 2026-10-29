@@ -113,13 +113,13 @@ Quando forem implementados pelas tasks correspondentes, o desenvolvimento diári
 usará a infraestrutura em Compose e o código Python/Vue executado na máquina.
 
 Os comandos previstos abaixo são apenas referência e ainda não funcionam porque os
-pontos de entrada e o projeto Vue não foram implementados:
+pontos de entrada e o projeto Vue não foram implementados. Cada projeto Python tem
+seu próprio pacote no workspace `uv` da raiz:
 
 ```bash
-cd backend
-uv run python -m evolver.ingestion
-uv run uvicorn evolver.api.main:app --reload
-uv run python -m evolver.simulator
+uv run --package evolver-cnpem-backend python -m evolver.ingestion
+uv run --package evolver-cnpem-backend uvicorn evolver.api.main:app --reload
+uv run --package evolver-cnpem-simulator python -m evolver_simulator
 ```
 
 ```bash

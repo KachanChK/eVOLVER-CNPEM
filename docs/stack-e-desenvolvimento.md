@@ -22,7 +22,7 @@ Documentar a stack, as versões iniciais, as ferramentas de migração e teste, 
 | --- | --- | --- | --- |
 | Transporte | **Eclipse Mosquitto (MQTT 5)** | Broker (servidor de mensagens) executável em contêiner, com persistência configurável. | Transportar telemetria, ACK de aplicação (confirmação após gravação), comandos e respostas entre simulador e serviços. |
 | Banco | **PostgreSQL + TimescaleDB** | Guarda metadados e auditoria em tabelas relacionais e séries temporais em hypertables (tabelas particionadas por tempo). | Fonte do histórico persistido; deduplicação por `event_id` com uma tabela de IDs processados. |
-| Backend | **Python** | Permite compartilhar modelos de mensagem entre os processos. | Simulador, ingestão e API, executados separadamente. |
+| Backend e simulador | **Python** | Permite compartilhar os modelos de mensagem pelo pacote `evolver-contracts`. | Backend (API e ingestão) e simulador são projetos distintos; os processos serão executados separadamente. |
 | API | **FastAPI** | Usa modelos Pydantic para validar dados e gera a descrição OpenAPI das rotas HTTP. | Consultas, comandos autorizados e atualizações ao vivo. |
 | Cliente MQTT | **paho-mqtt 2.x** (via `aiomqtt` nos serviços assíncronos) | Suporta MQTT 5; `aiomqtt` permite integrá-lo ao `asyncio` (execução assíncrona do Python). | Publicar e assinar os tópicos do simulador, da ingestão e da API. |
 | Interface | **Vue 3 + Vite** | Curva de aprendizado curta, componentes de arquivo único, build rápido e servidor de desenvolvimento com recarga a quente. | Painéis, histórico, estado de conexão e operações simuladas. |
@@ -50,7 +50,7 @@ As tecnologias pedidas na issue foram adotadas para o piloto. A compatibilidade 
 
 ## Versões iniciais
 
-Versões e faixas escolhidas para o piloto; a tabela não afirma que todas já estejam instaladas ou testadas. O `backend/pyproject.toml` e o `backend/uv.lock` já fixam as dependências do pacote de contratos MQTT. Quando os demais componentes forem criados, registrar as versões exatas no `uv.lock`, no `package-lock.json`, na versão de Node indicada por `.nvmrc`/`package.json` e nas tags das imagens do Compose. Uma atualização dessas escolhas deve ser documentada junto à alteração do projeto.
+Versões e faixas escolhidas para o piloto; a tabela não afirma que todas já estejam instaladas ou testadas. O workspace Python na raiz e seu `uv.lock` fixam as dependências dos três projetos existentes: contratos, backend e estrutura do simulador. Quando os demais componentes forem criados, registrar as versões exatas no `uv.lock`, no `package-lock.json`, na versão de Node indicada por `.nvmrc`/`package.json` e nas tags das imagens do Compose. Uma atualização dessas escolhas deve ser documentada junto à alteração do projeto.
 
 | Componente | Versão inicial |
 | --- | --- |
@@ -76,20 +76,21 @@ Versões e faixas escolhidas para o piloto; a tabela não afirma que todas já e
 
 ## Estrutura do repositório
 
-Estrutura prevista para o monorepo. Hoje, os documentos de planejamento estão na raiz e `backend/` contém os contratos MQTT, o `pyproject.toml`, o `uv.lock` e testes de contrato. Os demais caminhos abaixo descrevem o que deverá ser criado; mover os documentos para `docs/` exige atualizar seus links.
+Estrutura prevista para o monorepo. Os documentos de planejamento estão em `docs/`; os contratos MQTT, seus exemplos e testes ficam no pacote compartilhado. Backend e simulador possuem projetos Python próprios, mas os serviços de aplicação ainda aguardam implementação.
 
 ```text
 eVOLVER-CNPEM/
-├── docs/                    # destino previsto para documentos de planejamento; hoje estão na raiz
-├── backend/                 # pacote Python único (pyproject.toml, uv.lock)
+├── docs/                    # documentos de planejamento
+├── packages/contracts/      # pacote evolver_contracts: modelos, schemas e testes MQTT
+├── backend/                 # projeto Python para API, ingestão e banco
 │   ├── src/evolver/
-│   │   ├── contracts/       # modelos Pydantic das mensagens MQTT (versionados)
 │   │   ├── db/              # modelos SQLAlchemy e sessão
 │   │   ├── ingestion/       # serviço de ingestão (assina MQTT, grava, emite ACK)
 │   │   ├── api/             # app FastAPI (consultas, comandos, SSE)
-│   │   └── simulator/       # simulador externo + fila SQLite
 │   ├── migrations/          # Alembic
 │   └── tests/
+├── simulator/               # projeto Python independente; serviço futuro
+│   └── src/evolver_simulator/ # simulador externo + futura fila SQLite
 ├── frontend/                # Vue 3 + Vite (package.json, package-lock.json)
 │   ├── src/
 │   └── tests/
@@ -98,11 +99,13 @@ eVOLVER-CNPEM/
 │   └── db/                  # scripts de inicialização (extensão timescaledb)
 ├── compose.yaml             # dependências: mosquitto + timescaledb
 ├── compose.full.yaml        # serviços da aplicação (override para o modo completo)
+├── pyproject.toml            # workspace uv e ferramentas de desenvolvimento
+├── uv.lock                   # lock compartilhado dos projetos Python
 ├── .env.example
 └── README.md                # como rodar
 ```
 
-Simulador, ingestão e API devem ficar no mesmo pacote Python para compartilhar os modelos de mensagens (`contracts/`), mas rodar como **processos separados**. O simulador não deve importar `db/` nem `api/`: sua comunicação com os serviços centrais ocorre por MQTT. Conferir essa separação ao criar os pontos de entrada e testar cada processo isoladamente.
+Simulador e backend dependem do mesmo pacote `evolver-contracts`, mas o simulador tem projeto e, futuramente, processo próprios. API e ingestão também serão processos separados dentro do backend. O simulador não deve importar `evolver.db` nem `evolver.api`: sua comunicação com os serviços centrais ocorre por MQTT. Conferir essa separação ao criar os pontos de entrada e testar cada processo isoladamente.
 
 ## Modos de desenvolvimento
 
@@ -119,26 +122,25 @@ docker compose up -d
 docker compose ps
 ```
 
-Em `backend/`, preparar o ambiente e aplicar as migrações:
+Na raiz, preparar o workspace e, quando existir, aplicar as migrações:
 
 ```bash
-cd backend
-uv sync --frozen
-uv run alembic upgrade head
+uv sync --all-packages --group dev --frozen
+uv run --package evolver-cnpem-backend alembic upgrade head
 ```
 
-Em três terminais separados, todos iniciados em `backend/`:
+Em três terminais separados, todos iniciados na raiz:
 
 ```bash
-uv run python -m evolver.ingestion
-```
-
-```bash
-uv run uvicorn evolver.api.main:app --reload    # API na porta 8000
+uv run --package evolver-cnpem-backend python -m evolver.ingestion
 ```
 
 ```bash
-uv run python -m evolver.simulator
+uv run --package evolver-cnpem-backend uvicorn evolver.api.main:app --reload    # API na porta 8000
+```
+
+```bash
+uv run --package evolver-cnpem-simulator python -m evolver_simulator
 ```
 
 Em outro terminal, a partir da raiz:

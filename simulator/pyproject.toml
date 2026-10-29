@@ -1,0 +1,16 @@
+[project]
+name = "evolver-cnpem-simulator"
+version = "0.1.0"
+description = "Estrutura do simulador externo do piloto eVOLVER CNPEM"
+requires-python = ">=3.12,<3.13"
+dependencies = ["evolver-contracts"]
+
+[tool.uv.sources]
+evolver-contracts = { workspace = true }
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
