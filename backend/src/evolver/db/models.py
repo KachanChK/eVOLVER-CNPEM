@@ -22,7 +22,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -63,6 +63,8 @@ class Position(Base):
         default=True, server_default=text("true"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    equipment: Mapped[Equipment] = relationship()
 
 
 class Culture(Base):
@@ -178,6 +180,10 @@ class Measurement(Base):
     measurement_type: Mapped[str] = mapped_column(String(32), nullable=False)
     value: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    # Sem relationship, o flush não sabe que ledger e posição precisam ser inseridos antes.
+    processed_event: Mapped[ProcessedEvent] = relationship()
+    position: Mapped[Position] = relationship()
 
 
 class Command(Base):
