@@ -32,7 +32,7 @@ remota (#12).
 Cada processo usa o próprio usuário, com senha definida no `.env`. Ao iniciar, o
 `mosquitto/docker-entrypoint.sh` gera o arquivo de senhas dentro do contêiner; ele
 não é versionado. As permissões estão em `mosquitto/acl` e seguem os tópicos do
-[contrato](../backend/src/evolver/contracts/README.md):
+[contrato](../packages/contracts/src/evolver_contracts/README.md):
 
 | Usuário | Publica | Assina |
 | --- | --- | --- |
