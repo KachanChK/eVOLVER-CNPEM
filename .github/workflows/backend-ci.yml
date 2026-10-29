@@ -6,7 +6,6 @@ on:
     branches:
       - main
       - develop
-      - 'etapa-*'
   workflow_dispatch:
 
 permissions:
@@ -18,12 +17,9 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend (Ruff e pytest)
+    name: Workspace Python (Ruff e pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: backend
 
     steps:
       - name: Obter o codigo
@@ -38,10 +34,12 @@ jobs:
           python-version: '3.12'
 
       - name: Instalar dependencias do lockfile
-        run: uv sync --locked --group dev
+        run: uv sync --locked --all-packages --group dev
 
       - name: Verificar o codigo com Ruff
-        run: uv run --locked ruff check src tests
+        run: >-
+          uv run --locked --all-packages ruff check
+          backend/src simulator/src packages/contracts/src packages/contracts/tests
 
       - name: Executar testes e validar schemas
-        run: uv run --locked pytest
+        run: uv run --locked --all-packages pytest packages/contracts/tests

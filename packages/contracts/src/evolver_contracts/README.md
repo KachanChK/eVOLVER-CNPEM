@@ -83,17 +83,16 @@ um comando inicialmente válido expira durante a desconexão e recebe uma respos
 
 - `models.py`: modelos Pydantic compartilhados pelos processos Python.
 - `schemas/`: JSON Schemas Draft 2020-12 gerados a partir dos modelos.
-- `backend/tests/contracts/fixtures/`: exemplos válidos, inválidos e semânticos.
-- `backend/tests/contracts/test_contract_examples.py`: valida os mesmos exemplos
+- `packages/contracts/tests/fixtures/`: exemplos válidos, inválidos e semânticos.
+- `packages/contracts/tests/test_contract_examples.py`: valida os mesmos exemplos
   tanto nos JSON Schemas quanto nos modelos Pydantic.
 
 Para validar todo o conjunto:
 
 ```bash
-cd backend
-uv sync --group dev --frozen
-uv run ruff check src tests
-uv run pytest tests/contracts
+uv sync --all-packages --group dev --frozen
+uv run --all-packages ruff check backend/src simulator/src packages/contracts/src packages/contracts/tests
+uv run --all-packages pytest packages/contracts/tests
 ```
 
 O teste impede que um exemplo inválido seja aceito por engano e também falha se um

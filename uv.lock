@@ -2,6 +2,14 @@ version = 1
 revision = 5
 requires-python = "==3.12.*"
 
+[manifest]
+members = [
+    "evolver-cnpem-backend",
+    "evolver-cnpem-simulator",
+    "evolver-cnpem-workspace",
+    "evolver-contracts",
+]
+
 [[package]]
 name = "annotated-types"
 version = "0.8.0"
@@ -32,10 +40,29 @@ wheels = [
 [[package]]
 name = "evolver-cnpem-backend"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "backend" }
 dependencies = [
-    { name = "pydantic" },
+    { name = "evolver-contracts" },
 ]
+
+[package.metadata]
+requires-dist = [{ name = "evolver-contracts", editable = "packages/contracts" }]
+
+[[package]]
+name = "evolver-cnpem-simulator"
+version = "0.1.0"
+source = { editable = "simulator" }
+dependencies = [
+    { name = "evolver-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "evolver-contracts", editable = "packages/contracts" }]
+
+[[package]]
+name = "evolver-cnpem-workspace"
+version = "0.1.0"
+source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
@@ -46,7 +73,6 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -55,6 +81,17 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24,<1" },
     { name = "ruff", specifier = ">=0.8,<1" },
 ]
+
+[[package]]
+name = "evolver-contracts"
+version = "0.1.0"
+source = { editable = "packages/contracts" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [[package]]
 name = "iniconfig"

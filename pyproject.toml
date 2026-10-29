@@ -1,0 +1,29 @@
+[project]
+name = "evolver-cnpem-workspace"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["backend", "simulator", "packages/contracts"]
+
+[dependency-groups]
+dev = [
+  "jsonschema>=4.23,<5",
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.24,<1",
+  "ruff>=0.8,<1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/contracts/tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

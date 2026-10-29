@@ -7,7 +7,7 @@ Agentes de IA que trabalham neste repositório devem ler [AGENTS.md](AGENTS.md).
 
 O contrato versionado do piloto simulado — tópicos, QoS, regras de confirmação,
 modelos Pydantic, schemas JSON e exemplos de mensagens — está em
-[backend/src/evolver/contracts/README.md](backend/src/evolver/contracts/README.md).
+[packages/contracts/src/evolver_contracts/README.md](packages/contracts/src/evolver_contracts/README.md).
 Simulador, ingestão e API usam os mesmos modelos antes da implementação dos
 serviços.
 
@@ -51,13 +51,12 @@ Os serviços devem aparecer como `healthy`. Diagnóstico, logs e parada estão e
 
 ## Verificar os contratos existentes
 
-Com Python 3.12 e `uv` instalados:
+Com Python 3.12 e `uv` instalados, na raiz do repositório:
 
 ```bash
-cd backend
-uv sync --group dev --frozen
-uv run ruff check src tests
-uv run pytest tests/contracts
+uv sync --all-packages --group dev --frozen
+uv run --all-packages ruff check backend/src simulator/src packages/contracts/src packages/contracts/tests
+uv run --all-packages pytest packages/contracts/tests
 ```
 
 Os modelos Pydantic continuam sendo a fonte de verdade. A infraestrutura não muda
@@ -66,12 +65,16 @@ schemas, exemplos ou semântica das mensagens MQTT.
 ## Estrutura preparada
 
 ```text
-backend/                  pacote Python e contratos existentes
+pyproject.toml            workspace Python uv
+uv.lock                   lock compartilhado dos projetos Python
+packages/contracts/       modelos Pydantic, schemas e testes MQTT existentes
+backend/                  pacote Python para API, ingestão e banco
   migrations/             reservado para Alembic
   src/evolver/api/        reservado para FastAPI e SSE
   src/evolver/db/         reservado para SQLAlchemy e Alembic
   src/evolver/ingestion/  reservado para o processo de ingestão
-  src/evolver/simulator/  reservado para o simulador externo
+simulator/                projeto Python independente, ainda sem ponto de entrada
+  src/evolver_simulator/  reservado para o processo externo
 frontend/                 reservado para Vue 3 + Vite
   src/                    reservado para componentes Vue
   tests/                  reservado para testes da interface
@@ -80,8 +83,10 @@ operations/               comandos de operação e diagnóstico
 compose.yaml              Mosquitto + PostgreSQL/TimescaleDB
 ```
 
-O navegador acessará apenas a API. O simulador, a ingestão e a API serão processos
-Python separados no mesmo pacote; o simulador não importará `db/` nem `api/`.
+O navegador acessará apenas a API. Simulador e backend são projetos Python
+distintos que compartilham apenas `evolver_contracts`. API e ingestão serão
+processos separados do backend; o simulador terá processo próprio quando for
+implementado. Ele não importará `evolver.db` nem `evolver.api`.
 
 ## Limites do piloto
 
