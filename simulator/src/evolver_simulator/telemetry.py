@@ -1,4 +1,4 @@
-"""Geracao deterministica de eventos de OD simulada."""
+"""Geracao deterministica de telemetria simulada."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class OdTelemetryGenerator:
-    """Gera vials em ordem circular e valores de OD reproduziveis pela semente."""
+class SimulatedTelemetryGenerator:
+    """Gera OD, pH e temperatura mockados e reproduziveis pela semente."""
 
     _CYCLE_LENGTH = 24
-    _VIAL_OFFSET = 0.01
+    _MEASUREMENT_TYPES = ("od", "ph", "temperature")
 
     def __init__(
         self,
@@ -42,17 +42,12 @@ class OdTelemetryGenerator:
 
     def next_event(self) -> TelemetryEvent:
         sequence = self._sequence
-        vial_index = sequence % len(self._settings.vial_ids)
-        vial_cycle = sequence // len(self._settings.vial_ids)
+        measurement_count = len(self._MEASUREMENT_TYPES)
+        measurement_type = self._MEASUREMENT_TYPES[sequence % measurement_count]
+        vial_index = (sequence // measurement_count) % len(self._settings.vial_ids)
+        vial_cycle = sequence // (measurement_count * len(self._settings.vial_ids))
         phase = 2 * math.pi * (vial_cycle % self._CYCLE_LENGTH) / self._CYCLE_LENGTH
-        noise = self._rng.uniform(-self._settings.od_noise, self._settings.od_noise)
-        value = max(
-            0.0,
-            self._settings.od_baseline
-            + vial_index * self._VIAL_OFFSET
-            + self._settings.od_variation * math.sin(phase)
-            + noise,
-        )
+        value = self._value_for(measurement_type, vial_index, phase)
 
         event = TelemetryEvent(
             schema_version="1.0",
@@ -60,10 +55,35 @@ class OdTelemetryGenerator:
             producer_id=self._settings.producer_id,
             equipment_id=self._settings.equipment_id,
             vial_id=self._settings.vial_ids[vial_index],
-            measurement_type="od",
-            value=round(value, 6),
+            measurement_type=measurement_type,
+            value=value,
             generated_at=self._clock(),
             sequence=sequence,
         )
         self._sequence += 1
         return event
+
+    def _value_for(self, measurement_type: str, vial_index: int, phase: float) -> float:
+        if measurement_type == "od":
+            baseline = self._settings.od_baseline
+            variation = self._settings.od_variation
+            noise_amplitude = self._settings.od_noise
+            vial_offset = 0.01
+        elif measurement_type == "ph":
+            baseline = self._settings.ph_baseline
+            variation = self._settings.ph_variation
+            noise_amplitude = self._settings.ph_noise
+            vial_offset = 0.02
+        elif measurement_type == "temperature":
+            baseline = self._settings.temperature_baseline
+            variation = self._settings.temperature_variation
+            noise_amplitude = self._settings.temperature_noise
+            vial_offset = 0.1
+        else:
+            raise ValueError(f"unsupported simulated measurement type: {measurement_type}")
+
+        noise = self._rng.uniform(-noise_amplitude, noise_amplitude)
+        value = baseline + vial_index * vial_offset + variation * math.sin(phase) + noise
+        if measurement_type == "od":
+            value = max(0.0, value)
+        return round(value, 6)

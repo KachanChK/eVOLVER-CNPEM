@@ -7,7 +7,7 @@ import threading
 
 from .config import SimulatorSettings
 from .mqtt import MqttPublisher
-from .telemetry import OdTelemetryGenerator
+from .telemetry import SimulatedTelemetryGenerator
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,12 +23,12 @@ class SimulatorRunner:
         self,
         settings: SimulatorSettings,
         *,
-        generator: OdTelemetryGenerator | None = None,
+        generator: SimulatedTelemetryGenerator | None = None,
         publisher: MqttPublisher | None = None,
         stop_event: threading.Event | None = None,
     ) -> None:
         self._settings = settings
-        self._generator = generator or OdTelemetryGenerator(settings)
+        self._generator = generator or SimulatedTelemetryGenerator(settings)
         self._publisher = publisher or MqttPublisher(settings)
         self._stop_event = stop_event or threading.Event()
 

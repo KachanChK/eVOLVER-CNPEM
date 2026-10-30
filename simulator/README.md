@@ -1,11 +1,13 @@
 # Produtor externo de telemetria simulada
 
-O projeto `evolver-cnpem-simulator` publica somente medições simuladas de OD no
+O projeto `evolver-cnpem-simulator` publica medições simuladas de OD, pH e
+temperatura medida no
 broker MQTT do piloto. Ele é independente do backend: importa o contrato
 compartilhado `evolver_contracts`, não acessa PostgreSQL e não importa
 `evolver.db` ou `evolver.api`.
 
-Os valores não representam calibração nem precisão científica. Cada mensagem é
+Os valores são mocks destinados ao fluxo de software: não possuem unidade
+definida e não representam sensor, calibração nem precisão científica. Cada mensagem é
 validada como `TelemetryEvent` e publicada em
 `evolver/v1/{equipment_id}/telemetry` com MQTT 5, QoS 1 e `retain=False`.
 
@@ -31,6 +33,12 @@ lidas do ambiente e, se existir, desse arquivo:
 | `SIMULATOR_OD_BASELINE` | `0.35` | Base não negativa da OD simulada. |
 | `SIMULATOR_OD_VARIATION` | `0.08` | Amplitude não negativa da curva periódica. |
 | `SIMULATOR_OD_NOISE` | `0.005` | Ruído uniforme entre 0 e 0.1. |
+| `SIMULATOR_PH_BASELINE` | `7.0` | Base arbitrária do pH mockado. |
+| `SIMULATOR_PH_VARIATION` | `0.15` | Amplitude não negativa da curva mockada. |
+| `SIMULATOR_PH_NOISE` | `0.02` | Amplitude não negativa do ruído mockado. |
+| `SIMULATOR_TEMPERATURE_BASELINE` | `30.0` | Base arbitrária da temperatura mockada. |
+| `SIMULATOR_TEMPERATURE_VARIATION` | `0.5` | Amplitude não negativa da curva mockada. |
+| `SIMULATOR_TEMPERATURE_NOISE` | `0.1` | Amplitude não negativa do ruído mockado. |
 | `SIMULATOR_MAX_MESSAGES` | ausente | Inteiro positivo; limita a execução para testes. |
 | `SIMULATOR_PAUSE_AFTER_MESSAGES` | ausente | Pausa uma vez depois de N publicações. |
 | `SIMULATOR_PAUSE_SECONDS` | ausente | Duração positiva da pausa; configurada junto com a variável anterior. |
@@ -81,7 +89,9 @@ SIMULATOR_MAX_MESSAGES=5
 Pausa e falha não podem ser habilitadas na mesma execução. A falha simulada
 encerra com código `3`; configuração inválida usa `2` e falha MQTT usa `1`.
 
-Os logs registram conexão, `event_id`, sequência, vial e tópico de cada publicação.
+Cada vial produz, nessa ordem, `od`, `ph` e `temperature`; depois o produtor avança
+para o próximo vial. Os logs registram conexão, `event_id`, sequência, vial, tipo de
+medição e tópico de cada publicação.
 A confirmação de QoS 1 registrada pelo produtor é apenas o PUBACK do transporte;
 não comprova persistência no banco nem substitui o ACK de aplicação futuro.
 
@@ -91,15 +101,16 @@ Para observar cinco eventos com a identidade de ingestão do ambiente Compose:
 docker compose exec -T mosquitto sh -c 'mosquitto_sub -V mqttv5 -h 127.0.0.1 -p 1883 -t evolver/v1/+/telemetry -u evolver-ingestion -P "$MQTT_INGESTION_PASSWORD" -q 1 -C 5 -v'
 ```
 
-Com a mesma semente e configuração, uma nova execução repete a sequência de vials
-e valores. `event_id` e horário mudam em operação normal; testes podem injetar
+Com a mesma semente e configuração, uma nova execução repete a sequência de vials,
+tipos e valores. `event_id` e horário mudam em operação normal; testes podem injetar
 relógio, UUIDs e gerador pseudoaleatório.
 
 ## Limites desta etapa
 
-- Somente OD é produzida; pH e temperatura medida ficam para ampliação posterior.
 - O reinício recomeça sequência e gerador. Não há fila SQLite, estado durável,
   reenvio, quarentena nem ACK de aplicação nesta tarefa.
+- OD, pH e temperatura são valores mockados sem unidade, faixa científica,
+  calibração ou vínculo com sensor real.
 - Não há leitura de comandos, setpoint, bombas, API, banco, SSE ou hardware real.
 - Falha de conexão ou publicação encerra o processo; um supervisor pode iniciá-lo
   novamente. Os cenários configuráveis apenas simulam pausa ou encerramento e não

@@ -81,6 +81,31 @@ class SimulatorSettings(BaseSettings):
         le=0.1,
         validation_alias="SIMULATOR_OD_NOISE",
     )
+    ph_baseline: float = Field(default=7.0, validation_alias="SIMULATOR_PH_BASELINE")
+    ph_variation: float = Field(
+        default=0.15,
+        ge=0.0,
+        validation_alias="SIMULATOR_PH_VARIATION",
+    )
+    ph_noise: float = Field(
+        default=0.02,
+        ge=0.0,
+        validation_alias="SIMULATOR_PH_NOISE",
+    )
+    temperature_baseline: float = Field(
+        default=30.0,
+        validation_alias="SIMULATOR_TEMPERATURE_BASELINE",
+    )
+    temperature_variation: float = Field(
+        default=0.5,
+        ge=0.0,
+        validation_alias="SIMULATOR_TEMPERATURE_VARIATION",
+    )
+    temperature_noise: float = Field(
+        default=0.1,
+        ge=0.0,
+        validation_alias="SIMULATOR_TEMPERATURE_NOISE",
+    )
     max_messages: int | None = Field(
         default=None,
         gt=0,

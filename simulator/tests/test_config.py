@@ -17,6 +17,7 @@ def test_defaults_match_mosquitto_acl_identity_and_topic() -> None:
     assert settings.mqtt_username == settings.equipment_id
     assert settings.telemetry_topic == "evolver/v1/evolver-sim-01/telemetry"
     assert settings.vial_ids == ("vial-01", "vial-02", "vial-03")
+    assert (settings.ph_baseline, settings.temperature_baseline) == (7.0, 30.0)
 
 
 def test_password_is_required() -> None:
@@ -32,6 +33,10 @@ def test_password_is_required() -> None:
         ("od_variation", -0.1),
         ("od_noise", -0.1),
         ("od_noise", 0.2),
+        ("ph_variation", -0.1),
+        ("ph_noise", -0.1),
+        ("temperature_variation", -0.1),
+        ("temperature_noise", -0.1),
         ("max_messages", 0),
         ("mqtt_protocol_version", 4),
         ("mqtt_host", "  "),

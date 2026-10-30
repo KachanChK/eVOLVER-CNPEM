@@ -145,10 +145,12 @@ class MqttPublisher:
             raise MqttPublishError(f"MQTT PUBACK rejected message {info.mid}: {reason_code}")
 
         LOGGER.info(
-            "Telemetria publicada event_id=%s sequence=%s vial_id=%s topic=%s",
+            "Telemetria publicada event_id=%s sequence=%s vial_id=%s "
+            "measurement_type=%s topic=%s",
             event.event_id,
             event.sequence,
             event.vial_id,
+            event.measurement_type,
             self._settings.telemetry_topic,
         )
 
