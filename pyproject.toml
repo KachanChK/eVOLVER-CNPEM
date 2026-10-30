@@ -20,7 +20,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/contracts/tests"]
+testpaths = ["packages/contracts/tests", "simulator/tests"]
 
 [tool.ruff]
 target-version = "py312"
