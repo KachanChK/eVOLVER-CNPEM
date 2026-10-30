@@ -116,16 +116,22 @@ use `docker compose down -v` como método de restauração: ele remove o volume.
 
 ## Aplicação
 
-Simulador, ingestão, API e frontend ainda não existem como serviços executáveis.
-Quando forem implementados pelas tasks correspondentes, o desenvolvimento diário
-usará a infraestrutura em Compose e o código Python/Vue executado na máquina.
+O desenvolvimento diário usa a infraestrutura em Compose e o código Python/Vue
+executado na máquina. Cada projeto Python tem seu próprio pacote no workspace `uv`
+da raiz.
 
-Os comandos previstos abaixo são apenas referência e ainda não funcionam porque os
-pontos de entrada e o projeto Vue não foram implementados. Cada projeto Python tem
-seu próprio pacote no workspace `uv` da raiz:
+A ingestão já existe. Com as migrações aplicadas, cadastre o equipamento simulado e
+inicie o processo; detalhes em [ingestão](../backend/src/evolver/ingestion/README.md):
 
 ```bash
-uv run --package evolver-cnpem-backend python -m evolver.ingestion
+uv run --env-file .env --package evolver-cnpem-backend python -m evolver.db.seed
+uv run --env-file .env --package evolver-cnpem-backend python -m evolver.ingestion
+```
+
+Simulador, API e frontend ainda não existem como serviços executáveis. Os comandos
+previstos abaixo são apenas referência e ainda não funcionam:
+
+```bash
 uv run --package evolver-cnpem-backend uvicorn evolver.api.main:app --reload
 uv run --package evolver-cnpem-simulator python -m evolver_simulator
 ```
