@@ -22,7 +22,6 @@ from evolver.db.models import (
 )
 from evolver.db.queries import get_current_measurements, get_measurement_history
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 

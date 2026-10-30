@@ -22,7 +22,9 @@ serviços.
 
 O banco de aplicação tem migrations Alembic em `backend/migrations/`, incluindo
 metadados, medições em hypertable TimescaleDB, IDs processados, comandos e auditoria.
-Simulador, ingestão, API e frontend seguem sem pontos de entrada executáveis.
+A [ingestão](backend/src/evolver/ingestion/README.md) recebe a telemetria MQTT, grava
+no banco e confirma depois do commit. Simulador, API e frontend seguem sem pontos de
+entrada executáveis.
 
 ## Preparar a máquina
 

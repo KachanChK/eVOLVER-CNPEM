@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator, FormatChecker
+from pydantic import TypeAdapter, ValidationError
+
 from evolver_contracts.models import (
     JSON_SCHEMA_DIALECT,
     CommandPayload,
@@ -15,8 +18,6 @@ from evolver_contracts.models import (
     TelemetryRejection,
     schema_sources,
 )
-from jsonschema import Draft202012Validator, FormatChecker
-from pydantic import TypeAdapter, ValidationError
 
 CONTRACTS_ROOT = Path(__file__).resolve().parents[1] / "src" / "evolver_contracts"
 FIXTURES_ROOT = Path(__file__).with_name("fixtures")

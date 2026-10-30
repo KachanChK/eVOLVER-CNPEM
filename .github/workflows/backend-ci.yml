@@ -39,7 +39,14 @@ jobs:
       - name: Verificar o codigo com Ruff
         run: >-
           uv run --locked --all-packages ruff check
-          backend/src simulator/src packages/contracts/src packages/contracts/tests
+          backend/src backend/migrations backend/tests simulator/src
+          packages/contracts/src packages/contracts/tests
 
       - name: Executar testes e validar schemas
         run: uv run --locked --all-packages pytest packages/contracts/tests
+
+      # Sem EVOLVER_TEST_DATABASE_URL e EVOLVER_TEST_MQTT_HOST os testes de integracao
+      # sao ignorados; aqui rodam os testes unitarios da ingestao e do modelo.
+      - name: Executar testes do backend
+        working-directory: backend
+        run: uv run --locked --all-packages pytest

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "API e ingestão do piloto simulado eVOLVER CNPEM"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "aiomqtt>=2.3,<3",
   "evolver-contracts",
   "psycopg[binary]>=3.2,<4",
   "sqlalchemy>=2.0,<3",
@@ -23,7 +24,10 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-markers = ["integration: requires a disposable PostgreSQL + TimescaleDB database"]
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "integration: requires a disposable TimescaleDB database (and Mosquitto for MQTT tests)",
+]
 
 [build-system]
 requires = ["setuptools>=75"]
