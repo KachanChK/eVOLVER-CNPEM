@@ -39,7 +39,8 @@ jobs:
       - name: Verificar o codigo com Ruff
         run: >-
           uv run --locked --all-packages ruff check
-          backend/src simulator/src packages/contracts/src packages/contracts/tests
+          backend/src simulator/src simulator/tests
+          packages/contracts/src packages/contracts/tests
 
       - name: Executar testes e validar schemas
-        run: uv run --locked --all-packages pytest packages/contracts/tests
+        run: uv run --locked --all-packages pytest
