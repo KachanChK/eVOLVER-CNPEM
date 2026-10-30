@@ -5,8 +5,8 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-from sqlalchemy.engine import URL
 
+from evolver.db.connection import database_url_from_env
 from evolver.db.models import Base
 
 config = context.config
@@ -18,19 +18,11 @@ target_metadata = Base.metadata
 
 def database_url() -> str:
     """Use DATABASE_URL, Alembic's configured URL, or the local Compose defaults."""
-    configured_url = os.getenv("DATABASE_URL")
-    if not configured_url:
+    if not os.getenv("DATABASE_URL"):
         configured_url = config.get_main_option("sqlalchemy.url")
-    if configured_url:
-        return configured_url
-    return URL.create(
-        "postgresql+psycopg",
-        username=os.getenv("POSTGRES_USER", "evolver"),
-        password=os.getenv("POSTGRES_PASSWORD", "evolver-local-only"),
-        host=os.getenv("POSTGRES_HOST", "127.0.0.1"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        database=os.getenv("POSTGRES_DB", "evolver"),
-    ).render_as_string(hide_password=False)
+        if configured_url:
+            return configured_url
+    return database_url_from_env()
 
 
 def run_migrations_offline() -> None:

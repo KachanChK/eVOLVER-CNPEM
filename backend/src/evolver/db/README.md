@@ -4,6 +4,11 @@
 `backend/migrations/` são a fonte de criação e evolução do banco; não use
 `Base.metadata.create_all()` em produção ou nos ambientes do projeto.
 
+`connection.py` monta a URL do banco a partir de `DATABASE_URL` ou das variáveis
+`POSTGRES_*`, para Alembic, ingestão e scripts. `seed.py` cadastra o equipamento
+simulado `evolver-sim-01` e seus vials até existir o cadastro de metadados (E3 · T10):
+`uv run --env-file .env --package evolver-cnpem-backend python -m evolver.db.seed`.
+
 ## Entidades
 
 - `equipment` e `positions`: equipamento e posições/viais lógicos do piloto. Um vial
