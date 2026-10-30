@@ -17,7 +17,9 @@ uv run --env-file .env --package evolver-cnpem-backend python -m evolver.ingesti
 ```
 
 O `seed` cadastra o equipamento `evolver-sim-01` e o vial `vial-01` até existir o
-cadastro de metadados (E3 · T10). Ele pode ser repetido; use `--vial` para mais vials.
+cadastro de metadados (E3 · T10). Ele pode ser repetido; `--vial vial-02` acrescenta
+um vial na primeira posição livre. Um vial habilitado em outro equipamento não é
+cadastrado: o comando informa o conflito e termina com código 1.
 A ingestão lê `MQTT_HOST`, `MQTT_PORT`, `MQTT_INGESTION_PASSWORD` e o banco por
 `DATABASE_URL` ou pelas variáveis `POSTGRES_*`, com os mesmos padrões do `.env.example`.
 
@@ -32,8 +34,11 @@ oferece o `add_reader` exigido pelo `aiomqtt`. A execução foi verificada em Li
 2. `validation.py` confere, sem banco: tópico `evolver/v1/{equipment_id}/telemetry`,
    JSON UTF-8, `event_id` UUID, `schema_version`, o modelo `TelemetryEvent` em modo
    estrito (número em texto não vira número), `equipment_id` do payload igual ao do
-   tópico, valor finito e `generated_at` no máximo 5 minutos à frente do relógio
-   (`INGESTION_MAX_CLOCK_SKEW_SECONDS`).
+   tópico, valor finito, `sequence` dentro do limite `BIGINT` do banco
+   (9223372036854775807) e `generated_at` no máximo 5 minutos à frente do relógio
+   (`INGESTION_MAX_CLOCK_SKEW_SECONDS`). O detalhe da rejeição pode citar campos
+   recebidos; caracteres de controle (como NUL) e surrogates isolados aparecem como
+   `\uXXXX`, porque o PostgreSQL não os aceita em JSONB.
 3. `persistence.py` abre uma transação, localiza a posição habilitada pelo par
    `(equipment_id, vial_id)` e reserva o `event_id` em `processed_event_ids` com
    `INSERT ... ON CONFLICT DO NOTHING`. Se reservou, grava a medição na mesma transação;

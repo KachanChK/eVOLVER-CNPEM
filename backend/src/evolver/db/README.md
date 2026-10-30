@@ -8,6 +8,9 @@
 `POSTGRES_*`, para Alembic, ingestão e scripts. `seed.py` cadastra o equipamento
 simulado `evolver-sim-01` e seus vials até existir o cadastro de metadados (E3 · T10):
 `uv run --env-file .env --package evolver-cnpem-backend python -m evolver.db.seed`.
+Cada `--vial` novo ocupa o primeiro código livre (`P01`, `P02`, ...); códigos de
+posições desabilitadas continuam reservados. Vials já cadastrados são mantidos, e
+um vial habilitado em outro equipamento é informado como conflito (código de saída 1).
 
 ## Entidades
 
