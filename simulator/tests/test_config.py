@@ -39,6 +39,9 @@ def test_password_is_required() -> None:
         ("vial_ids_csv", ""),
         ("vial_ids_csv", "vial-01,vial-01"),
         ("vial_ids_csv", "vial com espaco"),
+        ("pause_after_messages", 0),
+        ("pause_seconds", 0),
+        ("fail_after_messages", 0),
         ("vial_ids_csv", ",".join(f"vial-{index}" for index in range(MAX_VIALS + 1))),
     ],
 )
@@ -51,3 +54,28 @@ def test_vial_ids_are_trimmed_and_keep_declared_order() -> None:
     settings = make_settings(vial_ids_csv=" vial-b, vial-a ")
 
     assert settings.vial_ids == ("vial-b", "vial-a")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"pause_after_messages": 2},
+        {"pause_seconds": 5},
+        {
+            "pause_after_messages": 2,
+            "pause_seconds": 5,
+            "fail_after_messages": 4,
+        },
+    ],
+)
+def test_incomplete_or_conflicting_scenario_is_rejected(overrides: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        make_settings(**overrides)
+
+
+def test_pause_and_failure_scenarios_are_valid_separately() -> None:
+    pause = make_settings(pause_after_messages=2, pause_seconds=5)
+    failure = make_settings(fail_after_messages=3)
+
+    assert (pause.pause_after_messages, pause.pause_seconds) == (2, 5.0)
+    assert failure.fail_after_messages == 3

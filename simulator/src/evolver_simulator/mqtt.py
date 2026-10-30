@@ -37,6 +37,8 @@ class MqttPublisher:
         self._connect_finished = threading.Event()
         self._connected = threading.Event()
         self._connect_error: str | None = None
+        self._publish_results: dict[int, mqtt.ReasonCode] = {}
+        self._publish_results_lock = threading.Lock()
         self._loop_started = False
         self._client = client_factory(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -46,6 +48,7 @@ class MqttPublisher:
         self._client.username_pw_set(settings.mqtt_username, settings.mqtt_simulator_password)
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
+        self._client.on_publish = self._on_publish
 
     def _on_connect(
         self,
@@ -70,6 +73,17 @@ class MqttPublisher:
         _properties: mqtt.Properties | None,
     ) -> None:
         self._connected.clear()
+
+    def _on_publish(
+        self,
+        _client: mqtt.Client,
+        _userdata: Any,
+        mid: int,
+        reason_code: mqtt.ReasonCode,
+        _properties: mqtt.Properties | None,
+    ) -> None:
+        with self._publish_results_lock:
+            self._publish_results[mid] = reason_code
 
     def connect(self) -> None:
         self._connect_finished.clear()
@@ -123,6 +137,13 @@ class MqttPublisher:
         if not info.is_published():
             raise MqttPublishError("timed out waiting for MQTT PUBACK")
 
+        with self._publish_results_lock:
+            reason_code = self._publish_results.pop(info.mid, None)
+        if reason_code is None:
+            raise MqttPublishError(f"MQTT PUBACK result missing for message {info.mid}")
+        if reason_code.is_failure:
+            raise MqttPublishError(f"MQTT PUBACK rejected message {info.mid}: {reason_code}")
+
         LOGGER.info(
             "Telemetria publicada event_id=%s sequence=%s vial_id=%s topic=%s",
             event.event_id,
@@ -140,3 +161,5 @@ class MqttPublisher:
         finally:
             self._client.loop_stop()
             self._loop_started = False
+            with self._publish_results_lock:
+                self._publish_results.clear()

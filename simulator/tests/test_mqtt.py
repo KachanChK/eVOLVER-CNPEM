@@ -21,9 +21,20 @@ class FakeReasonCode:
 
 
 class FakeMessageInfo:
-    def __init__(self, *, rc: int = mqtt.MQTT_ERR_SUCCESS, published: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        rc: int = mqtt.MQTT_ERR_SUCCESS,
+        published: bool = True,
+        mid: int = 1,
+        reason_code: FakeReasonCode | None = None,
+        invoke_callback: bool = True,
+    ) -> None:
         self.rc = rc
         self._published = published
+        self.mid = mid
+        self.reason_code = reason_code or FakeReasonCode()
+        self.invoke_callback = invoke_callback
         self.wait_timeout: float | None = None
 
     def wait_for_publish(self, *, timeout: float) -> None:
@@ -46,6 +57,7 @@ class FakeClient:
         self.message_info = message_info or FakeMessageInfo()
         self.on_connect: Any = None
         self.on_disconnect: Any = None
+        self.on_publish: Any = None
         self.username: str | None = None
         self.password: str | None = None
         self.connect_call: tuple[Any, ...] | None = None
@@ -68,6 +80,14 @@ class FakeClient:
 
     def publish(self, *args: Any, **kwargs: Any) -> FakeMessageInfo:
         self.publish_call = (args, kwargs)
+        if self.message_info.rc == mqtt.MQTT_ERR_SUCCESS and self.message_info.invoke_callback:
+            self.on_publish(
+                self,
+                None,
+                self.message_info.mid,
+                self.message_info.reason_code,
+                None,
+            )
         return self.message_info
 
     def disconnect(self) -> None:
@@ -138,6 +158,28 @@ def test_publish_uses_contract_json_topic_qos_one_and_no_retain() -> None:
     assert kwargs["retain"] is False
     assert json.loads(kwargs["payload"])["measurement_type"] == "od"
     assert fake.message_info.wait_timeout == 10.0
+
+
+def test_negative_mqtt5_puback_is_reported_as_publish_failure() -> None:
+    message_info = FakeMessageInfo(
+        mid=17,
+        reason_code=FakeReasonCode(is_failure=True),
+    )
+    fake = FakeClient(message_info=message_info)
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+
+    with pytest.raises(MqttPublishError, match="PUBACK rejected message 17: not authorized"):
+        publisher.publish(make_event())
+
+
+def test_missing_puback_result_is_reported_as_publish_failure() -> None:
+    fake = FakeClient(message_info=FakeMessageInfo(mid=23, invoke_callback=False))
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+
+    with pytest.raises(MqttPublishError, match="PUBACK result missing for message 23"):
+        publisher.publish(make_event())
 
 
 def test_connect_return_code_failure_is_reported_without_starting_loop() -> None:

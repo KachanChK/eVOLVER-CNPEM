@@ -86,6 +86,21 @@ class SimulatorSettings(BaseSettings):
         gt=0,
         validation_alias="SIMULATOR_MAX_MESSAGES",
     )
+    pause_after_messages: int | None = Field(
+        default=None,
+        gt=0,
+        validation_alias="SIMULATOR_PAUSE_AFTER_MESSAGES",
+    )
+    pause_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        validation_alias="SIMULATOR_PAUSE_SECONDS",
+    )
+    fail_after_messages: int | None = Field(
+        default=None,
+        gt=0,
+        validation_alias="SIMULATOR_FAIL_AFTER_MESSAGES",
+    )
 
     @field_validator("mqtt_host", "mqtt_simulator_password")
     @classmethod
@@ -107,6 +122,18 @@ class SimulatorSettings(BaseSettings):
         invalid = [vial_id for vial_id in vial_ids if not IDENTIFIER_PATTERN.fullmatch(vial_id)]
         if invalid:
             raise ValueError(f"invalid vial identifier: {invalid[0]}")
+        return self
+
+    @model_validator(mode="after")
+    def validate_simulated_scenario(self) -> Self:
+        pause_is_partial = (self.pause_after_messages is None) != (self.pause_seconds is None)
+        if pause_is_partial:
+            raise ValueError(
+                "SIMULATOR_PAUSE_AFTER_MESSAGES and SIMULATOR_PAUSE_SECONDS "
+                "must be configured together",
+            )
+        if self.pause_after_messages is not None and self.fail_after_messages is not None:
+            raise ValueError("configure either a pause scenario or a failure scenario, not both")
         return self
 
     @property

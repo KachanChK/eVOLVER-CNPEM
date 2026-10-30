@@ -12,6 +12,10 @@ from .telemetry import OdTelemetryGenerator
 LOGGER = logging.getLogger(__name__)
 
 
+class SimulatedFailureError(RuntimeError):
+    """Falha deterministica solicitada pela configuracao do simulador."""
+
+
 class SimulatorRunner:
     """Conecta, publica periodicamente e encerra liberando o cliente MQTT."""
 
@@ -39,10 +43,27 @@ class SimulatorRunner:
             while not self._stop_event.is_set() and (limit is None or published < limit):
                 self._publisher.publish(self._generator.next_event())
                 published += 1
+
+                if self._settings.fail_after_messages == published:
+                    raise SimulatedFailureError(
+                        f"simulated failure after {published} published messages",
+                    )
                 if limit is not None and published >= limit:
                     break
-                if self._stop_event.wait(self._settings.interval_seconds):
+
+                wait_seconds = self._settings.interval_seconds
+                is_simulated_pause = self._settings.pause_after_messages == published
+                if is_simulated_pause:
+                    wait_seconds = self._settings.pause_seconds
+                    LOGGER.warning(
+                        "Pausa simulada de %s segundo(s) apos %s mensagem(ns)",
+                        wait_seconds,
+                        published,
+                    )
+                if self._stop_event.wait(wait_seconds):
                     break
+                if is_simulated_pause:
+                    LOGGER.info("Pausa simulada concluida; retomando publicacoes")
         finally:
             self._publisher.close()
 

@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from .config import SimulatorSettings
 from .mqtt import MqttConnectionError, MqttPublishError
-from .runner import SimulatorRunner
+from .runner import SimulatedFailureError, SimulatorRunner
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +54,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         runner.run(max_messages=args.max_messages)
+    except SimulatedFailureError as exc:
+        LOGGER.error("Cenario de falha simulada concluido: %s", exc)
+        return 3
     except (MqttConnectionError, MqttPublishError) as exc:
         LOGGER.error("Falha no transporte MQTT: %s", exc)
         return 1
