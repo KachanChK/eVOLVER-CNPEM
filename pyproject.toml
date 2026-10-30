@@ -25,6 +25,8 @@ testpaths = ["packages/contracts/tests"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+# Pacotes do workspace contam como first-party ao ordenar imports.
+src = ["backend/src", "simulator/src", "packages/contracts/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
