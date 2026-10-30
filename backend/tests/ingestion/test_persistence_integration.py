@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from evolver.db.models import AuditEvent, ExperimentRun, Measurement, Position, ProcessedEvent
 from evolver.db.queries import get_current_measurements, get_measurement_history
 from evolver.ingestion.persistence import Duplicate, Persisted, Quarantined, TelemetryStore
+from evolver.ingestion.service import Reply, process_message
 from evolver.ingestion.validation import (
+    MAX_SEQUENCE,
     AcceptedTelemetry,
     RejectedTelemetry,
     validate_telemetry,
@@ -218,3 +220,77 @@ def test_late_event_enters_history_without_replacing_current_reading(
     assert [row["event_id"] for row in current] == [latest.event.event_id]
     assert [row["event_id"] for row in history] == [late.event.event_id, latest.event.event_id]
     assert history[0]["received_at"] > history[1]["received_at"]
+
+
+def process(store: TelemetryStore, source: Source, **overrides: Any) -> tuple[Reply, UUID]:
+    defaults = {
+        "equipment_id": source.equipment_id,
+        "vial_id": source.vial_id,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+    payload = telemetry(**(defaults | overrides))
+    reply = process_message(
+        f"evolver/v1/{source.equipment_id}/telemetry",
+        encode(payload),
+        store,
+        max_clock_skew=timedelta(minutes=5),
+    )
+    return reply, UUID(payload["event_id"])
+
+
+def test_sequence_at_bigint_limit_is_persisted(
+    store: TelemetryStore, session_factory: sessionmaker[Session], source: Source
+) -> None:
+    reply, event_id = process(store, source, sequence=MAX_SEQUENCE)
+
+    assert reply.message.status == "persisted"
+    with session_factory() as session:
+        assert session.scalar(
+            select(Measurement.sequence).where(Measurement.event_id == event_id)
+        ) == MAX_SEQUENCE
+
+
+def test_sequence_above_bigint_is_quarantined_before_rejection(
+    store: TelemetryStore, session_factory: sessionmaker[Session], source: Source
+) -> None:
+    reply, event_id = process(store, source, sequence=MAX_SEQUENCE + 1)
+
+    assert reply.topic.endswith("/telemetry/rejection")
+    assert reply.message.reason_code == "schema_invalid"
+    assert ledger_outcome(session_factory, event_id) == "quarantined"
+    assert measurement_count(session_factory, event_id) == 0
+
+
+def test_failed_quarantine_commit_produces_no_rejection(
+    engine, session_factory: sessionmaker[Session], source: Source
+) -> None:
+    failing_factory = sessionmaker(engine)
+
+    def fail_commit(session: Session) -> None:
+        raise OperationalError("COMMIT", {}, Exception("simulated commit failure"))
+
+    event.listen(failing_factory, "before_commit", fail_commit)
+
+    with pytest.raises(OperationalError):
+        process(TelemetryStore(failing_factory), source, sequence=MAX_SEQUENCE + 1)
+
+
+def test_quarantine_with_nul_in_detail_is_committed(
+    store: TelemetryStore, session_factory: sessionmaker[Session], source: Source
+) -> None:
+    reply, event_id = process(store, source, **{"bad\x00key": 1})
+
+    assert reply.message.reason_code == "schema_invalid"
+    assert r"bad\u0000key" in reply.message.detail
+    assert len(reply.message.detail) <= 250
+    assert ledger_outcome(session_factory, event_id) == "quarantined"
+    with session_factory() as session:
+        audit = session.scalar(select(AuditEvent).where(AuditEvent.entity_id == str(event_id)))
+    assert audit.details["detail"] == reply.message.detail
+    # O payload guarda o texto JSON recebido, em que o NUL já vem como escape.
+    assert r"bad\u0000key" in audit.details["payload"]
+    # Reenvio responde com o mesmo detalhe gravado.
+    assert store.quarantine(
+        validated(source, event_id=str(event_id), **{"bad\x00key": 1}),
+        received_at=datetime.now(UTC),
+    ) == Quarantined(event_id, "schema_invalid", reply.message.detail)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal
@@ -29,6 +30,8 @@ type RejectionReason = Literal[
 
 SUPPORTED_SCHEMA_VERSION = "1.0"
 MAX_DETAIL_LENGTH = 250
+# measurements.sequence é BIGINT; acima disso a gravação falharia sem resposta.
+MAX_SEQUENCE = 2**63 - 1
 # Mesmo formato de Identifier no contrato; outro valor no tópico não pode ser respondido.
 _TOPIC_PATTERN = re.compile(
     r"^evolver/v1/(?P<equipment_id>[A-Za-z0-9][A-Za-z0-9._-]{0,63})/telemetry$"
@@ -68,10 +71,30 @@ def equipment_id_from_topic(topic: str) -> str | None:
 
 
 def short_detail(text: str) -> str:
-    text = " ".join(text.split())
-    if len(text) <= MAX_DETAIL_LENGTH:
-        return text
-    return text[: MAX_DETAIL_LENGTH - 3] + "..."
+    """Escape and fit a detail into the contract's 250 characters, never splitting an escape.
+
+    The detail may quote received field names. PostgreSQL rejects NUL in JSONB and
+    lone surrogates cannot be encoded, so control characters and surrogates are
+    written as `\\uXXXX`, still visible for diagnosis.
+    """
+    pieces = _escaped_chars(" ".join(text.split()))
+    if sum(len(piece) for piece in pieces) <= MAX_DETAIL_LENGTH:
+        return "".join(pieces)
+    kept: list[str] = []
+    length = 0
+    for piece in pieces:
+        if length + len(piece) > MAX_DETAIL_LENGTH - 3:
+            break
+        kept.append(piece)
+        length += len(piece)
+    return "".join(kept) + "..."
+
+
+def _escaped_chars(text: str) -> list[str]:
+    return [
+        f"\\u{ord(char):04x}" if unicodedata.category(char) in {"Cc", "Cs"} else char
+        for char in text
+    ]
 
 
 def validate_telemetry(
@@ -92,8 +115,8 @@ def validate_telemetry(
         data: Any = json.loads(raw_payload, parse_constant=str)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         return UncorrelatedTelemetry(topic, short_detail(f"payload não é JSON UTF-8: {error}"))
-    # PostgreSQL não aceita NUL em texto; o restante do payload é guardado na quarentena.
-    raw_payload = raw_payload.replace("\x00", "")
+    # O payload vai para a quarentena em JSONB, que não aceita NUL.
+    raw_payload = raw_payload.replace("\x00", "\\u0000")
 
     event_id = _event_id(data)
     if event_id is None:
@@ -132,6 +155,8 @@ def validate_telemetry(
         )
     if not math.isfinite(event.value):
         return reject("schema_invalid", "value deve ser um número finito", event)
+    if event.sequence > MAX_SEQUENCE:
+        return reject("schema_invalid", f"sequence deve ser no máximo {MAX_SEQUENCE}", event)
     if event.generated_at > now + max_clock_skew:
         return reject(
             "schema_invalid",
