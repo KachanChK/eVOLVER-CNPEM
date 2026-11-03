@@ -1,7 +1,5 @@
 #!/bin/sh
-# Verifica autenticação, ACLs e retenção do broker com os clientes de teste do Mosquitto.
-# Uso, com o Compose no ar:
-#   docker compose exec mosquitto sh /mosquitto/config/smoke-test.sh
+# Verifica autenticação, ACLs, fluxos principais e retenção do broker.
 set -u
 
 host=127.0.0.1
@@ -12,12 +10,10 @@ ing_pw=$MQTT_INGESTION_PASSWORD
 api_pw=$MQTT_API_PASSWORD
 failures=0
 
-# usuário senha tópico: imprime a primeira mensagem recebida em até 3 s.
 sub() {
   mosquitto_sub -V mqttv5 -h "$host" -u "$1" -P "$2" -t "$3" -q 1 -C 1 -W 3 2>/dev/null
 }
 
-# usuário senha tópico mensagem [opções extras do mosquitto_pub]
 pub() {
   user=$1 pw=$2 topic=$3 msg=$4
   shift 4
@@ -25,7 +21,6 @@ pub() {
     2>/dev/null
 }
 
-# Assina como ($1, $2) em $3, publica $7 como ($4, $5) em $6 e imprime o que chegou.
 exchange() {
   out=$(mktemp)
   sub "$1" "$2" "$3" >"$out" &
@@ -37,7 +32,6 @@ exchange() {
   rm -f "$out"
 }
 
-# descrição esperado obtido
 check() {
   if [ "$2" = "$3" ]; then
     echo "ok    - $1"
@@ -46,6 +40,11 @@ check() {
     failures=$((failures + 1))
   fi
 }
+
+echo "Fluxo temporário do simulador"
+check "simulador -> assinante: temperatura de teste" "37.0" \
+  "$(exchange evolver-ingestion "$ing_pw" "evolver/dev/+/telemetry" \
+    "$eq" "$sim_pw" "evolver/dev/$eq/telemetry" 37.0)"
 
 echo "Fluxos previstos no contrato"
 check "simulador -> ingestão: telemetry" "t1" \

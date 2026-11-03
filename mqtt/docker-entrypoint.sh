@@ -1,7 +1,5 @@
 #!/bin/sh
-# Gera o arquivo de senhas a partir do .env a cada início, copia a ACL e entrega o
-# processo ao entrypoint original da imagem. Os arquivos ficam só no contêiner, com
-# dono mosquitto e permissão 0600, como o Mosquitto exige.
+# Gera credenciais locais dentro do contêiner e inicia o Mosquitto.
 set -eu
 
 passwd_file=/mosquitto/auth/passwd

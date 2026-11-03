@@ -13,16 +13,17 @@ serviços.
 
 ## Estado atual
 
-`compose.yaml` inicia a infraestrutura local:
+O broker e o banco possuem ciclos de vida independentes:
 
-| Serviço | Imagem fixada | Porta local | Persistência |
+| Serviço | Compose | Porta local | Persistência |
 | --- | --- | --- | --- |
-| Mosquitto | `eclipse-mosquitto:2.0.22` | `127.0.0.1:1883` | volume `mosquitto_data` |
-| PostgreSQL + TimescaleDB | `timescale/timescaledb:2.31.0-pg17` | `127.0.0.1:5432` | volume `postgres_data` |
+| Mosquitto | `mqtt/compose.yaml` | `127.0.0.1:1883` | volume `mosquitto_data` |
+| PostgreSQL + TimescaleDB | `compose.yaml` | `127.0.0.1:5432` | volume `postgres_data` |
 
 O banco de aplicação tem migrations Alembic em `backend/migrations/`, incluindo
 metadados, medições em hypertable TimescaleDB, IDs processados, comandos e auditoria.
-Simulador, ingestão, API e frontend seguem sem pontos de entrada executáveis.
+O simulador possui um publicador inicial de temperatura; ingestão, API e frontend
+seguem sem pontos de entrada executáveis.
 
 ## Preparar a máquina
 
@@ -68,26 +69,19 @@ login pelo navegador. Para acessar o GitHub Project, acrescente o escopo com
 
 Pré-requisito: Docker Desktop em execução (ver [Preparar a máquina](#preparar-a-máquina)).
 
-No PowerShell:
+Para testar somente MQTT e o simulador no PowerShell:
 
 ```powershell
-Copy-Item .env.example .env
-docker compose config --quiet
+Copy-Item mqtt/.env.example mqtt/.env
+Copy-Item simulator/.env.example simulator/.env
+Set-Location mqtt
 docker compose up -d
 docker compose ps
 ```
 
-Em Bash:
-
-```bash
-cp .env.example .env
-docker compose config --quiet
-docker compose up -d
-docker compose ps
-```
-
-Os serviços devem aparecer como `healthy`. Diagnóstico, logs e parada estão em
-[operations/README.md](operations/README.md).
+O broker deve aparecer como `healthy`. O teste completo de envio e recebimento está
+em [plano-mqtt-independente.md](docs/plano-mqtt-independente.md). Banco, diagnóstico
+e parada estão documentados separadamente em [operations/README.md](operations/README.md).
 
 ## Verificar os contratos existentes
 
@@ -96,7 +90,7 @@ Com Python 3.12 e `uv` instalados, na raiz do repositório:
 ```bash
 uv sync --all-packages --group dev --frozen
 uv run --all-packages ruff check backend/src simulator/src packages/contracts/src packages/contracts/tests
-uv run --all-packages pytest packages/contracts/tests
+uv run --all-packages pytest packages/contracts/tests simulator/tests
 ```
 
 Os modelos Pydantic continuam sendo a fonte de verdade. A infraestrutura não muda
@@ -127,14 +121,15 @@ backend/                  pacote Python para API, ingestão e banco
   src/evolver/api/        reservado para FastAPI e SSE
   src/evolver/db/         reservado para SQLAlchemy e Alembic
   src/evolver/ingestion/  reservado para o processo de ingestão
-simulator/                projeto Python independente, ainda sem ponto de entrada
-  src/evolver_simulator/  reservado para o processo externo
+simulator/                projeto Python independente com publicador inicial
+  src/evolver_simulator/  publicador MQTT de temperatura de teste
+mqtt/                     serviço Mosquitto independente
 frontend/                 reservado para Vue 3 + Vite
   src/                    reservado para componentes Vue
   tests/                  reservado para testes da interface
-infra/                    configuração do broker e inicialização da extensão
+infra/                    inicialização da extensão do banco
 operations/               comandos de operação e diagnóstico
-compose.yaml              Mosquitto + PostgreSQL/TimescaleDB
+compose.yaml              PostgreSQL/TimescaleDB
 ```
 
 O navegador acessará apenas a API. Simulador e backend são projetos Python

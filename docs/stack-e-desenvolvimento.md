@@ -91,13 +91,13 @@ eVOLVER-CNPEM/
 │   └── tests/
 ├── simulator/               # projeto Python independente; serviço futuro
 │   └── src/evolver_simulator/ # simulador externo + futura fila SQLite
+├── mqtt/                    # Mosquitto independente: Compose, configuração e testes
 ├── frontend/                # Vue 3 + Vite (package.json, package-lock.json)
 │   ├── src/
 │   └── tests/
 ├── infra/
-│   ├── mosquitto/           # mosquitto.conf
 │   └── db/                  # scripts de inicialização (extensão timescaledb)
-├── compose.yaml             # dependências: mosquitto + timescaledb
+├── compose.yaml             # serviço local de banco
 ├── compose.full.yaml        # serviços da aplicação (override para o modo completo)
 ├── pyproject.toml            # workspace uv e ferramentas de desenvolvimento
 ├── uv.lock                   # lock compartilhado dos projetos Python
@@ -113,7 +113,15 @@ Os dois modos previstos rodam no mesmo computador e usam os mesmos nomes de vari
 
 ### Modo 1 — Dependências em Compose, código local (dia a dia)
 
-O Compose inicia Mosquitto e TimescaleDB; Python e Vue rodam diretamente na máquina, para depuração e recarga automática. Antes de executar, criar `compose.yaml`, configurar `.env` a partir de `.env.example` e implementar os pontos de entrada citados abaixo. Os comandos estão separados por terminal e diretório de trabalho.
+Mosquitto e TimescaleDB possuem Compose independentes; Python e Vue rodam diretamente na máquina, para depuração e recarga automática. Os comandos estão separados por terminal e diretório de trabalho.
+
+Na pasta `mqtt/`, preparar e iniciar exclusivamente o broker:
+
+```bash
+cp .env.example .env
+docker compose up -d
+docker compose ps
+```
 
 Na raiz do repositório:
 
@@ -159,7 +167,10 @@ Uso previsto: desenvolvimento, depuração e testes de integração com banco e 
 
 ### Modo 2 — Compose completo (reprodução)
 
-Todos os componentes em contêineres, para reproduzir o piloto em outra máquina ou executar a demonstração. Antes de executar, criar `compose.full.yaml`, as imagens da aplicação e o serviço de migração.
+Os componentes da aplicação ficam em contêineres para reproduzir o piloto em outra
+máquina ou executar a demonstração. O Mosquitto continua sendo iniciado separadamente
+por `mqtt/compose.yaml`. Antes de executar, criar `compose.full.yaml`, as imagens da
+aplicação e o serviço de migração.
 
 ```bash
 docker compose -f compose.yaml -f compose.full.yaml up --build
@@ -170,6 +181,6 @@ O arquivo completo deve incluir um serviço que execute `alembic upgrade head` a
 ### Regras comuns
 
 - Portas padrão: MQTT 1883, PostgreSQL 5432, API 8000, interface 5173 (dev) / 8080 (completo).
-- No Modo 2, usar volumes nomeados para banco, persistência do Mosquitto e fila SQLite do simulador. No Modo 1, a fila SQLite é um arquivo local do simulador. Em ambos, verificar reinício sem perder leituras pendentes.
+- Usar volumes nomeados independentes para banco e persistência do Mosquitto. No Modo 1, a futura fila SQLite será um arquivo local do simulador.
 - `docker compose down -v` apaga os volumes locais do Compose; usar somente quando se quiser recomeçar do zero. No Modo 1, isso não apaga automaticamente o arquivo SQLite fora do Compose.
 - Nenhuma credencial real no repositório: `.env.example` traz apenas valores de desenvolvimento.
