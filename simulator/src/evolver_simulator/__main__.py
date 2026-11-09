@@ -8,14 +8,15 @@ from datetime import UTC, datetime
 
 from paho.mqtt import client as mqtt
 
-TOPIC = "evolver/dev/evolver-sim-01/telemetry"
+EQUIPMENT_ID = "evolver-sim-01"
+TOPIC = f"evolver/dev/{EQUIPMENT_ID}/telemetry"
 TIMEOUT_SECONDS = 5
 
 
 def build_message(generated_at: datetime | None = None) -> dict[str, str | float]:
     timestamp = generated_at or datetime.now(UTC)
     return {
-        "equipment_id": "evolver-sim-01",
+        "equipment_id": EQUIPMENT_ID,
         "measurement": "temperature",
         "value": 37.0,
         "unit": "celsius",
@@ -25,7 +26,6 @@ def build_message(generated_at: datetime | None = None) -> dict[str, str | float
 
 def main() -> int:
     host = os.getenv("MQTT_HOST", "127.0.0.1")
-    username = os.getenv("MQTT_USERNAME", "evolver-sim-01")
     password = os.getenv("MQTT_SIMULATOR_PASSWORD")
 
     if not password:
@@ -40,6 +40,7 @@ def main() -> int:
 
     connected = threading.Event()
     connection_error: list[str] = []
+    publish_error: list[str] = []
 
     def on_connect(
         client: mqtt.Client,
@@ -53,13 +54,25 @@ def main() -> int:
             connection_error.append(str(reason_code))
         connected.set()
 
+    def on_publish(
+        client: mqtt.Client,
+        userdata: object,
+        mid: int,
+        reason_code: mqtt.ReasonCode,
+        properties: mqtt.Properties,
+    ) -> None:
+        del client, userdata, mid, properties
+        if reason_code.is_failure:
+            publish_error.append(str(reason_code))
+
     client = mqtt.Client(
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-        client_id=username,
+        client_id=EQUIPMENT_ID,
         protocol=mqtt.MQTTv5,
     )
-    client.username_pw_set(username, password)
+    client.username_pw_set(EQUIPMENT_ID, password)
     client.on_connect = on_connect
+    client.on_publish = on_publish
     loop_started = False
 
     try:
@@ -72,14 +85,16 @@ def main() -> int:
         if connection_error:
             raise ConnectionError(f"conexão recusada pelo broker: {connection_error[0]}")
 
-        print(f"Conectado ao MQTT em {host}:{port} como {username}.")
+        print(f"Conectado ao MQTT em {host}:{port} como {EQUIPMENT_ID}.")
         payload = json.dumps(build_message(), ensure_ascii=False, separators=(",", ":"))
         publication = client.publish(TOPIC, payload, qos=1, retain=False)
-        print(f"Mensagem enviada para {TOPIC}: {payload}")
         publication.wait_for_publish(timeout=TIMEOUT_SECONDS)
         if not publication.is_published():
             raise TimeoutError("PUBACK não recebido em 5 segundos")
+        if publish_error:
+            raise ConnectionError(f"broker rejeitou a publicação: {publish_error[0]}")
 
+        print(f"Mensagem enviada para {TOPIC}: {payload}")
         print("PUBACK recebido: o Mosquitto confirmou o transporte da publicação.")
         return 0
     except Exception as exc:
