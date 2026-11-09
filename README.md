@@ -38,7 +38,7 @@ Docker Desktop iniciado e `uv` instalado.
 3. Aplique as migrações do banco:
 
    ```powershell
-   uv run --env-file backend/.env --package evolver-cnpem-backend alembic upgrade head
+   uv run --env-file backend/.env --package evolver-cnpem-backend alembic -c backend/alembic.ini upgrade head
    ```
 
    A migração que simplifica o schema recusa um banco antigo que contenha dados.

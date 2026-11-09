@@ -4,7 +4,7 @@ Com o TimescaleDB saudável, na raiz do repositório:
 
 ```powershell
 uv sync --all-packages --group dev --frozen
-uv run --env-file backend/.env --package evolver-cnpem-backend alembic upgrade head
+uv run --env-file backend/.env --package evolver-cnpem-backend alembic -c backend/alembic.ini upgrade head
 ```
 
 Copie `backend/.env.example` para `backend/.env` antes de executar. A migração inicial

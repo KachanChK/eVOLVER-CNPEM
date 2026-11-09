@@ -24,7 +24,6 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", database_url)
     backend_root = Path(__file__).resolve().parents[2]
     config = Config(str(backend_root / "alembic.ini"))
-    config.set_main_option("script_location", str(backend_root / "migrations"))
     command.upgrade(config, "head")
 
     engine = create_engine(database_url)
@@ -95,7 +94,6 @@ def test_simplification_refuses_existing_data(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("DATABASE_URL", database_url)
     backend_root = Path(__file__).resolve().parents[2]
     config = Config(str(backend_root / "alembic.ini"))
-    config.set_main_option("script_location", str(backend_root / "migrations"))
     command.upgrade(config, "20261027_01")
     engine = create_engine(database_url)
     with engine.begin() as connection:
