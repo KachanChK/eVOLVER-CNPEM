@@ -1,9 +1,34 @@
 # Operação do ambiente local
 
-Execute os comandos na raiz do repositório. O Docker Desktop com Compose v2 é
-pré-requisito. Copie `.env.example` para `.env` antes da primeira execução; os
-valores fornecidos são exclusivos para desenvolvimento local. Os comandos abaixo
-estão em uma linha para funcionar tanto no PowerShell quanto em Bash.
+O Docker Desktop com Compose v2 é pré-requisito. Banco e MQTT possuem arquivos
+Compose independentes. Os valores de `.env.example` são exclusivos para
+desenvolvimento local.
+
+## Serviço MQTT independente
+
+Execute dentro de `mqtt/`:
+
+```powershell
+Copy-Item .env.example .env
+docker compose config --quiet
+docker compose up -d
+docker compose ps
+docker compose exec mosquitto sh /mosquitto/config/smoke-test.sh
+```
+
+O broker deve aparecer como `healthy`. O teste completo com o simulador está em
+[`docs/plano-mqtt-independente.md`](../docs/plano-mqtt-independente.md).
+
+Para encerrar somente o MQTT, preservando seu volume:
+
+```powershell
+docker compose down
+```
+
+## Serviço de banco
+
+Os comandos das seções seguintes devem ser executados na raiz do repositório, após
+copiar `.env.example` para `.env`.
 
 ## Validar a configuração
 
@@ -18,27 +43,10 @@ Esse comando valida a interpolação e a estrutura do Compose sem iniciar servi�
 ```bash
 docker compose up -d
 docker compose ps
-docker compose logs --tail=100 mosquitto timescaledb
+docker compose logs --tail=100 timescaledb
 ```
 
-Espere ambos os serviços aparecerem como `healthy` antes de continuar.
-
-## Diagnóstico do Mosquitto
-
-```bash
-docker compose exec mosquitto sh -c 'mosquitto_pub -V mqttv5 -h 127.0.0.1 -p 1883 -u evolver-health -P "$MQTT_HEALTH_PASSWORD" -t evolver/health -m diagnostic -q 1'
-```
-
-O sucesso confirma que o broker aceitou uma publicação MQTT 5 autenticada, QoS 1 e
-não retida. Não confirma persistência no banco nem processamento por uma aplicação.
-Para conferir autenticação e ACLs por tópico:
-
-```bash
-docker compose exec mosquitto sh /mosquitto/config/smoke-test.sh
-```
-
-Se o Mosquitto não iniciar após atualizar o repositório, confira se o `.env` tem as
-variáveis `MQTT_*_PASSWORD` de `.env.example`.
+Espere o serviço aparecer como `healthy` antes de continuar.
 
 ## Diagnóstico do TimescaleDB
 
@@ -116,13 +124,12 @@ use `docker compose down -v` como método de restauração: ele remove o volume.
 
 ## Aplicação
 
-Simulador, ingestão, API e frontend ainda não existem como serviços executáveis.
-Quando forem implementados pelas tasks correspondentes, o desenvolvimento diário
-usará a infraestrutura em Compose e o código Python/Vue executado na máquina.
+O simulador possui um ponto de entrada mínimo que publica uma temperatura de teste.
+Ingestão, API e frontend ainda não existem como serviços executáveis.
 
-Os comandos previstos abaixo são apenas referência e ainda não funcionam porque os
-pontos de entrada e o projeto Vue não foram implementados. Cada projeto Python tem
-seu próprio pacote no workspace `uv` da raiz:
+Cada projeto Python tem seu próprio pacote no workspace `uv` da raiz. O comando do
+simulador funciona após iniciar o Compose independente em `mqtt/`; os demais ainda
+são apenas referência:
 
 ```bash
 uv run --package evolver-cnpem-backend python -m evolver.ingestion
@@ -136,6 +143,6 @@ npm ci
 npm run dev
 ```
 
-O futuro `compose.full.yaml` será um segundo arquivo, aplicado junto a
-`compose.yaml`, somente depois que existirem Dockerfiles e pontos de entrada reais.
-Não há modo de pilha completa validado nesta etapa.
+O futuro `compose.full.yaml` será preparado somente depois que existirem Dockerfiles
+e pontos de entrada reais. O Mosquitto continuará com ciclo de vida independente em
+`mqtt/`. Não há modo de pilha completa validado nesta etapa.
