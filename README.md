@@ -10,11 +10,63 @@ Cada execução do simulador envia **37 °C** para um frasco (`vial`). O Mosquit
 banco rodam no Docker Desktop. A ingestão e o simulador rodam em terminais no Windows.
 Ainda não há interface web funcional.
 
-## 1. Preparar o projeto
+## 1. Instalar o Docker Desktop no Windows
 
-Você precisa de **Docker Desktop em execução**, **PowerShell** e **uv**. Abra o
-PowerShell na pasta que contém este README. Todos os comandos abaixo partem dessa
-pasta, a raiz do repositório.
+Se o Docker Desktop já abre e mostra o mecanismo em execução, vá para a etapa 2.
+
+1. Abra o **PowerShell como administrador** e verifique o WSL com `wsl --version`.
+   Se o WSL ainda não estiver instalado, execute `wsl --install` e **reinicie o
+   Windows**. Se já estiver instalado, execute `wsl --update`. O Docker usa WSL 2
+   para rodar os contêineres Linux deste projeto.
+2. Baixe o instalador na [página oficial do Docker Desktop para Windows](https://docs.docker.com/desktop/setup/install/windows-install/).
+   Execute o instalador, selecione o mecanismo **WSL 2** quando solicitado e conclua
+   a instalação. Reinicie o Windows se o instalador pedir.
+3. Abra **Docker Desktop** pelo menu Iniciar. Aguarde até ele indicar que está em
+   execução. Em **Settings → General**, confirme o uso do mecanismo WSL 2, se essa
+   opção aparecer.
+4. Abra um novo PowerShell comum e confirme que o Docker responde:
+
+   ```powershell
+   docker info
+   docker compose version
+   ```
+
+Se o Docker mostrar **“Virtual Machine Platform is not enabled”**, abra o PowerShell
+como administrador, execute o comando abaixo e **reinicie o Windows**. Depois, abra
+o Docker Desktop novamente:
+
+```powershell
+Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All
+```
+
+Se o Docker ainda não iniciar, confira se a virtualização do processador está
+habilitada no BIOS/UEFI, conforme os [requisitos do Docker](https://docs.docker.com/desktop/setup/install/windows-install/)
+e o [guia do WSL da Microsoft](https://learn.microsoft.com/windows/wsl/install).
+
+## 2. Instalar o uv e preparar o Python
+
+Se `uv --version` já funcionar no PowerShell, vá para a etapa 3. Caso contrário,
+instale o `uv` pelo [instalador oficial para Windows](https://docs.astral.sh/uv/getting-started/installation/):
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Feche e abra o PowerShell após instalar. Confira a instalação e prepare o Python 3.12:
+
+```powershell
+uv --version
+uv python install 3.12
+```
+
+O `uv` gerencia o Python usado pelo projeto; não é necessário instalar Python por
+outro instalador.
+
+## 3. Preparar os arquivos do projeto
+
+Abra a pasta `eVOLVER-CNPEM` que contém este README no Explorador de Arquivos,
+digite `powershell` na barra de endereço e pressione Enter. Todos os próximos
+comandos devem ser executados **nessa pasta**, a raiz do repositório.
 
 Crie os arquivos de configuração local. Os comandos preservam arquivos que você já
 tenha criado:
@@ -31,7 +83,7 @@ Os exemplos usam `127.0.0.1`, PostgreSQL na porta `5432` e MQTT na `1883`. Se vo
 mudou senhas ou portas nos seus arquivos `.env`, mantenha os valores correspondentes
 em `backend/.env` e `simulator/.env`.
 
-## 2. Iniciar o banco e o MQTT
+## 4. Iniciar o banco e o MQTT
 
 ```powershell
 docker compose up -d --wait
@@ -41,7 +93,7 @@ docker compose --env-file mqtt/.env -f mqtt/compose.yaml up -d --wait
 Espere os dois comandos terminarem com os serviços saudáveis (`healthy`). Eles criam
 dois projetos separados no Docker Desktop: `evolver-cnpem` e `evolver-mqtt`.
 
-## 3. Criar as tabelas
+## 5. Criar as tabelas
 
 ```powershell
 uv run --env-file backend/.env --package evolver-cnpem-backend alembic -c backend/alembic.ini upgrade head
@@ -52,7 +104,7 @@ atualizado, o Alembic não recria as tabelas nem apaga as leituras. **Se aparece
 erro dizendo que uma tabela antiga contém dados, pare aqui:** a migração se recusa a
 apagá-los. Consulte [migrações do banco](backend/migrations/README.md).
 
-## 4. Cadastrar um frasco de teste
+## 6. Cadastrar um frasco de teste
 
 Veja primeiro se já existe um frasco para o simulador:
 
@@ -69,7 +121,7 @@ docker compose exec timescaledb psql -U evolver -d evolver -c "INSERT INTO vials
 Anote o `vial_id` existente ou retornado pelo cadastro. Abra `simulator/.env` e defina
 `VIAL_ID` com esse número. Em um banco novo, ele normalmente será `1`.
 
-## 5. Receber e enviar a temperatura
+## 7. Receber e enviar a temperatura
 
 Abra um **primeiro PowerShell** na raiz do repositório e inicie a ingestão:
 
@@ -90,9 +142,10 @@ O simulador deve mostrar `PUBACK recebido`; o primeiro terminal deve mostrar
 execução envia uma mensagem e encerra. O PUBACK confirma a entrega ao Mosquitto;
 confirme a gravação no terminal da ingestão ou no banco.
 
-## 6. Visualizar o banco no DBeaver
+## 8. Visualizar o banco no DBeaver
 
-No DBeaver, selecione **Nova conexão → PostgreSQL** e preencha:
+Se ainda não tiver o DBeaver, instale o [DBeaver Community para Windows](https://dbeaver.io/download/).
+Depois, selecione **Nova conexão → PostgreSQL** e preencha:
 
 | Campo | Valor dos arquivos de exemplo |
 | --- | --- |
