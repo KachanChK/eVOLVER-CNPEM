@@ -1,101 +1,186 @@
 # eVOLVER CNPEM
 
-Este repositório reúne a primeira prova local do fluxo de temperatura:
+Esta versão permite testar o caminho de uma leitura de temperatura:
 
 ```text
 Simulador Python → Mosquitto (MQTT) → ingestão Python → PostgreSQL + TimescaleDB
 ```
 
-O simulador envia uma leitura de 37 °C por execução. A ingestão valida a mensagem e
-a grava em `temperature_readings`, vinculada a um registro em `vials`. O banco e o
-broker rodam em contêineres independentes; simulador e ingestão rodam no Windows com
-Python 3.12 e `uv`.
+Cada execução do simulador envia **37 °C** para um frasco (`vial`). O Mosquitto e o
+banco rodam no Docker Desktop. A ingestão e o simulador rodam em terminais no Windows.
+Ainda não há interface web funcional.
 
-## Teste local completo
+## 1. Preparar o projeto
 
-Execute os comandos no PowerShell, a partir da raiz do repositório. É necessário
-Docker Desktop iniciado e `uv` instalado.
+Você precisa de **Docker Desktop em execução**, **PowerShell** e **uv**. Abra o
+PowerShell na pasta que contém este README. Todos os comandos abaixo partem dessa
+pasta, a raiz do repositório.
 
-1. Prepare as configurações locais e as dependências:
+Crie os arquivos de configuração local. Os comandos preservam arquivos que você já
+tenha criado:
 
-   ```powershell
-   if (!(Test-Path .env)) { Copy-Item .env.example .env }
-   if (!(Test-Path mqtt/.env)) { Copy-Item mqtt/.env.example mqtt/.env }
-   if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
-   if (!(Test-Path simulator/.env)) { Copy-Item simulator/.env.example simulator/.env }
-   uv sync --all-packages --group dev --frozen
-   ```
+```powershell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+if (!(Test-Path mqtt/.env)) { Copy-Item mqtt/.env.example mqtt/.env }
+if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
+if (!(Test-Path simulator/.env)) { Copy-Item simulator/.env.example simulator/.env }
+uv sync --all-packages --group dev --frozen
+```
 
-   Ajuste senhas e portas de forma correspondente nos arquivos de cada serviço.
+Os exemplos usam `127.0.0.1`, PostgreSQL na porta `5432` e MQTT na `1883`. Se você
+mudou senhas ou portas nos seus arquivos `.env`, mantenha os valores correspondentes
+em `backend/.env` e `simulator/.env`.
 
-2. Inicie banco e broker e espere ambos ficarem saudáveis:
+## 2. Iniciar o banco e o MQTT
 
-   ```powershell
-   docker compose up -d --wait
-   docker compose -f mqtt/compose.yaml --env-file mqtt/.env up -d --wait
-   ```
+```powershell
+docker compose up -d --wait
+docker compose --env-file mqtt/.env -f mqtt/compose.yaml up -d --wait
+```
 
-3. Aplique as migrações do banco:
+Espere os dois comandos terminarem com os serviços saudáveis (`healthy`). Eles criam
+dois projetos separados no Docker Desktop: `evolver-cnpem` e `evolver-mqtt`.
 
-   ```powershell
-   uv run --env-file backend/.env --package evolver-cnpem-backend alembic -c backend/alembic.ini upgrade head
-   ```
+## 3. Criar as tabelas
 
-   A migração que simplifica o schema recusa um banco antigo que contenha dados.
-   Consulte [migrações](backend/migrations/README.md) antes de converter um banco já
-   utilizado.
+```powershell
+uv run --env-file backend/.env --package evolver-cnpem-backend alembic -c backend/alembic.ini upgrade head
+```
 
-4. Cadastre um frasco de teste. O número retornado será o `VIAL_ID` do simulador:
+Isso cria `vials` e `temperature_readings`. Se executar novamente em um banco já
+atualizado, o Alembic não recria as tabelas nem apaga as leituras. **Se aparecer um
+erro dizendo que uma tabela antiga contém dados, pare aqui:** a migração se recusa a
+apagá-los. Consulte [migrações do banco](backend/migrations/README.md).
 
-   ```powershell
-   docker compose exec timescaledb psql -U evolver -d evolver -c "INSERT INTO vials (equipment_id, label, created_at) VALUES ('evolver-sim-01', 'Frasco de teste', now()) RETURNING vial_id;"
-   ```
+## 4. Cadastrar um frasco de teste
 
-   Se você já cadastrou um frasco para `evolver-sim-01`, pode usar o ID existente.
-   Ajuste `VIAL_ID` em `simulator/.env` para o número escolhido.
+Veja primeiro se já existe um frasco para o simulador:
 
-5. Deixe a ingestão aberta em um terminal:
+```powershell
+docker compose exec timescaledb psql -U evolver -d evolver -c "SELECT vial_id, equipment_id, label FROM vials;"
+```
 
-   ```powershell
-   uv run --env-file backend/.env --package evolver-cnpem-backend python -m evolver.ingestion
-   ```
+Se não houver um frasco com `equipment_id` igual a `evolver-sim-01`, cadastre um:
 
-   Ela deve mostrar `Ingestão MQTT pronta para temperaturas.`
+```powershell
+docker compose exec timescaledb psql -U evolver -d evolver -c "INSERT INTO vials (equipment_id, label, created_at) VALUES ('evolver-sim-01', 'Frasco de teste', now()) RETURNING vial_id;"
+```
 
-6. Em outro terminal, na raiz do repositório, publique a leitura:
+Anote o `vial_id` existente ou retornado pelo cadastro. Abra `simulator/.env` e defina
+`VIAL_ID` com esse número. Em um banco novo, ele normalmente será `1`.
 
-   ```powershell
-   uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator
-   ```
+## 5. Receber e enviar a temperatura
 
-   O simulador deve mostrar `PUBACK recebido`. A ingestão deve mostrar `Temperatura
-   gravada`. Cada nova execução gera outro `event_id` e outra linha.
+Abra um **primeiro PowerShell** na raiz do repositório e inicie a ingestão:
 
-7. Consulte o histórico:
+```powershell
+uv run --env-file backend/.env --package evolver-cnpem-backend python -m evolver.ingestion
+```
 
-   ```powershell
-   docker compose exec timescaledb psql -U evolver -d evolver -c "SELECT vial_id, temperature_celsius, generated_at, received_at FROM temperature_readings ORDER BY generated_at DESC LIMIT 10;"
-   ```
+Deixe esse terminal aberto. Ele deve mostrar `Ingestão MQTT pronta para temperaturas.`
 
-## Visualizar no DBeaver
+Abra um **segundo PowerShell**, também na raiz, e execute o simulador:
 
-Crie uma conexão **PostgreSQL** com host `127.0.0.1`, porta `5432`, banco `evolver`,
-usuário `evolver` e senha `evolver-local-only` (ou os valores de `.env`). A extensão
-TimescaleDB funciona dentro do PostgreSQL; não requer driver separado. Abra
-`evolver` → `Schemas` → `public` → `Tables` para ver `vials` e
-`temperature_readings`. A consulta sugerida em
-[banco de dados](backend/src/evolver/db/README.md) mostra leitura e frasco juntos.
+```powershell
+uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator
+```
 
-Para parar os serviços preservando os dados, interrompa a ingestão com `Ctrl+C` e
-execute `docker compose down` e `docker compose -f mqtt/compose.yaml --env-file
-mqtt/.env down`. Não use `down -v` para um banco que queira manter.
+O simulador deve mostrar `PUBACK recebido`; o primeiro terminal deve mostrar
+`Temperatura gravada`. Execute o simulador novamente para gerar outra leitura. Cada
+execução envia uma mensagem e encerra. O PUBACK confirma a entrega ao Mosquitto;
+confirme a gravação no terminal da ingestão ou no banco.
 
-## Limites desta prova
+## 6. Visualizar o banco no DBeaver
 
-O PUBACK confirma que o broker recebeu a publicação; ainda não há confirmação de
-gravação devolvida ao simulador, fila de reenvio ou envio contínuo. O tópico
-`evolver/dev` e o payload atual são temporários; o contrato MQTT `evolver/v1`, a API,
-a interface web, OD, pH e bombas continuam como etapas futuras. Os documentos em
-`docs/` descrevem o piloto completo, além do que já está executável.
+No DBeaver, selecione **Nova conexão → PostgreSQL** e preencha:
+
+| Campo | Valor dos arquivos de exemplo |
+| --- | --- |
+| Host | `127.0.0.1` |
+| Porta | `5432` |
+| Banco de dados | `evolver` |
+| Usuário | `evolver` |
+| Senha | `evolver-local-only` |
+
+Clique em **Testar conexão** e depois em **Concluir**. Se o DBeaver pedir o driver
+PostgreSQL, permita a instalação. O TimescaleDB é uma extensão do PostgreSQL e usa
+essa mesma conexão.
+
+No navegador do DBeaver, abra **evolver → Schemas → public → Tables**. Clique em
+`temperature_readings` e escolha **Visualizar dados**. A coluna `vial_id` liga cada
+leitura à tabela `vials`. Você também pode executar esta consulta em um editor SQL:
+
+```sql
+SELECT v.vial_id, v.label, t.temperature_celsius,
+       t.generated_at, t.received_at
+FROM temperature_readings AS t
+JOIN vials AS v USING (vial_id)
+ORDER BY t.generated_at DESC
+LIMIT 20;
+```
+
+Se estiver usando valores diferentes nos arquivos `.env`, use no DBeaver a porta,
+o banco, o usuário e a senha correspondentes. Depois de enviar outra leitura,
+atualize os dados da tabela no DBeaver.
+
+## Rodar os testes
+
+Na raiz do repositório, rode a verificação de código e os testes que não precisam de
+um banco descartável:
+
+```powershell
+uv run --frozen ruff check backend/src backend/tests simulator/src simulator/tests packages/contracts/src packages/contracts/tests
+uv run --frozen pytest packages/contracts/tests simulator/tests backend/tests/db -q
+```
+
+Sem configurar os bancos de teste, **dois testes de integração são ignorados**. Eles
+aplicam migrações e precisam de bancos separados do seu banco `evolver`. Para verificar
+o broker MQTT, com ele em execução, rode:
+
+```powershell
+docker compose --env-file mqtt/.env -f mqtt/compose.yaml exec mosquitto sh /mosquitto/config/smoke-test.sh
+```
+
+Para rodar também os **dois testes de integração do banco**, crie uma vez dois bancos
+descartáveis no contêiner (não use o banco `evolver` para isso):
+
+```powershell
+docker compose exec timescaledb createdb -U evolver evolver_temperature_test
+docker compose exec timescaledb createdb -U evolver evolver_migration_guard_test
+docker compose exec timescaledb psql -U evolver -d evolver_temperature_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+docker compose exec timescaledb psql -U evolver -d evolver_migration_guard_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+$env:EVOLVER_TEST_DATABASE_URL = "postgresql+psycopg://evolver:evolver-local-only@127.0.0.1:5432/evolver_temperature_test"
+$env:EVOLVER_TEST_GUARD_DATABASE_URL = "postgresql+psycopg://evolver:evolver-local-only@127.0.0.1:5432/evolver_migration_guard_test"
+uv run --frozen pytest backend/tests/db -q
+```
+
+Se a senha ou a porta do PostgreSQL forem diferentes, ajuste as duas URLs. Os nomes
+dos bancos são exclusivos para teste; não repita `createdb` se eles já existirem.
+Para remover **somente esses dois bancos de teste** ao terminar:
+
+```powershell
+docker compose exec timescaledb dropdb -U evolver evolver_temperature_test
+docker compose exec timescaledb dropdb -U evolver evolver_migration_guard_test
+Remove-Item Env:EVOLVER_TEST_DATABASE_URL
+Remove-Item Env:EVOLVER_TEST_GUARD_DATABASE_URL
+```
+
+## Parar e voltar depois
+
+Interrompa a ingestão com `Ctrl+C`. Para parar os contêineres sem apagar os dados:
+
+```powershell
+docker compose stop
+docker compose --env-file mqtt/.env -f mqtt/compose.yaml stop
+```
+
+Você também pode iniciar esses dois contêineres pelo Docker Desktop depois da
+primeira configuração. Para fazer outro teste, inicie **também a ingestão no terminal**
+antes de executar o simulador. Não use `docker compose down -v` se quiser preservar
+as leituras: `-v` remove o volume do banco.
+
+Esta etapa ainda não tem fila de reenvio, confirmação de gravação ao simulador, envio
+contínuo, OD, pH ou dados das bombas. Os documentos em `docs/` descrevem o piloto
+planejado além do que já funciona.
 
 Agentes de IA devem ler [AGENTS.md](AGENTS.md) antes de alterar o repositório.
