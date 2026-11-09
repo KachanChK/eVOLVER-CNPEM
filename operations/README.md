@@ -124,12 +124,12 @@ use `docker compose down -v` como método de restauração: ele remove o volume.
 
 ## Aplicação
 
-O simulador possui um ponto de entrada mínimo que publica uma temperatura de teste.
-Ingestão, API e frontend ainda não existem como serviços executáveis.
+O simulador publica uma temperatura de teste. A ingestão recebe MQTT e grava no
+banco; API e frontend ainda não existem como serviços executáveis.
 
 Cada projeto Python tem seu próprio pacote no workspace `uv` da raiz. O comando do
-simulador funciona após iniciar o Compose independente em `mqtt/`; os demais ainda
-são apenas referência:
+simulador e a ingestão funcionam após iniciar o Compose independente em `mqtt/` e
+o banco. Consulte o [teste completo](../README.md#teste-local-completo):
 
 ```bash
 uv run --package evolver-cnpem-backend python -m evolver.ingestion

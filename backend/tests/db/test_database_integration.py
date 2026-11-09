@@ -1,168 +1,110 @@
 from __future__ import annotations
 
+import json
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine
+from evolver.db.queries import get_temperature_history
+from evolver.ingestion.__main__ import store_message
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
-
-from evolver.db.models import (
-    Command,
-    Culture,
-    Equipment,
-    ExperimentRun,
-    Measurement,
-    Position,
-    ProcessedEvent,
-)
-from evolver.db.queries import get_current_measurements, get_measurement_history
-
-
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.integration
-def test_migration_quarantine_and_measurement_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     database_url = os.getenv("EVOLVER_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("set EVOLVER_TEST_DATABASE_URL to a disposable TimescaleDB database")
 
     monkeypatch.setenv("DATABASE_URL", database_url)
-    config = Config(str(BACKEND_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND_ROOT / "migrations"))
+    backend_root = Path(__file__).resolve().parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
     command.upgrade(config, "head")
 
     engine = create_engine(database_url)
+    with engine.begin() as connection:
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM timescaledb_information.hypertables "
+                    "WHERE hypertable_name = 'temperature_readings'"
+                )
+            ).scalar_one()
+            == 1
+        )
+        vial_id = connection.execute(
+            text(
+                "INSERT INTO vials (equipment_id, created_at) "
+                "VALUES ('evolver-sim-01', now()) RETURNING vial_id"
+            )
+        ).scalar_one()
+
+    message = {
+        "equipment_id": "evolver-sim-01",
+        "event_id": str(uuid4()),
+        "vial_id": vial_id,
+        "measurement": "temperature",
+        "value": 37.0,
+        "unit": "celsius",
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+    payload = json.dumps(message).encode()
+    topic = "evolver/dev/evolver-sim-01/telemetry"
+    assert store_message(engine, topic, payload) == "gravada"
+    assert store_message(engine, topic, payload) == "duplicada"
+    with pytest.raises(ValueError, match="topic"):
+        store_message(engine, "evolver/dev/another/telemetry", payload)
+    with pytest.raises(ValueError, match="unknown"):
+        store_message(engine, topic, json.dumps({**message, "vial_id": 999999}).encode())
+    with Session(engine) as session:
+        history = get_temperature_history(session, vial_id)
+        assert len(history) == 1
+        assert history[0].temperature_celsius == 37.0
+    with engine.begin() as connection:
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM temperature_readings WHERE event_id = :event_id"),
+                {"event_id": message["event_id"]},
+            ).scalar_one()
+            == 1
+        )
+        row = connection.execute(
+            text(
+                "SELECT vial_id, temperature_celsius, generated_at, received_at "
+                "FROM temperature_readings WHERE event_id = :event_id"
+            ),
+            {"event_id": message["event_id"]},
+        ).one()
+        assert row.vial_id == vial_id
+        assert row.temperature_celsius == 37.0
+        assert row.generated_at <= row.received_at
+    engine.dispose()
+
+
+@pytest.mark.integration
+def test_simplification_refuses_existing_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    database_url = os.getenv("EVOLVER_TEST_GUARD_DATABASE_URL")
+    if not database_url:
+        pytest.skip("set EVOLVER_TEST_GUARD_DATABASE_URL to another disposable database")
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    backend_root = Path(__file__).resolve().parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
+    command.upgrade(config, "20261027_01")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO equipment (id, created_at) VALUES (:id, now())"),
+            {"id": str(uuid4())},
+        )
+    with pytest.raises(Exception, match="contains data"):
+        command.upgrade(config, "head")
     with engine.connect() as connection:
-        transaction = connection.begin()
-        try:
-            now = datetime.now(UTC)
-            older_at = now - timedelta(seconds=1)
-            equipment_id = f"test-{uuid4()}"
-            position_id = uuid4()
-            older_event_id = uuid4()
-            latest_event_id = uuid4()
-            quarantined_event_id = uuid4()
-            culture_id = uuid4()
-            run_id = f"run-{uuid4()}"
-
-            with Session(
-                bind=connection,
-                join_transaction_mode="create_savepoint",
-            ) as session:
-                session.add(Equipment(id=equipment_id, created_at=now))
-                session.add(
-                    Position(
-                        id=position_id,
-                        equipment_id=equipment_id,
-                        position_code="A1",
-                        vial_id=f"vial-{uuid4()}",
-                        created_at=now,
-                    )
-                )
-                # Filhos antes dos pais: o flush precisa reordenar pelas relationships.
-                session.add_all(
-                    [
-                        Command(
-                            command_id=uuid4(),
-                            equipment_id=equipment_id,
-                            experiment_run_id=run_id,
-                            author_id="integration-test",
-                            target_type="position",
-                            target_id=str(position_id),
-                            action="noop",
-                            status="requested",
-                            created_at=now,
-                            expires_at=now + timedelta(minutes=1),
-                            updated_at=now,
-                        ),
-                        ExperimentRun(
-                            id=run_id,
-                            equipment_id=equipment_id,
-                            position_id=position_id,
-                            culture_id=culture_id,
-                            started_at=older_at,
-                        ),
-                        Culture(id=culture_id, vial_id=f"vial-{uuid4()}", created_at=now),
-                        ProcessedEvent(
-                            event_id=older_event_id,
-                            equipment_id=equipment_id,
-                            producer_id="integration-test",
-                            generated_at=older_at,
-                            received_at=now,
-                        ),
-                        ProcessedEvent(
-                            event_id=latest_event_id,
-                            equipment_id=equipment_id,
-                            producer_id="integration-test",
-                            generated_at=now,
-                            received_at=now,
-                        ),
-                        ProcessedEvent(
-                            event_id=quarantined_event_id,
-                            equipment_id="unknown-equipment",
-                            received_at=now,
-                            outcome="quarantined",
-                        ),
-                        Measurement(
-                            event_id=older_event_id,
-                            generated_at=older_at,
-                            received_at=now,
-                            equipment_id=equipment_id,
-                            position_id=position_id,
-                            producer_id="integration-test",
-                            sequence=1,
-                            measurement_type="od",
-                            value=0.25,
-                            schema_version="1.0",
-                        ),
-                        Measurement(
-                            event_id=latest_event_id,
-                            generated_at=now,
-                            received_at=now,
-                            equipment_id=equipment_id,
-                            position_id=position_id,
-                            experiment_run_id=run_id,
-                            producer_id="integration-test",
-                            sequence=2,
-                            measurement_type="od",
-                            value=0.5,
-                            schema_version="1.0",
-                        ),
-                    ]
-                )
-                session.flush()
-
-                current_unfiltered = get_current_measurements(session)
-                current_filtered = get_current_measurements(
-                    session,
-                    equipment_id=equipment_id,
-                    position_id=position_id,
-                    measurement_type="od",
-                )
-                history_unfiltered = get_measurement_history(session)
-                history_filtered = get_measurement_history(
-                    session,
-                    equipment_id=equipment_id,
-                    position_id=position_id,
-                    measurement_type="od",
-                    since=older_at,
-                    until=now + timedelta(seconds=1),
-                )
-
-                assert isinstance(current_unfiltered, list)
-                assert len(current_filtered) == 1
-                assert current_filtered[0]["event_id"] == latest_event_id
-                assert isinstance(history_unfiltered, list)
-                assert [row["event_id"] for row in history_filtered] == [
-                    older_event_id,
-                    latest_event_id,
-                ]
-        finally:
-            transaction.rollback()
+        assert connection.execute(text("SELECT count(*) FROM equipment")).scalar_one() >= 1
     engine.dispose()
