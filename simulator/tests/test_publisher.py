@@ -8,11 +8,14 @@ def test_builds_temperature_message_for_temporary_topic() -> None:
     generated_at = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
 
     message = publisher.build_message(generated_at)
+    event_id = message.pop("event_id")
+    assert isinstance(event_id, str)
 
     assert publisher.EQUIPMENT_ID == "evolver-sim-01"
     assert publisher.TOPIC == "evolver/dev/evolver-sim-01/telemetry"
     assert message == {
         "equipment_id": "evolver-sim-01",
+        "vial_id": 1,
         "measurement": "temperature",
         "value": 37.0,
         "unit": "celsius",
@@ -75,6 +78,7 @@ def test_rejects_failed_puback(monkeypatch, capsys) -> None:
             pass
 
     monkeypatch.setenv("MQTT_SIMULATOR_PASSWORD", "simulator-local-only")
+    monkeypatch.setenv("VIAL_ID", "1")
     monkeypatch.setattr(publisher.mqtt, "Client", FakeClient)
 
     assert publisher.main() == 1

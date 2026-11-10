@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from paho.mqtt import client as mqtt
 
@@ -13,10 +14,14 @@ TOPIC = f"evolver/dev/{EQUIPMENT_ID}/telemetry"
 TIMEOUT_SECONDS = 5
 
 
-def build_message(generated_at: datetime | None = None) -> dict[str, str | float]:
+def build_message(
+    generated_at: datetime | None = None, vial_id: int = 1
+) -> dict[str, str | float | int]:
     timestamp = generated_at or datetime.now(UTC)
     return {
         "equipment_id": EQUIPMENT_ID,
+        "event_id": str(uuid4()),
+        "vial_id": vial_id,
         "measurement": "temperature",
         "value": 37.0,
         "unit": "celsius",
@@ -27,9 +32,13 @@ def build_message(generated_at: datetime | None = None) -> dict[str, str | float
 def main() -> int:
     host = os.getenv("MQTT_HOST", "127.0.0.1")
     password = os.getenv("MQTT_SIMULATOR_PASSWORD")
+    vial_id_text = os.getenv("VIAL_ID")
 
     if not password:
         print("Erro: defina MQTT_SIMULATOR_PASSWORD no ambiente.", file=sys.stderr)
+        return 1
+    if not vial_id_text or not vial_id_text.isdecimal() or int(vial_id_text) < 1:
+        print("Erro: defina VIAL_ID com o ID positivo de um vial cadastrado.", file=sys.stderr)
         return 1
 
     try:
@@ -86,7 +95,9 @@ def main() -> int:
             raise ConnectionError(f"conexão recusada pelo broker: {connection_error[0]}")
 
         print(f"Conectado ao MQTT em {host}:{port} como {EQUIPMENT_ID}.")
-        payload = json.dumps(build_message(), ensure_ascii=False, separators=(",", ":"))
+        payload = json.dumps(
+            build_message(vial_id=int(vial_id_text)), ensure_ascii=False, separators=(",", ":")
+        )
         publication = client.publish(TOPIC, payload, qos=1, retain=False)
         publication.wait_for_publish(timeout=TIMEOUT_SECONDS)
         if not publication.is_published():
