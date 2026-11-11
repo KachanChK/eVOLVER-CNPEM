@@ -14,6 +14,18 @@ dados em qualquer tabela antiga**. Ela não faz migração dos dados antigos nem
 downgrade automático. Faça backup e planeje a conversão dos dados antes de atualizar
 um banco já utilizado.
 
+Na revisão `20261111_01`, o Alembic cria os 12 vials do simulador e exige que
+`vials` esteja vazia. Para descartar os dados de uma instância de desenvolvimento
+do piloto anterior, execute **na raiz do repositório**:
+
+```powershell
+docker compose down -v
+docker compose up -d --wait
+```
+
+Isso apaga o volume PostgreSQL desse projeto. Em seguida, execute `upgrade head`
+conforme o comando acima. O Mosquitto é gerenciado por outro arquivo Compose.
+
 No banco novo, a extensão TimescaleDB é ativada pelo script em `infra/db/init/` na
 primeira inicialização do volume. O Alembic cria a hypertable e seu índice.
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -9,10 +10,11 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from evolver.db.queries import get_temperature_history
-from evolver.ingestion.__main__ import store_message
+from evolver.api.main import app
+from evolver.ingestion.__main__ import active_vials, store_message
+from evolver_contracts.pilot import TELEMETRY_TOPIC
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 
 
 @pytest.mark.integration
@@ -27,7 +29,7 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     command.upgrade(config, "head")
 
     engine = create_engine(database_url)
-    with engine.begin() as connection:
+    with engine.connect() as connection:
         assert (
             connection.execute(
                 text(
@@ -37,52 +39,73 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
             ).scalar_one()
             == 1
         )
-        vial_id = connection.execute(
-            text(
-                "INSERT INTO vials (equipment_id, created_at) "
-                "VALUES ('evolver-sim-01', now()) RETURNING vial_id"
-            )
-        ).scalar_one()
+    request = json.dumps({"request_id": str(uuid4())}).encode()
 
-    message = {
-        "equipment_id": "evolver-sim-01",
-        "event_id": str(uuid4()),
-        "vial_id": vial_id,
-        "measurement": "temperature",
-        "value": 37.0,
-        "unit": "celsius",
-        "generated_at": datetime.now(UTC).isoformat(),
-    }
-    payload = json.dumps(message).encode()
-    topic = "evolver/dev/evolver-sim-01/telemetry"
-    assert store_message(engine, topic, payload) == "gravada"
-    assert store_message(engine, topic, payload) == "duplicada"
-    with pytest.raises(ValueError, match="topic"):
-        store_message(engine, "evolver/dev/another/telemetry", payload)
-    with pytest.raises(ValueError, match="unknown"):
-        store_message(engine, topic, json.dumps({**message, "vial_id": 999999}).encode())
-    with Session(engine) as session:
-        history = get_temperature_history(session, vial_id)
-        assert len(history) == 1
-        assert history[0].temperature_celsius == 37.0
-    with engine.begin() as connection:
-        assert (
-            connection.execute(
-                text("SELECT count(*) FROM temperature_readings WHERE event_id = :event_id"),
-                {"event_id": message["event_id"]},
-            ).scalar_one()
-            == 1
-        )
-        row = connection.execute(
-            text(
-                "SELECT vial_id, temperature_celsius, generated_at, received_at "
-                "FROM temperature_readings WHERE event_id = :event_id"
-            ),
-            {"event_id": message["event_id"]},
-        ).one()
-        assert row.vial_id == vial_id
-        assert row.temperature_celsius == 37.0
-        assert row.generated_at <= row.received_at
+    with TestClient(app) as client:
+
+        def create(vial: int):
+            return client.post("/api/experiments", json={"name": f"Teste {vial}", "vial_id": vial})
+
+        def free_ids():
+            return [vial["vial_id"] for vial in client.get("/api/vials/available").json()]
+
+        assert free_ids() == list(range(1, 13))
+        assert active_vials(engine, request).vials == []
+        assert client.post("/api/experiments", json={"name": " ", "vial_id": 1}).status_code == 422
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            attempts = list(pool.map(create, [1, 1]))
+        assert sorted(attempt.status_code for attempt in attempts) == [201, 409]
+        first = next(attempt.json() for attempt in attempts if attempt.status_code == 201)
+        first_url = f"/api/experiments/{first['id']}"
+        assert client.get(first_url).json() == first
+        assert free_ids() == list(range(2, 13))
+        assert [vial.experiment_id for vial in active_vials(engine, request).vials] == [first["id"]]
+        assert client.get(f"{first_url}/temperature-readings").json() == []
+        assert all(create(vial).status_code == 201 for vial in range(2, 13))
+        assert free_ids() == []
+
+        message = {
+            "equipment_id": "evolver-sim-01",
+            "event_id": str(uuid4()),
+            "vial_id": 1,
+            "experiment_id": first["id"],
+            "measurement": "temperature",
+            "value": 37.0,
+            "unit": "celsius",
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+        assert client.post(f"{first_url}/inactivate").json()["status"] == "inactive"
+        assert free_ids() == [1]
+        second = create(1).json()
+        second_url = f"/api/experiments/{second['id']}"
+        payload = json.dumps(message).encode()
+        assert store_message(engine, TELEMETRY_TOPIC, payload) == "gravada"
+        assert store_message(engine, TELEMETRY_TOPIC, payload) == "duplicada"
+        with pytest.raises(ValueError, match="topic"):
+            store_message(engine, "evolver/dev/another/telemetry", payload)
+        with pytest.raises(ValueError, match="alocação"):
+            store_message(engine, TELEMETRY_TOPIC, json.dumps({**message, "vial_id": 2}).encode())
+        assert client.get(f"{second_url}/temperature-readings").json() == []
+        newer = {**message, "event_id": str(uuid4()), "generated_at": datetime.now(UTC).isoformat()}
+        with pytest.raises(ValueError, match="alocação"):
+            store_message(engine, TELEMETRY_TOPIC, json.dumps(newer).encode())
+        newer["experiment_id"] = second["id"]
+        assert store_message(engine, TELEMETRY_TOPIC, json.dumps(newer).encode()) == "gravada"
+        assert [r["event_id"] for r in client.get(f"{first_url}/temperature-readings").json()] == [
+            message["event_id"]
+        ]
+        assert [r["event_id"] for r in client.get(f"{second_url}/temperature-readings").json()] == [
+            newer["event_id"]
+        ]
+        assert client.delete(first_url).status_code == 204
+        assert client.delete(second_url).status_code == 204
+        assert client.get(second_url).status_code == 404
+        assert client.get(f"{second_url}/temperature-readings").status_code == 404
+        assert free_ids() == [1]
+        assert len(client.get("/api/experiments").json()) == 11
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT count(*) FROM temperature_readings")) == 2
     engine.dispose()
 
 

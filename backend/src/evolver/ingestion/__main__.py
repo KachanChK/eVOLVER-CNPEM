@@ -2,53 +2,72 @@
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import UTC, datetime
-from typing import Literal
-from uuid import UUID
 
+from evolver_contracts.pilot import (
+    ACTIVE_VIALS_REQUEST,
+    ACTIVE_VIALS_RESPONSE,
+    EQUIPMENT_ID,
+    AllocationRequest,
+    AllocationResponse,
+    TemperatureMessage,
+)
 from paho.mqtt import client as mqtt
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, FiniteFloat
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 
-class TemperatureMessage(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+def active_vials(engine: Engine, payload: bytes) -> AllocationResponse:
+    request = AllocationRequest.model_validate_json(payload)
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text("""
+                SELECT e.vial_id, e.id AS experiment_id
+                FROM experiments e JOIN vials v ON v.vial_id = e.vial_id
+                WHERE v.equipment_id = :equipment_id AND e.ended_at IS NULL
+                ORDER BY e.vial_id
+            """),
+                {"equipment_id": EQUIPMENT_ID},
+            )
+            .mappings()
+            .all()
+        )
+    return AllocationResponse.model_validate({"request_id": request.request_id, "vials": rows})
 
-    equipment_id: str
-    event_id: UUID
-    vial_id: int = Field(gt=0)
-    measurement: Literal["temperature"]
-    value: FiniteFloat
-    unit: Literal["celsius"]
-    generated_at: AwareDatetime
 
-
-def store_message(engine, topic: str, payload: bytes) -> str:
-    message = TemperatureMessage.model_validate(json.loads(payload))
+def store_message(engine: Engine, topic: str, payload: bytes) -> str:
+    message = TemperatureMessage.model_validate_json(payload)
     if topic != f"evolver/dev/{message.equipment_id}/telemetry":
         raise ValueError("equipment_id does not match the MQTT topic")
     with engine.begin() as connection:
-        equipment_id = connection.execute(
-            text("SELECT equipment_id FROM vials WHERE vial_id = :vial_id"),
-            {"vial_id": message.vial_id},
+        allocation = connection.execute(
+            text("""
+                SELECT e.id
+                FROM experiments e JOIN vials v ON v.vial_id = e.vial_id
+                WHERE e.id = :experiment_id AND e.vial_id = :vial_id
+                  AND v.equipment_id = :equipment_id
+                  AND e.started_at <= :generated_at
+                  AND (e.ended_at IS NULL OR :generated_at < e.ended_at)
+                  AND :generated_at <= clock_timestamp()
+                FOR SHARE OF e
+            """),
+            message.model_dump(),
         ).scalar_one_or_none()
-        if equipment_id != message.equipment_id:
-            raise ValueError("vial_id is unknown or belongs to another equipment")
+        if allocation is None:
+            raise ValueError("não havia essa alocação para o vial no horário da leitura")
         result = connection.execute(
             text("""
                 INSERT INTO temperature_readings
-                    (event_id, generated_at, received_at, vial_id, temperature_celsius)
-                VALUES (:event_id, :generated_at, :received_at, :vial_id, :value)
+                    (event_id, generated_at, received_at, vial_id,
+                     experiment_id, temperature_celsius)
+                VALUES (:event_id, :generated_at, :received_at, :vial_id, :experiment_id, :value)
                 ON CONFLICT (event_id, generated_at) DO NOTHING
             """),
             {
-                "event_id": message.event_id,
-                "generated_at": message.generated_at,
+                **message.model_dump(),
                 "received_at": datetime.now(UTC),
-                "vial_id": message.vial_id,
-                "value": message.value,
             },
         )
     return "gravada" if result.rowcount else "duplicada"
@@ -65,12 +84,16 @@ def main() -> None:
         del userdata, flags, properties
         if reason_code.is_failure:
             raise ConnectionError(f"MQTT connection rejected: {reason_code}")
-        client.subscribe("evolver/dev/+/telemetry", qos=1)
+        client.subscribe([("evolver/dev/+/telemetry", 1), (ACTIVE_VIALS_REQUEST, 1)])
         print("Ingestão MQTT pronta para temperaturas.", flush=True)
 
     def on_message(client, userdata, message) -> None:
-        del client, userdata
+        del userdata
         try:
+            if message.topic == ACTIVE_VIALS_REQUEST:
+                response = active_vials(engine, message.payload)
+                client.publish(ACTIVE_VIALS_RESPONSE, response.model_dump_json(), qos=1)
+                return
             status = store_message(engine, message.topic, message.payload)
             print(f"Temperatura {status}: {message.topic}", flush=True)
         except Exception as exc:

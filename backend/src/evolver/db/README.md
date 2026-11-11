@@ -1,20 +1,20 @@
 # Banco de dados nesta etapa
 
-O schema atual contém duas tabelas:
+O schema atual contém três tabelas:
 
 - `vials`: `vial_id` numérico, `equipment_id`, rótulo opcional e data de cadastro.
-- `temperature_readings`: `event_id`, `vial_id`, temperatura em °C, horário de geração
+- `experiments`: nome, vial, início e fim da alocação e data de exclusão lógica.
+- `temperature_readings`: `event_id`, `experiment_id`, `vial_id`, temperatura em °C, horário de geração
   e horário de recebimento. É uma hypertable TimescaleDB particionada por `generated_at`.
 
-O `vial_id` da mensagem precisa existir e pertencer ao `equipment_id` informado. A
-chave `(event_id, generated_at)` evita gravar duas vezes a mesma mensagem recebida de
-novo. Ainda não existe cadastro pela interface, nem dados de OD, pH ou bombas.
+O vial, o equipamento e o experimento precisam corresponder à alocação no horário de
+geração. A chave `(event_id, generated_at)` evita gravar duas vezes a mesma mensagem.
 
-O schema é criado pelas migrações Alembic. `get_temperature_history(session, vial_id)`
-retorna as últimas leituras de um frasco. Use a consulta SQL abaixo no DBeaver:
+O schema é criado pelas migrações Alembic. `get_temperature_history(session, experiment_id)`
+retorna as leituras do experimento. Use a consulta SQL abaixo no DBeaver:
 
 ```sql
-SELECT v.vial_id, v.label, t.temperature_celsius,
+SELECT t.experiment_id, v.vial_id, v.label, t.temperature_celsius,
        t.generated_at, t.received_at, t.event_id
 FROM temperature_readings AS t
 JOIN vials AS v USING (vial_id)
