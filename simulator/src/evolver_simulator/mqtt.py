@@ -122,9 +122,23 @@ class MqttPublisher:
         if not self._connected.is_set():
             raise MqttPublishError("MQTT client is not connected")
 
+        self._publish_payload(self._settings.telemetry_topic, event.model_dump_json())
+        labels = {"od": "OD", "ph": "pH", "temperature": "Temperatura"}
+        unit = " °C" if event.measurement_type == "temperature" else ""
+        LOGGER.info(
+            "Frasco %s | %s: %s%s | Enviado ao MQTT | event_id=%s sequence=%s",
+            event.vial_id,
+            labels[event.measurement_type],
+            event.value,
+            unit,
+            event.event_id,
+            event.sequence,
+        )
+
+    def _publish_payload(self, topic: str, payload: str) -> None:
         info = self._client.publish(
-            self._settings.telemetry_topic,
-            payload=event.model_dump_json(),
+            topic,
+            payload=payload,
             qos=1,
             retain=False,
         )
@@ -143,16 +157,6 @@ class MqttPublisher:
             raise MqttPublishError(f"MQTT PUBACK result missing for message {info.mid}")
         if reason_code.is_failure:
             raise MqttPublishError(f"MQTT PUBACK rejected message {info.mid}: {reason_code}")
-
-        LOGGER.info(
-            "Telemetria publicada event_id=%s sequence=%s vial_id=%s "
-            "measurement_type=%s topic=%s",
-            event.event_id,
-            event.sequence,
-            event.vial_id,
-            event.measurement_type,
-            self._settings.telemetry_topic,
-        )
 
     def close(self) -> None:
         self._connected.clear()

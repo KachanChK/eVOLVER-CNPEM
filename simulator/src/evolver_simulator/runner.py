@@ -7,9 +7,10 @@ import threading
 
 from .config import SimulatorSettings
 from .mqtt import MqttPublisher
-from .telemetry import SimulatedTelemetryGenerator
+from .telemetry import MEASUREMENT_TYPES, SimulatedTelemetryGenerator
 
 LOGGER = logging.getLogger(__name__)
+READINGS_PER_TYPE = 3
 
 
 class SimulatedFailureError(RuntimeError):
@@ -36,11 +37,15 @@ class SimulatorRunner:
         self._stop_event.set()
 
     def run(self, *, max_messages: int | None = None) -> int:
-        limit = max_messages if max_messages is not None else self._settings.max_messages
+        default_limit = READINGS_PER_TYPE * len(MEASUREMENT_TYPES) * len(self._settings.vial_ids)
+        requested_limit = max_messages if max_messages is not None else self._settings.max_messages
+        limit = (
+            min(default_limit, requested_limit) if requested_limit is not None else default_limit
+        )
         published = 0
         try:
             self._publisher.connect()
-            while not self._stop_event.is_set() and (limit is None or published < limit):
+            while not self._stop_event.is_set() and published < limit:
                 self._publisher.publish(self._generator.next_event())
                 published += 1
 
@@ -48,7 +53,7 @@ class SimulatorRunner:
                     raise SimulatedFailureError(
                         f"simulated failure after {published} published messages",
                     )
-                if limit is not None and published >= limit:
+                if published >= limit:
                     break
 
                 wait_seconds = self._settings.interval_seconds

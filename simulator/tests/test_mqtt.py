@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -62,6 +63,7 @@ class FakeClient:
         self.password: str | None = None
         self.connect_call: tuple[Any, ...] | None = None
         self.publish_call: tuple[tuple[Any, ...], dict[str, Any]] | None = None
+        self.publish_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
         self.loop_started = False
         self.loop_stopped = False
         self.disconnected = False
@@ -80,6 +82,7 @@ class FakeClient:
 
     def publish(self, *args: Any, **kwargs: Any) -> FakeMessageInfo:
         self.publish_call = (args, kwargs)
+        self.publish_calls.append((args, kwargs))
         if self.message_info.rc == mqtt.MQTT_ERR_SUCCESS and self.message_info.invoke_callback:
             self.on_publish(
                 self,
@@ -158,6 +161,50 @@ def test_publish_uses_contract_json_topic_qos_one_and_no_retain() -> None:
     assert kwargs["retain"] is False
     assert json.loads(kwargs["payload"])["measurement_type"] == "od"
     assert fake.message_info.wait_timeout == 10.0
+    assert len(fake.publish_calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("measurement_type", "value", "expected"),
+    [
+        ("od", 0.42, "Frasco 1 | OD: 0.42 | Enviado ao MQTT"),
+        ("ph", 7.1, "Frasco 1 | pH: 7.1 | Enviado ao MQTT"),
+        ("temperature", 37.5, "Frasco 1 | Temperatura: 37.5 °C | Enviado ao MQTT"),
+    ],
+)
+def test_published_measurement_is_shown_in_the_terminal(
+    measurement_type: str, value: float, expected: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake = FakeClient()
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+    event = make_event().model_copy(
+        update={"vial_id": "1", "measurement_type": measurement_type, "value": value}
+    )
+
+    with caplog.at_level(logging.INFO, logger="evolver_simulator.mqtt"):
+        publisher.publish(event)
+
+    assert expected in caplog.text
+
+
+def test_temperature_is_sent_once_in_the_v1_format() -> None:
+    fake = FakeClient()
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+    event = make_event().model_copy(
+        update={"vial_id": "42", "measurement_type": "temperature", "value": 37.5},
+    )
+
+    publisher.publish(event)
+
+    assert len(fake.publish_calls) == 1
+    (args, kwargs) = fake.publish_calls[0]
+    assert args == ("evolver/v1/evolver-sim-01/telemetry",)
+    assert kwargs["qos"] == 1 and kwargs["retain"] is False
+    sent = json.loads(kwargs["payload"])
+    assert sent["measurement_type"] == "temperature"
+    assert sent["vial_id"] == "42" and sent["value"] == 37.5
 
 
 def test_negative_mqtt5_puback_is_reported_as_publish_failure() -> None:

@@ -1,117 +1,84 @@
-# Produtor externo de telemetria simulada
+# Simulador de medições
 
-O projeto `evolver-cnpem-simulator` publica medições simuladas de OD, pH e
-temperatura medida no
-broker MQTT do piloto. Ele é independente do backend: importa o contrato
-compartilhado `evolver_contracts`, não acessa PostgreSQL e não importa
-`evolver.db` ou `evolver.api`.
+O simulador gera valores de OD, pH e temperatura, nessa ordem, para cada frasco.
+Os valores são simulados e servem para testar o software; não vêm de sensores nem
+representam calibração ou precisão científica.
 
-Os valores são mocks destinados ao fluxo de software: não possuem unidade
-definida e não representam sensor, calibração nem precisão científica. Cada mensagem é
-validada como `TelemetryEvent` e publicada em
-`evolver/v1/{equipment_id}/telemetry` com MQTT 5, QoS 1 e `retain=False`.
+## Como o código está organizado
 
-## Configuração
+- `config.py` reúne as configurações do simulador.
+- `telemetry.py` escolhe o próximo frasco e o tipo de medição e gera um valor.
+- `runner.py` controla o intervalo e a parada do programa.
+- `mqtt.py` envia as mensagens e verifica a confirmação do broker.
 
-Copie `.env.example` para `.env` na raiz do repositório. As variáveis abaixo são
-lidas do ambiente e, se existir, desse arquivo:
+Cada valor parte de uma base e recebe uma variação e um ruído simulado. OD, pH e
+temperatura têm geradores independentes e ondas com fases e períodos diferentes.
+Esses padrões servem para testar o sistema, sem representar medições reais.
 
-| Variável | Padrão | Regra |
-| --- | --- | --- |
-| `MQTT_HOST` | `127.0.0.1` | Endereço não vazio do broker. |
-| `MQTT_PORT` | `1883` | Porta entre 1 e 65535. |
-| `MQTT_PROTOCOL_VERSION` | `5` | Somente MQTT 5 é aceito. |
-| `MQTT_SIMULATOR_PASSWORD` | obrigatória | Senha do usuário do equipamento. |
-| `MQTT_KEEPALIVE_SECONDS` | `60` | Inteiro positivo. |
-| `MQTT_CONNECT_TIMEOUT_SECONDS` | `10` | Espera positiva pelo CONNACK. |
-| `MQTT_PUBLISH_TIMEOUT_SECONDS` | `10` | Espera positiva pelo PUBACK. |
-| `SIMULATOR_EQUIPMENT_ID` | `evolver-sim-01` | Identificador e usuário MQTT. |
-| `SIMULATOR_PRODUCER_ID` | `simulator-local-01` | Identificador do processo produtor. |
-| `SIMULATOR_VIAL_IDS` | `vial-01,vial-02,vial-03` | De 1 a 16 IDs únicos separados por vírgula. |
-| `SIMULATOR_INTERVAL_SECONDS` | `2.0` | Intervalo positivo entre mensagens. |
-| `SIMULATOR_SEED` | `2026` | Semente inteira do ruído pseudoaleatório. |
-| `SIMULATOR_OD_BASELINE` | `0.35` | Base não negativa da OD simulada. |
-| `SIMULATOR_OD_VARIATION` | `0.08` | Amplitude não negativa da curva periódica. |
-| `SIMULATOR_OD_NOISE` | `0.005` | Ruído uniforme entre 0 e 0.1. |
-| `SIMULATOR_PH_BASELINE` | `7.0` | Base arbitrária do pH mockado. |
-| `SIMULATOR_PH_VARIATION` | `0.15` | Amplitude não negativa da curva mockada. |
-| `SIMULATOR_PH_NOISE` | `0.02` | Amplitude não negativa do ruído mockado. |
-| `SIMULATOR_TEMPERATURE_BASELINE` | `30.0` | Base arbitrária da temperatura mockada. |
-| `SIMULATOR_TEMPERATURE_VARIATION` | `0.5` | Amplitude não negativa da curva mockada. |
-| `SIMULATOR_TEMPERATURE_NOISE` | `0.1` | Amplitude não negativa do ruído mockado. |
-| `SIMULATOR_MAX_MESSAGES` | ausente | Inteiro positivo; limita a execução para testes. |
-| `SIMULATOR_PAUSE_AFTER_MESSAGES` | ausente | Pausa uma vez depois de N publicações. |
-| `SIMULATOR_PAUSE_SECONDS` | ausente | Duração positiva da pausa; configurada junto com a variável anterior. |
-| `SIMULATOR_FAIL_AFTER_MESSAGES` | ausente | Encerra com falha simulada depois de N publicações. |
+## Preparar
 
-O valor padrão de `SIMULATOR_EQUIPMENT_ID` é também o usuário MQTT autorizado
-pela ACL em `infra/mosquitto/acl`. Alterar o equipamento exige criar a identidade
-e o bloco de ACL correspondentes; mudar somente a variável não concede acesso.
+1. Copie `mqtt/.env.example` para `mqtt/.env` e `simulator/.env.example` para
+   `simulator/.env`. As senhas do simulador nos dois arquivos devem ser iguais.
+2. Crie um experimento na interface e escolha um dos vials disponíveis.
+3. Inicie o broker em `mqtt/` e a ingestão. A ingestão e o banco precisam
+   estar funcionando para guardar as medições.
 
-## Execução
+Na raiz do repositório, instale as dependências e inicie o broker:
 
-Na raiz do repositório, instale o workspace e inicie o broker:
-
-```bash
+```powershell
 uv sync --all-packages --group dev --frozen
-docker compose up -d mosquitto
+docker compose --project-directory mqtt up -d
 ```
 
-Para publicar continuamente até receber `Ctrl+C`, `SIGINT` ou `SIGTERM`:
+## Executar
 
-```bash
-uv run --package evolver-cnpem-simulator python -m evolver_simulator
+Na raiz, execute o simulador:
+
+```powershell
+.\scripts\simular.ps1
 ```
 
-Para uma execução finita e segura, sem alterar `.env`:
+Ele envia três medições de OD, três de pH e três de temperatura para cada frasco
+e encerra automaticamente. Com um frasco e o intervalo padrão de dois segundos, são
+nove medições ao longo de aproximadamente 16 segundos.
 
-```bash
-uv run --package evolver-cnpem-simulator python -m evolver_simulator --max-messages 5
+O terminal mostra o valor de cada medição enviada, por exemplo:
+
+```text
+Frasco 1 | OD: 0.346191 | Enviado ao MQTT
+Frasco 1 | pH: 7.000101 | Enviado ao MQTT
+Frasco 1 | Temperatura: 37.002365 °C | Enviado ao MQTT
 ```
 
-Para reproduzir uma pausa, configure as duas variáveis abaixo. A pausa substitui
-uma vez o intervalo normal depois da terceira publicação; o limite precisa ser
-maior que três para haver uma publicação posterior à retomada:
+O envio ao MQTT não confirma que a medição foi gravada no banco.
 
-```env
-SIMULATOR_PAUSE_AFTER_MESSAGES=3
-SIMULATOR_PAUSE_SECONDS=10
-SIMULATOR_MAX_MESSAGES=5
+Para um teste mais curto com uma medição de cada tipo:
+
+```powershell
+uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator --max-messages 3
 ```
 
-Para reproduzir um encerramento por falha após exatamente três publicações:
+O limite conta medições geradas, não mensagens MQTT. `--max-messages` pode reduzir
+a quantidade, mas não aumenta o limite de três medições de cada tipo por frasco. Cada medição é publicada no
+contrato `evolver/v1/{equipment_id}/telemetry`. A ingestão salva temperatura em
+`temperature_readings`, pH em `ph_readings` e OD em `od_readings`. O PUBACK
+confirma a entrega ao broker, não a gravação no banco: confira o log da ingestão ou
+consulte a tabela para verificar o salvamento.
 
-```env
-SIMULATOR_FAIL_AFTER_MESSAGES=3
-SIMULATOR_MAX_MESSAGES=5
-```
+## Ajustes opcionais
 
-Pausa e falha não podem ser habilitadas na mesma execução. A falha simulada
-encerra com código `3`; configuração inválida usa `2` e falha MQTT usa `1`.
+- `SIMULATOR_INTERVAL_SECONDS`: tempo entre medições, em segundos; padrão `2`.
+- `SIMULATOR_VIAL_IDS`: lista opcional de números cadastrados, por exemplo `1,2,3`.
+  Quando definida, ela substitui `VIAL_ID` e o simulador percorre todos os frascos.
+- `SIMULATOR_SEED`: opcional; com o mesmo número e a mesma configuração, repete
+  as sequências para facilitar testes. Sem esse ajuste, cada execução começa com
+  novas sequências.
+- `SIMULATOR_MAX_MESSAGES`: limite menor de medições; `--max-messages` tem prioridade.
+  Nenhum dos dois aumenta o limite de três medições por tipo e frasco.
+- Para experimentar uma pausa, configure `SIMULATOR_PAUSE_AFTER_MESSAGES` e
+  `SIMULATOR_PAUSE_SECONDS`. Para simular uma falha, use `SIMULATOR_FAIL_AFTER_MESSAGES`.
 
-Cada vial produz, nessa ordem, `od`, `ph` e `temperature`; depois o produtor avança
-para o próximo vial. Os logs registram conexão, `event_id`, sequência, vial, tipo de
-medição e tópico de cada publicação.
-A confirmação de QoS 1 registrada pelo produtor é apenas o PUBACK do transporte;
-não comprova persistência no banco nem substitui o ACK de aplicação futuro.
-
-Para observar cinco eventos com a identidade de ingestão do ambiente Compose:
-
-```bash
-docker compose exec -T mosquitto sh -c 'mosquitto_sub -V mqttv5 -h 127.0.0.1 -p 1883 -t evolver/v1/+/telemetry -u evolver-ingestion -P "$MQTT_INGESTION_PASSWORD" -q 1 -C 5 -v'
-```
-
-Com a mesma semente e configuração, uma nova execução repete a sequência de vials,
-tipos e valores. `event_id` e horário mudam em operação normal; testes podem injetar
-relógio, UUIDs e gerador pseudoaleatório.
-
-## Limites desta etapa
-
-- O reinício recomeça sequência e gerador. Não há fila SQLite, estado durável,
-  reenvio, quarentena nem ACK de aplicação nesta tarefa.
-- OD, pH e temperatura são valores mockados sem unidade, faixa científica,
-  calibração ou vínculo com sensor real.
-- Não há leitura de comandos, setpoint, bombas, API, banco, SSE ou hardware real.
-- Falha de conexão ou publicação encerra o processo; um supervisor pode iniciá-lo
-  novamente. Os cenários configuráveis apenas simulam pausa ou encerramento e não
-  alegam reproduzir uma indisponibilidade real do broker.
+As opções avançadas de valores, variação e ruído continuam disponíveis na classe
+`SimulatorSettings`. MQTT usa versão 5, QoS 1 e mensagens não retidas. Não há fila
+local nem confirmação de gravação no banco; se a ingestão ou o banco estiverem fora
+do ar, a temperatura pode não ser salva.

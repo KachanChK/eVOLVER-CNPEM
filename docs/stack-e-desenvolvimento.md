@@ -76,7 +76,7 @@ Versões e faixas escolhidas para o piloto; a tabela não afirma que todas já e
 
 ## Estrutura do repositório
 
-Estrutura prevista para o monorepo. Os documentos de planejamento estão em `docs/`; os contratos MQTT, seus exemplos e testes ficam no pacote compartilhado. Backend e simulador possuem projetos Python próprios, mas os serviços de aplicação ainda aguardam implementação.
+Estrutura prevista para o monorepo. Os documentos de planejamento estão em `docs/`; os contratos MQTT, seus exemplos e testes ficam no pacote compartilhado. Backend e simulador possuem projetos Python próprios, mas o simulador já publica telemetria; API e ingestão aguardam implementação.
 
 ```text
 eVOLVER-CNPEM/
@@ -89,15 +89,15 @@ eVOLVER-CNPEM/
 │   │   ├── api/             # app FastAPI (consultas, comandos, SSE)
 │   ├── migrations/          # Alembic
 │   └── tests/
-├── simulator/               # projeto Python independente; serviço futuro
+├── simulator/               # produtor Python independente
 │   └── src/evolver_simulator/ # simulador externo + futura fila SQLite
+├── mqtt/                    # Mosquitto independente: Compose, configuração e testes
 ├── frontend/                # Vue 3 + Vite (package.json, package-lock.json)
 │   ├── src/
 │   └── tests/
 ├── infra/
-│   ├── mosquitto/           # mosquitto.conf
 │   └── db/                  # scripts de inicialização (extensão timescaledb)
-├── compose.yaml             # dependências: mosquitto + timescaledb
+├── compose.yaml             # serviço local de banco
 ├── compose.full.yaml        # serviços da aplicação (override para o modo completo)
 ├── pyproject.toml            # workspace uv e ferramentas de desenvolvimento
 ├── uv.lock                   # lock compartilhado dos projetos Python
@@ -105,7 +105,7 @@ eVOLVER-CNPEM/
 └── README.md                # como rodar
 ```
 
-Simulador e backend dependem do mesmo pacote `evolver-contracts`, mas o simulador tem projeto e, futuramente, processo próprios. API e ingestão também serão processos separados dentro do backend. O simulador não deve importar `evolver.db` nem `evolver.api`: sua comunicação com os serviços centrais ocorre por MQTT. Conferir essa separação ao criar os pontos de entrada e testar cada processo isoladamente.
+Simulador e backend dependem do mesmo pacote `evolver-contracts`, mas o simulador tem projeto e processo próprios. API e ingestão também serão processos separados dentro do backend. O simulador não deve importar `evolver.db` nem `evolver.api`: sua comunicação com os serviços centrais ocorre por MQTT. Conferir essa separação ao criar os pontos de entrada e testar cada processo isoladamente.
 
 ## Modos de desenvolvimento
 
@@ -113,7 +113,15 @@ Os dois modos previstos rodam no mesmo computador e usam os mesmos nomes de vari
 
 ### Modo 1 — Dependências em Compose, código local (dia a dia)
 
-O Compose inicia Mosquitto e TimescaleDB; Python e Vue rodam diretamente na máquina, para depuração e recarga automática. Antes de executar, criar `compose.yaml`, configurar `.env` a partir de `.env.example` e implementar os pontos de entrada citados abaixo. Os comandos estão separados por terminal e diretório de trabalho.
+Mosquitto e TimescaleDB possuem Compose independentes; Python e Vue rodam diretamente na máquina, para depuração e recarga automática. Os comandos estão separados por terminal e diretório de trabalho.
+
+Na pasta `mqtt/`, preparar e iniciar exclusivamente o broker:
+
+```bash
+cp .env.example .env
+docker compose up -d
+docker compose ps
+```
 
 Na raiz do repositório:
 
@@ -140,7 +148,7 @@ uv run --package evolver-cnpem-backend uvicorn evolver.api.main:app --reload    
 ```
 
 ```bash
-uv run --package evolver-cnpem-simulator python -m evolver_simulator
+uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator
 ```
 
 Em outro terminal, a partir da raiz:
@@ -159,7 +167,10 @@ Uso previsto: desenvolvimento, depuração e testes de integração com banco e 
 
 ### Modo 2 — Compose completo (reprodução)
 
-Todos os componentes em contêineres, para reproduzir o piloto em outra máquina ou executar a demonstração. Antes de executar, criar `compose.full.yaml`, as imagens da aplicação e o serviço de migração.
+Os componentes da aplicação ficam em contêineres para reproduzir o piloto em outra
+máquina ou executar a demonstração. O Mosquitto continua sendo iniciado separadamente
+por `mqtt/compose.yaml`. Antes de executar, criar `compose.full.yaml`, as imagens da
+aplicação e o serviço de migração.
 
 ```bash
 docker compose -f compose.yaml -f compose.full.yaml up --build
@@ -170,6 +181,6 @@ O arquivo completo deve incluir um serviço que execute `alembic upgrade head` a
 ### Regras comuns
 
 - Portas padrão: MQTT 1883, PostgreSQL 5432, API 8000, interface 5173 (dev) / 8080 (completo).
-- No Modo 2, usar volumes nomeados para banco, persistência do Mosquitto e fila SQLite do simulador. No Modo 1, a fila SQLite é um arquivo local do simulador. Em ambos, verificar reinício sem perder leituras pendentes.
+- Usar volumes nomeados independentes para banco e persistência do Mosquitto. No Modo 1, a futura fila SQLite será um arquivo local do simulador.
 - `docker compose down -v` apaga os volumes locais do Compose; usar somente quando se quiser recomeçar do zero. No Modo 1, isso não apaga automaticamente o arquivo SQLite fora do Compose.
 - Nenhuma credencial real no repositório: `.env.example` traz apenas valores de desenvolvimento.

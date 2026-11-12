@@ -30,7 +30,7 @@ def make_generator(settings: SimulatorSettings) -> SimulatedTelemetryGenerator:
 
 
 def test_same_seed_and_configuration_repeat_values_positions_and_sequence() -> None:
-    settings = make_settings(seed=71, vial_ids_csv="vial-a,vial-b")
+    settings = make_settings(seed=71, vial_ids_csv="1,2")
     first = make_generator(settings)
     second = make_generator(settings)
 
@@ -38,39 +38,72 @@ def test_same_seed_and_configuration_repeat_values_positions_and_sequence() -> N
     second_series = [second.next_event() for _ in range(12)]
 
     assert [
-        (item.vial_id, item.measurement_type, item.value, item.sequence)
-        for item in first_series
+        (item.vial_id, item.measurement_type, item.value, item.sequence) for item in first_series
     ] == [
-        (item.vial_id, item.measurement_type, item.value, item.sequence)
-        for item in second_series
+        (item.vial_id, item.measurement_type, item.value, item.sequence) for item in second_series
     ]
+
+
+@pytest.mark.parametrize("kind", ["od", "ph", "temperature"])
+def test_one_measurement_does_not_advance_other_random_streams(kind: str) -> None:
+    settings = make_settings(seed=71)
+    reference = make_generator(settings)
+    with_extra_measurements = make_generator(settings)
+
+    for other_kind in {"od", "ph", "temperature"} - {kind}:
+        for cycle in range(10):
+            with_extra_measurements._value_for(other_kind, 0, cycle)
+
+    expected = [reference._value_for(kind, 0, cycle) for cycle in range(5)]
+    actual = [with_extra_measurements._value_for(kind, 0, cycle) for cycle in range(5)]
+    assert actual == expected
+
+
+def test_measurement_trends_are_not_forced_to_move_in_lockstep() -> None:
+    generator = make_generator(make_settings(seed=71, od_noise=0, ph_noise=0, temperature_noise=0))
+    directions = {
+        kind: [
+            generator._value_for(kind, 0, cycle + 1) > generator._value_for(kind, 0, cycle)
+            for cycle in range(24)
+        ]
+        for kind in ("od", "ph", "temperature")
+    }
+    assert any(len({directions[kind][cycle] for kind in directions}) > 1 for cycle in range(24))
 
 
 def test_positions_cycle_in_declared_order_and_sequence_starts_at_zero() -> None:
     generator = make_generator(
-        make_settings(vial_ids_csv="vial-c,vial-a,vial-b", od_noise=0, od_variation=0),
+        make_settings(vial_ids_csv="3,1,2", od_noise=0, od_variation=0),
     )
 
     events = [generator.next_event() for _ in range(10)]
 
     assert [(event.vial_id, event.measurement_type) for event in events] == [
-        ("vial-c", "od"),
-        ("vial-c", "ph"),
-        ("vial-c", "temperature"),
-        ("vial-a", "od"),
-        ("vial-a", "ph"),
-        ("vial-a", "temperature"),
-        ("vial-b", "od"),
-        ("vial-b", "ph"),
-        ("vial-b", "temperature"),
-        ("vial-c", "od"),
+        ("3", "od"),
+        ("3", "ph"),
+        ("3", "temperature"),
+        ("1", "od"),
+        ("1", "ph"),
+        ("1", "temperature"),
+        ("2", "od"),
+        ("2", "ph"),
+        ("2", "temperature"),
+        ("3", "od"),
     ]
     assert [event.sequence for event in events] == list(range(10))
 
 
+def test_active_experiment_id_is_included_for_each_vial() -> None:
+    generator = make_generator(
+        make_settings(vial_ids_csv="1,2", experiment_ids={"1": 41, "2": 42}),
+    )
+    events = [generator.next_event() for _ in range(6)]
+    assert [event.experiment_run_id for event in events] == ["41"] * 3 + ["42"] * 3
+
+
 def test_noise_stays_within_configured_range() -> None:
     settings = make_settings(
-        vial_ids_csv="vial-01",
+        vial_ids_csv="1",
         od_baseline=0.5,
         od_variation=0,
         od_noise=0.01,
@@ -96,7 +129,7 @@ def test_noise_stays_within_configured_range() -> None:
     ("measurement_type", "baseline", "noise"),
     [
         ("ph", 7.0, 0.02),
-        ("temperature", 30.0, 0.1),
+        ("temperature", 37.0, 0.1),
     ],
 )
 def test_ph_and_temperature_noise_stay_within_configured_mock_range(
@@ -106,7 +139,7 @@ def test_ph_and_temperature_noise_stay_within_configured_mock_range(
 ) -> None:
     generator = make_generator(
         make_settings(
-            vial_ids_csv="vial-01",
+            vial_ids_csv="1",
             od_variation=0,
             od_noise=0,
             ph_variation=0,
@@ -136,7 +169,7 @@ def test_event_contains_required_fields_and_matches_runtime_model_and_schema() -
     assert payload["event_id"] == str(FIXED_UUID)
     assert payload["producer_id"] == "simulator-local-01"
     assert payload["equipment_id"] == "evolver-sim-01"
-    assert payload["vial_id"] == "vial-01"
+    assert payload["vial_id"] == "1"
     assert payload["measurement_type"] == "od"
     assert isinstance(payload["value"], float)
     assert payload["generated_at"] == "2026-10-29T12:00:00Z"

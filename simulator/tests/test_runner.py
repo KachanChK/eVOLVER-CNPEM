@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -91,6 +92,45 @@ def test_finite_run_publishes_exact_limit_and_closes() -> None:
     assert count == 3
     assert [event.sequence for event in publisher.events] == [0, 1, 2]
     assert publisher.connected and publisher.closed
+
+
+@pytest.mark.parametrize("vials", ["1", "2,5"])
+def test_default_run_sends_three_of_each_measurement_per_vial(vials: str) -> None:
+    publisher = FakePublisher()
+    runner = SimulatorRunner(
+        make_settings(vial_ids_csv=vials), publisher=publisher, stop_event=RecordingWait()
+    )
+
+    count = runner.run()
+
+    counts = Counter((event.vial_id, event.measurement_type) for event in publisher.events)
+    expected = {
+        (vial, kind): 3 for vial in vials.split(",") for kind in ("od", "ph", "temperature")
+    }
+    assert count == 9 * len(vials.split(","))
+    assert counts == expected
+    assert publisher.connected and publisher.closed
+
+
+@pytest.mark.parametrize("configured_limit,argument_limit", [(100, None), (None, 100)])
+def test_larger_custom_limit_does_not_exceed_three_readings_per_type(
+    configured_limit: int | None, argument_limit: int | None
+) -> None:
+    publisher = FakePublisher()
+    runner = SimulatorRunner(
+        make_settings(max_messages=configured_limit),
+        publisher=publisher,
+        stop_event=RecordingWait(),
+    )
+
+    count = runner.run(max_messages=argument_limit)
+
+    assert count == 9
+    assert Counter(event.measurement_type for event in publisher.events) == {
+        "od": 3,
+        "ph": 3,
+        "temperature": 3,
+    }
 
 
 def test_stop_event_interrupts_interval_wait_and_closes() -> None:

@@ -25,12 +25,12 @@ def positive_int(value: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Publica medicoes simuladas de OD, pH e temperatura via MQTT 5",
+        description="Publica ate tres medicoes de OD, pH e temperatura por frasco",
     )
     parser.add_argument(
         "--max-messages",
         type=positive_int,
-        help="encerra apos N mensagens; substitui SIMULATOR_MAX_MESSAGES",
+        help="limita as medicoes a N; nao ultrapassa tres de cada tipo por frasco",
     )
     return parser
 

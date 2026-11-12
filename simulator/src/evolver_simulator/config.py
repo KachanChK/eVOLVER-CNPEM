@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import re
-from typing import Literal, Self
+from typing import Self
 
 from pydantic import Field, PositiveFloat, PositiveInt, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 MAX_VIALS = 16
+MAX_VIAL_ID = 2**63 - 1
 
 
 class SimulatorSettings(BaseSettings):
@@ -23,29 +24,24 @@ class SimulatorSettings(BaseSettings):
         populate_by_name=True,
     )
 
+    # Conexão com o broker MQTT.
     mqtt_host: str = Field(default="127.0.0.1", validation_alias="MQTT_HOST")
     mqtt_port: int = Field(default=1883, ge=1, le=65535, validation_alias="MQTT_PORT")
-    mqtt_protocol_version: Literal[5] = Field(
-        default=5,
-        validation_alias="MQTT_PROTOCOL_VERSION",
+    mqtt_protocol_version: int = Field(
+        default=5, ge=5, le=5, validation_alias="MQTT_PROTOCOL_VERSION"
     )
     mqtt_keepalive_seconds: PositiveInt = Field(
-        default=60,
-        validation_alias="MQTT_KEEPALIVE_SECONDS",
+        default=60, validation_alias="MQTT_KEEPALIVE_SECONDS"
     )
     mqtt_connect_timeout_seconds: PositiveFloat = Field(
-        default=10.0,
-        validation_alias="MQTT_CONNECT_TIMEOUT_SECONDS",
+        default=10.0, validation_alias="MQTT_CONNECT_TIMEOUT_SECONDS"
     )
     mqtt_publish_timeout_seconds: PositiveFloat = Field(
-        default=10.0,
-        validation_alias="MQTT_PUBLISH_TIMEOUT_SECONDS",
+        default=10.0, validation_alias="MQTT_PUBLISH_TIMEOUT_SECONDS"
     )
-    mqtt_simulator_password: str = Field(
-        min_length=1,
-        validation_alias="MQTT_SIMULATOR_PASSWORD",
-    )
+    mqtt_simulator_password: str = Field(min_length=1, validation_alias="MQTT_SIMULATOR_PASSWORD")
 
+    # Identidade, frascos e ritmo das medições.
     equipment_id: str = Field(
         default="evolver-sim-01",
         pattern=IDENTIFIER_PATTERN.pattern,
@@ -56,75 +52,43 @@ class SimulatorSettings(BaseSettings):
         pattern=IDENTIFIER_PATTERN.pattern,
         validation_alias="SIMULATOR_PRODUCER_ID",
     )
-    vial_ids_csv: str = Field(
-        default="vial-01,vial-02,vial-03",
-        validation_alias="SIMULATOR_VIAL_IDS",
+    vial_id: int = Field(default=1, ge=1, le=MAX_VIAL_ID, validation_alias="VIAL_ID")
+    vial_ids_csv: str | None = Field(default=None, validation_alias="SIMULATOR_VIAL_IDS")
+    experiment_ids: dict[str, PositiveInt] = Field(
+        default_factory=dict, validation_alias="SIMULATOR_EXPERIMENT_IDS"
     )
     interval_seconds: PositiveFloat = Field(
-        default=2.0,
-        validation_alias="SIMULATOR_INTERVAL_SECONDS",
+        default=2.0, validation_alias="SIMULATOR_INTERVAL_SECONDS"
     )
-    seed: int = Field(default=2026, validation_alias="SIMULATOR_SEED")
-    od_baseline: float = Field(
-        default=0.35,
-        ge=0.0,
-        validation_alias="SIMULATOR_OD_BASELINE",
-    )
-    od_variation: float = Field(
-        default=0.08,
-        ge=0.0,
-        validation_alias="SIMULATOR_OD_VARIATION",
-    )
-    od_noise: float = Field(
-        default=0.005,
-        ge=0.0,
-        le=0.1,
-        validation_alias="SIMULATOR_OD_NOISE",
-    )
+    seed: int | None = Field(default=None, validation_alias="SIMULATOR_SEED")
+
+    # Valores simulados: base, tamanho da onda e ruído de cada medição.
+    od_baseline: float = Field(default=0.35, ge=0.0, validation_alias="SIMULATOR_OD_BASELINE")
+    od_variation: float = Field(default=0.08, ge=0.0, validation_alias="SIMULATOR_OD_VARIATION")
+    od_noise: float = Field(default=0.005, ge=0.0, le=0.1, validation_alias="SIMULATOR_OD_NOISE")
     ph_baseline: float = Field(default=7.0, validation_alias="SIMULATOR_PH_BASELINE")
-    ph_variation: float = Field(
-        default=0.15,
-        ge=0.0,
-        validation_alias="SIMULATOR_PH_VARIATION",
-    )
-    ph_noise: float = Field(
-        default=0.02,
-        ge=0.0,
-        validation_alias="SIMULATOR_PH_NOISE",
-    )
+    ph_variation: float = Field(default=0.15, ge=0.0, validation_alias="SIMULATOR_PH_VARIATION")
+    ph_noise: float = Field(default=0.02, ge=0.0, validation_alias="SIMULATOR_PH_NOISE")
     temperature_baseline: float = Field(
-        default=30.0,
-        validation_alias="SIMULATOR_TEMPERATURE_BASELINE",
+        default=37.0, validation_alias="SIMULATOR_TEMPERATURE_BASELINE"
     )
     temperature_variation: float = Field(
-        default=0.5,
-        ge=0.0,
-        validation_alias="SIMULATOR_TEMPERATURE_VARIATION",
+        default=0.5, ge=0.0, validation_alias="SIMULATOR_TEMPERATURE_VARIATION"
     )
     temperature_noise: float = Field(
-        default=0.1,
-        ge=0.0,
-        validation_alias="SIMULATOR_TEMPERATURE_NOISE",
+        default=0.1, ge=0.0, validation_alias="SIMULATOR_TEMPERATURE_NOISE"
     )
-    max_messages: int | None = Field(
-        default=None,
-        gt=0,
-        validation_alias="SIMULATOR_MAX_MESSAGES",
-    )
+
+    # Limite e cenários opcionais para testes.
+    max_messages: int | None = Field(default=None, gt=0, validation_alias="SIMULATOR_MAX_MESSAGES")
     pause_after_messages: int | None = Field(
-        default=None,
-        gt=0,
-        validation_alias="SIMULATOR_PAUSE_AFTER_MESSAGES",
+        default=None, gt=0, validation_alias="SIMULATOR_PAUSE_AFTER_MESSAGES"
     )
     pause_seconds: float | None = Field(
-        default=None,
-        gt=0,
-        validation_alias="SIMULATOR_PAUSE_SECONDS",
+        default=None, gt=0, validation_alias="SIMULATOR_PAUSE_SECONDS"
     )
     fail_after_messages: int | None = Field(
-        default=None,
-        gt=0,
-        validation_alias="SIMULATOR_FAIL_AFTER_MESSAGES",
+        default=None, gt=0, validation_alias="SIMULATOR_FAIL_AFTER_MESSAGES"
     )
 
     @field_validator("mqtt_host", "mqtt_simulator_password")
@@ -144,9 +108,13 @@ class SimulatorSettings(BaseSettings):
             raise ValueError(f"SIMULATOR_VIAL_IDS supports at most {MAX_VIALS} identifiers")
         if len(set(vial_ids)) != len(vial_ids):
             raise ValueError("SIMULATOR_VIAL_IDS must not contain duplicates")
-        invalid = [vial_id for vial_id in vial_ids if not IDENTIFIER_PATTERN.fullmatch(vial_id)]
+        invalid = [
+            vial_id
+            for vial_id in vial_ids
+            if not re.fullmatch(r"[1-9][0-9]*", vial_id) or int(vial_id) > MAX_VIAL_ID
+        ]
         if invalid:
-            raise ValueError(f"invalid vial identifier: {invalid[0]}")
+            raise ValueError(f"vial ID must be a positive database integer: {invalid[0]}")
         return self
 
     @model_validator(mode="after")
@@ -163,6 +131,8 @@ class SimulatorSettings(BaseSettings):
 
     @property
     def vial_ids(self) -> tuple[str, ...]:
+        if self.vial_ids_csv is None:
+            return (str(self.vial_id),)
         return tuple(part.strip() for part in self.vial_ids_csv.split(",") if part.strip())
 
     @property
@@ -178,3 +148,7 @@ class SimulatorSettings(BaseSettings):
     @property
     def telemetry_topic(self) -> str:
         return f"evolver/v1/{self.equipment_id}/telemetry"
+
+    @property
+    def temperature_topic(self) -> str:
+        return f"evolver/dev/{self.equipment_id}/telemetry"

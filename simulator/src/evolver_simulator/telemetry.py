@@ -1,4 +1,4 @@
-"""Geracao deterministica de telemetria simulada."""
+"""Geração das medições simuladas, sem acesso ao MQTT ou ao banco."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from .config import SimulatorSettings
 
 Clock = Callable[[], datetime]
 UuidFactory = Callable[[], UUID]
+MEASUREMENT_TYPES = ("od", "ph", "temperature")
 
 
 def utc_now() -> datetime:
@@ -21,10 +22,9 @@ def utc_now() -> datetime:
 
 
 class SimulatedTelemetryGenerator:
-    """Gera OD, pH e temperatura mockados e reproduziveis pela semente."""
+    """Gera OD, pH e temperatura em ordem para cada frasco."""
 
-    _CYCLE_LENGTH = 24
-    _MEASUREMENT_TYPES = ("od", "ph", "temperature")
+    _CYCLE_LENGTHS = {"od": 19, "ph": 29, "temperature": 37}
 
     def __init__(
         self,
@@ -35,26 +35,40 @@ class SimulatedTelemetryGenerator:
         uuid_factory: UuidFactory = uuid4,
     ) -> None:
         self._settings = settings
-        self._rng = rng if rng is not None else random.Random(settings.seed)
+        seed_source = rng if rng is not None else random.Random(settings.seed)
+        self._generators = {
+            kind: random.Random(seed_source.getrandbits(128)) for kind in MEASUREMENT_TYPES
+        }
+        self._phases = {
+            kind: self._generators[kind].uniform(0, math.tau) for kind in MEASUREMENT_TYPES
+        }
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._sequence = 0
 
     def next_event(self) -> TelemetryEvent:
         sequence = self._sequence
-        measurement_count = len(self._MEASUREMENT_TYPES)
-        measurement_type = self._MEASUREMENT_TYPES[sequence % measurement_count]
-        vial_index = (sequence // measurement_count) % len(self._settings.vial_ids)
-        vial_cycle = sequence // (measurement_count * len(self._settings.vial_ids))
-        phase = 2 * math.pi * (vial_cycle % self._CYCLE_LENGTH) / self._CYCLE_LENGTH
-        value = self._value_for(measurement_type, vial_index, phase)
+        vial_ids = self._settings.vial_ids
+        types = MEASUREMENT_TYPES
+
+        # A cada três medições, passa ao próximo frasco. Depois, recomeça.
+        measurement_type = types[sequence % len(types)]
+        vial_turn = sequence // len(types)
+        vial_index = vial_turn % len(vial_ids)
+        cycle = vial_turn // len(vial_ids)
+        value = self._value_for(measurement_type, vial_index, cycle)
 
         event = TelemetryEvent(
             schema_version="1.0",
             event_id=self._uuid_factory(),
             producer_id=self._settings.producer_id,
             equipment_id=self._settings.equipment_id,
-            vial_id=self._settings.vial_ids[vial_index],
+            vial_id=vial_ids[vial_index],
+            experiment_run_id=(
+                str(self._settings.experiment_ids[vial_ids[vial_index]])
+                if vial_ids[vial_index] in self._settings.experiment_ids
+                else None
+            ),
             measurement_type=measurement_type,
             value=value,
             generated_at=self._clock(),
@@ -63,26 +77,29 @@ class SimulatedTelemetryGenerator:
         self._sequence += 1
         return event
 
-    def _value_for(self, measurement_type: str, vial_index: int, phase: float) -> float:
-        if measurement_type == "od":
-            baseline = self._settings.od_baseline
-            variation = self._settings.od_variation
-            noise_amplitude = self._settings.od_noise
-            vial_offset = 0.01
-        elif measurement_type == "ph":
-            baseline = self._settings.ph_baseline
-            variation = self._settings.ph_variation
-            noise_amplitude = self._settings.ph_noise
-            vial_offset = 0.02
-        elif measurement_type == "temperature":
-            baseline = self._settings.temperature_baseline
-            variation = self._settings.temperature_variation
-            noise_amplitude = self._settings.temperature_noise
-            vial_offset = 0.1
-        else:
+    def _value_for(self, measurement_type: str, vial_index: int, cycle: int) -> float:
+        settings = self._settings
+        # Cada conjunto contém: valor base, variação, ruído e diferença por frasco.
+        profiles = {
+            "od": (settings.od_baseline, settings.od_variation, settings.od_noise, 0.01),
+            "ph": (settings.ph_baseline, settings.ph_variation, settings.ph_noise, 0.02),
+            "temperature": (
+                settings.temperature_baseline,
+                settings.temperature_variation,
+                settings.temperature_noise,
+                0.1,
+            ),
+        }
+        if measurement_type not in profiles:
             raise ValueError(f"unsupported simulated measurement type: {measurement_type}")
+        baseline, variation, noise_amplitude, vial_offset = profiles[measurement_type]
 
-        noise = self._rng.uniform(-noise_amplitude, noise_amplitude)
+        # Cada medição tem fase, período e ruído próprios; são apenas dados de teste.
+        phase = (
+            self._phases[measurement_type]
+            + math.tau * cycle / self._CYCLE_LENGTHS[measurement_type]
+        )
+        noise = self._generators[measurement_type].uniform(-noise_amplitude, noise_amplitude)
         value = baseline + vial_index * vial_offset + variation * math.sin(phase) + noise
         if measurement_type == "od":
             value = max(0.0, value)
