@@ -89,6 +89,10 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         def create(vial: int):
             return client.post("/api/experiments", json={"name": f"Teste {vial}", "vial_id": vial})
 
+        def database_time():
+            with engine.connect() as connection:
+                return connection.scalar(text("SELECT clock_timestamp()")).isoformat()
+
         def free_ids():
             return [vial["vial_id"] for vial in client.get("/api/vials/available").json()]
 
@@ -116,7 +120,7 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
             "measurement": "temperature",
             "value": 37.0,
             "unit": "celsius",
-            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_at": database_time(),
         }
         assert client.post(f"{first_url}/inactivate").json()["status"] == "inactive"
         assert free_ids() == [1]
@@ -130,7 +134,7 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(ValueError, match="alocação"):
             store_message(engine, TELEMETRY_TOPIC, json.dumps({**message, "vial_id": 2}).encode())
         assert client.get(f"{second_url}/temperature-readings").json() == []
-        newer = {**message, "event_id": str(uuid4()), "generated_at": datetime.now(UTC).isoformat()}
+        newer = {**message, "event_id": str(uuid4()), "generated_at": database_time()}
         with pytest.raises(ValueError, match="alocação"):
             store_message(engine, TELEMETRY_TOPIC, json.dumps(newer).encode())
         newer["experiment_id"] = second["id"]

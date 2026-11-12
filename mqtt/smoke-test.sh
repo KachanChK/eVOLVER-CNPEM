@@ -45,6 +45,12 @@ echo "Fluxo temporário do simulador"
 check "simulador -> assinante: temperatura de teste" "37.0" \
   "$(exchange evolver-ingestion "$ing_pw" "evolver/dev/+/telemetry" \
     "$eq" "$sim_pw" "evolver/dev/$eq/telemetry" 37.0)"
+check "simulador -> ingestão: consulta de vials ativos" "request" \
+  "$(exchange evolver-ingestion "$ing_pw" "evolver/dev/$eq/active-vials/request" \
+    "$eq" "$sim_pw" "evolver/dev/$eq/active-vials/request" request)"
+check "ingestão -> simulador: vials ativos" "response" \
+  "$(exchange "$eq" "$sim_pw" "evolver/dev/$eq/active-vials/response" \
+    evolver-ingestion "$ing_pw" "evolver/dev/$eq/active-vials/response" response)"
 
 echo "Fluxos previstos no contrato"
 check "simulador -> ingestão: telemetry" "t1" \
