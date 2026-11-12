@@ -1,4 +1,4 @@
-"""Temperature history for one vial."""
+"""Temperature history for one experiment."""
 
 from __future__ import annotations
 
@@ -8,16 +8,11 @@ from sqlalchemy.orm import Session
 from evolver.db.models import TemperatureReading
 
 
-def get_temperature_history(
-    session: Session, vial_id: int, limit: int = 100
-) -> list[TemperatureReading]:
-    if limit < 1:
-        raise ValueError("limit must be positive")
+def get_temperature_history(session: Session, experiment_id: int) -> list[TemperatureReading]:
     return list(
         session.scalars(
             select(TemperatureReading)
-            .where(TemperatureReading.vial_id == vial_id)
-            .order_by(TemperatureReading.generated_at.desc())
-            .limit(limit)
+            .where(TemperatureReading.experiment_id == experiment_id)
+            .order_by(TemperatureReading.generated_at, TemperatureReading.event_id)
         )
     )

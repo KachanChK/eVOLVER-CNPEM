@@ -5,6 +5,8 @@ topic write evolver/health
 # Ingestão: recebe a telemetria temporária e os fluxos do contrato v1.
 user evolver-ingestion
 topic read evolver/dev/+/telemetry
+topic read evolver/dev/evolver-sim-01/active-vials/request
+topic write evolver/dev/evolver-sim-01/active-vials/response
 topic read evolver/v1/+/telemetry
 topic read evolver/v1/+/command-results
 topic write evolver/v1/+/telemetry/ack
@@ -17,6 +19,8 @@ topic write evolver/v1/+/commands
 # Simulador: publica a temperatura temporária e acessa somente os próprios tópicos v1.
 user evolver-sim-01
 topic write evolver/dev/evolver-sim-01/telemetry
+topic write evolver/dev/evolver-sim-01/active-vials/request
+topic read evolver/dev/evolver-sim-01/active-vials/response
 topic write evolver/v1/evolver-sim-01/telemetry
 topic read evolver/v1/evolver-sim-01/telemetry/ack
 topic read evolver/v1/evolver-sim-01/telemetry/rejection

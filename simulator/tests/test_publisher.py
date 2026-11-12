@@ -1,89 +1,81 @@
 import json
-from datetime import UTC, datetime
+from types import SimpleNamespace
+from uuid import uuid4
 
+import pytest
 from evolver_simulator import __main__ as publisher
 
 
-def test_builds_temperature_message_for_temporary_topic() -> None:
-    generated_at = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
-
-    message = publisher.build_message(generated_at)
-    event_id = message.pop("event_id")
-    assert isinstance(event_id, str)
-
-    assert publisher.EQUIPMENT_ID == "evolver-sim-01"
-    assert publisher.TOPIC == "evolver/dev/evolver-sim-01/telemetry"
-    assert message == {
-        "equipment_id": "evolver-sim-01",
-        "vial_id": 1,
-        "measurement": "temperature",
-        "value": 37.0,
-        "unit": "celsius",
-        "generated_at": "2026-11-03T12:00:00Z",
-    }
-    assert json.loads(json.dumps(message)) == message
-
-
-def test_rejects_failed_puback(monkeypatch, capsys) -> None:
-    class FakeReasonCode:
-        def __init__(self, is_failure: bool, description: str) -> None:
-            self.is_failure = is_failure
-            self.description = description
-
-        def __str__(self) -> str:
-            return self.description
-
-    class FakePublication:
-        @staticmethod
-        def wait_for_publish(timeout: float) -> None:
-            assert timeout == publisher.TIMEOUT_SECONDS
-
-        @staticmethod
-        def is_published() -> bool:
-            return True
+@pytest.mark.parametrize(
+    ("vials", "rejected", "expected"),
+    [
+        ([1, 7], False, [1, 7]),
+        ([2], False, [2]),
+        ([], False, []),
+        (None, False, []),
+        ([1], True, []),
+    ],
+)
+def test_simulator_round(monkeypatch, capsys, vials, rejected, expected) -> None:
+    sent = []
+    success = SimpleNamespace(is_failure=False)
 
     class FakeClient:
-        def __init__(self, **kwargs: object) -> None:
-            assert kwargs["client_id"] == publisher.EQUIPMENT_ID
-            self.on_connect = None
-            self.on_publish = None
+        def __init__(self, **kwargs):
+            pass
 
-        def username_pw_set(self, username: str, password: str) -> None:
+        def username_pw_set(self, username, password):
             assert username == publisher.EQUIPMENT_ID
-            assert password == "simulator-local-only"
 
-        def connect(self, host: str, port: int, keepalive: int) -> None:
-            assert (host, port, keepalive) == ("127.0.0.1", 1883, 60)
-            assert self.on_connect is not None
-            self.on_connect(self, None, None, FakeReasonCode(False, "Success"), None)
+        def connect(self, host, port, keepalive):
+            self.on_connect(self, None, None, success, None)
 
-        @staticmethod
-        def loop_start() -> None:
-            pass
+        def subscribe(self, topic, qos):
+            assert topic == publisher.ACTIVE_VIALS_RESPONSE
+            self.on_subscribe(self, None, 1, [success], None)
+            return publisher.mqtt.MQTT_ERR_SUCCESS, 1
 
-        def publish(self, topic: str, payload: str, qos: int, retain: bool) -> FakePublication:
-            assert topic == publisher.TOPIC
-            assert json.loads(payload)["equipment_id"] == publisher.EQUIPMENT_ID
+        def publish(self, topic, payload, qos, retain):
             assert (qos, retain) == (1, False)
-            assert self.on_publish is not None
-            self.on_publish(self, None, 1, FakeReasonCode(True, "Not authorized"), None)
-            return FakePublication()
+            data = json.loads(payload)
+            code = SimpleNamespace(is_failure=True) if rejected else success
+            self.on_publish(self, None, 1, code, None)
+            if topic == publisher.ACTIVE_VIALS_REQUEST and vials is not None:
+                for request_id in (str(uuid4()), data["request_id"]):
+                    response = {
+                        "request_id": request_id,
+                        "vials": [{"vial_id": vial, "experiment_id": 20 + vial} for vial in vials],
+                    }
+                    self.on_message(
+                        self,
+                        None,
+                        SimpleNamespace(
+                            topic=publisher.ACTIVE_VIALS_RESPONSE,
+                            payload=json.dumps(response).encode(),
+                            retain=False,
+                        ),
+                    )
+            if topic == publisher.TELEMETRY_TOPIC:
+                sent.append(publisher.TemperatureMessage.model_validate(data))
+            return SimpleNamespace(wait_for_publish=lambda timeout: None, is_published=lambda: True)
 
-        @staticmethod
-        def disconnect() -> None:
+        def loop_start(self):
             pass
 
-        @staticmethod
-        def loop_stop() -> None:
+        def loop_stop(self):
+            pass
+
+        def disconnect(self):
             pass
 
     monkeypatch.setenv("MQTT_SIMULATOR_PASSWORD", "simulator-local-only")
-    monkeypatch.setenv("VIAL_ID", "1")
+    monkeypatch.setattr(publisher, "TIMEOUT_SECONDS", 0)
     monkeypatch.setattr(publisher.mqtt, "Client", FakeClient)
-
-    assert publisher.main() == 1
-
-    captured = capsys.readouterr()
-    assert "broker rejeitou a publicação: Not authorized" in captured.err
-    assert "Mensagem enviada" not in captured.out
-    assert "PUBACK recebido" not in captured.out
+    assert publisher.main() == int(vials is None or rejected)
+    assert [message.vial_id for message in sent] == expected
+    assert [message.experiment_id for message in sent] == [20 + vial for vial in expected]
+    assert all(message.value == 37.0 for message in sent)
+    if vials is None:
+        assert "não respondeu" in capsys.readouterr().err
+    if rejected:
+        assert "broker rejeitou" in capsys.readouterr().err

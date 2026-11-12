@@ -1,5 +1,5 @@
 # API
 
-Diretório reservado para a futura aplicação FastAPI. Ela consultará o banco,
-publicará comandos autorizados e enviará dados persistidos ao navegador por HTTP e
-SSE. Nenhuma API é implementada pela E2-T03.
+API FastAPI do piloto de experimentos. Consulte `http://127.0.0.1:8000/docs` para
+ver as rotas de cadastro, vials livres, histórico, inativação e exclusão lógica.
+O [README principal](../../../../README.md) explica como iniciar a API.

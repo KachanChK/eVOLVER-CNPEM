@@ -3,12 +3,12 @@
 Esta versão permite testar o caminho de uma leitura de temperatura:
 
 ```text
-Simulador Python → Mosquitto (MQTT) → ingestão Python → PostgreSQL + TimescaleDB
+Simulador → Mosquitto → ingestão → TimescaleDB → FastAPI → interface Vue
 ```
 
-Cada execução do simulador envia **37 °C** para um frasco (`vial`). O Mosquitto e o
-banco rodam no Docker Desktop. A ingestão e o simulador rodam em terminais no Windows.
-Ainda não há interface web funcional.
+Cadastre experimentos pela interface e escolha um dos 12 vials do equipamento simulado.
+Cada execução do simulador envia uma leitura de **37 °C** para cada vial com um
+experimento ativo. A página do experimento mostra o gráfico e o histórico.
 
 ## 1. Instalar o Docker Desktop no Windows
 
@@ -87,11 +87,12 @@ em `backend/.env` e `simulator/.env`.
 
 ```powershell
 docker compose up -d --wait
-docker compose --env-file mqtt/.env -f mqtt/compose.yaml up -d --wait
+docker compose --env-file mqtt/.env -f mqtt/compose.yaml up -d --wait --force-recreate
 ```
 
 Espere os dois comandos terminarem com os serviços saudáveis (`healthy`). Eles criam
-dois projetos separados no Docker Desktop: `evolver-cnpem` e `evolver-mqtt`.
+dois projetos separados no Docker Desktop: `evolver-cnpem` e `evolver-mqtt`. Recriar
+o contêiner do Mosquitto aplica as permissões de consulta dos vials ativos.
 
 ## 5. Criar as tabelas
 
@@ -99,31 +100,33 @@ dois projetos separados no Docker Desktop: `evolver-cnpem` e `evolver-mqtt`.
 uv run --env-file backend/.env --package evolver-cnpem-backend alembic -c backend/alembic.ini upgrade head
 ```
 
-Isso cria `vials` e `temperature_readings`. Se executar novamente em um banco já
-atualizado, o Alembic não recria as tabelas nem apaga as leituras. **Se aparecer um
-erro dizendo que uma tabela antiga contém dados, pare aqui:** a migração se recusa a
-apagá-los. Consulte [migrações do banco](backend/migrations/README.md).
+Isso cria `experiments` e cadastra os vials 1 a 12 em um banco novo. A migração
+recusa um banco com vials do piloto anterior. Para fazer o reinício local e descartar
+esses vials e leituras, siga as instruções de [migrações do banco](backend/migrations/README.md).
 
-## 6. Cadastrar um frasco de teste
+## 6. Abrir a interface e cadastrar um experimento
 
-Veja primeiro se já existe um frasco para o simulador:
-
-```powershell
-docker compose exec timescaledb psql -U evolver -d evolver -c "SELECT vial_id, equipment_id, label FROM vials;"
-```
-
-Se não houver um frasco com `equipment_id` igual a `evolver-sim-01`, cadastre um:
+Em um terminal na raiz, inicie a API:
 
 ```powershell
-docker compose exec timescaledb psql -U evolver -d evolver -c "INSERT INTO vials (equipment_id, label, created_at) VALUES ('evolver-sim-01', 'Frasco de teste', now()) RETURNING vial_id;"
+uv run --env-file backend/.env --package evolver-cnpem-backend uvicorn evolver.api.main:app --reload
 ```
 
-Anote o `vial_id` existente ou retornado pelo cadastro. Abra `simulator/.env` e defina
-`VIAL_ID` com esse número. Em um banco novo, ele normalmente será `1`.
+Em outro terminal, com Node.js 22.12 ou superior, inicie a interface:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Abra [a interface local](http://localhost:5173), clique em **Criar experimento** e
+escolha um vial livre. **Inativar** libera o vial e mantém o histórico visível.
+**Excluir** libera o vial e retira o experimento da interface, preservando os dados no banco.
 
 ## 7. Receber e enviar a temperatura
 
-Abra um **primeiro PowerShell** na raiz do repositório e inicie a ingestão:
+Abra outro PowerShell na raiz do repositório e inicie a ingestão:
 
 ```powershell
 uv run --env-file backend/.env --package evolver-cnpem-backend python -m evolver.ingestion
@@ -131,16 +134,15 @@ uv run --env-file backend/.env --package evolver-cnpem-backend python -m evolver
 
 Deixe esse terminal aberto. Ele deve mostrar `Ingestão MQTT pronta para temperaturas.`
 
-Abra um **segundo PowerShell**, também na raiz, e execute o simulador:
+Em outro PowerShell na raiz, execute o simulador:
 
 ```powershell
 uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator
 ```
 
-O simulador deve mostrar `PUBACK recebido`; o primeiro terminal deve mostrar
-`Temperatura gravada`. Execute o simulador novamente para gerar outra leitura. Cada
-execução envia uma mensagem e encerra. O PUBACK confirma a entrega ao Mosquitto;
-confirme a gravação no terminal da ingestão ou no banco.
+O simulador consulta os experimentos ativos via MQTT e mostra `PUBACK recebido`
+por vial. Quando a ingestão mostrar `Temperatura gravada`, recarregue a página do
+experimento para ver a leitura. Execute o simulador novamente para gerar mais pontos.
 
 ## 8. Visualizar o banco no DBeaver
 
@@ -160,14 +162,14 @@ PostgreSQL, permita a instalação. O TimescaleDB é uma extensão do PostgreSQL
 essa mesma conexão.
 
 No navegador do DBeaver, abra **evolver → Schemas → public → Tables**. Clique em
-`temperature_readings` e escolha **Visualizar dados**. A coluna `vial_id` liga cada
-leitura à tabela `vials`. Você também pode executar esta consulta em um editor SQL:
+`temperature_readings` e escolha **Visualizar dados**. Use `experiment_id` para
+consultar o histórico de um experimento mesmo depois da reutilização do vial:
 
 ```sql
-SELECT v.vial_id, v.label, t.temperature_celsius,
+SELECT e.name, t.vial_id, t.temperature_celsius,
        t.generated_at, t.received_at
 FROM temperature_readings AS t
-JOIN vials AS v USING (vial_id)
+JOIN experiments AS e ON e.id = t.experiment_id
 ORDER BY t.generated_at DESC
 LIMIT 20;
 ```
