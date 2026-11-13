@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from evolver_contracts.models import TelemetryEvent
+from evolver_contracts.pilot import ActiveVial
 
 from .config import SimulatorSettings
 
@@ -29,12 +30,14 @@ class SimulatedTelemetryGenerator:
     def __init__(
         self,
         settings: SimulatorSettings,
+        allocations: list[ActiveVial],
         *,
         rng: random.Random | None = None,
         clock: Clock = utc_now,
         uuid_factory: UuidFactory = uuid4,
     ) -> None:
         self._settings = settings
+        self._allocations = allocations
         seed_source = rng if rng is not None else random.Random(settings.seed)
         self._generators = {
             kind: random.Random(seed_source.getrandbits(128)) for kind in MEASUREMENT_TYPES
@@ -48,14 +51,14 @@ class SimulatedTelemetryGenerator:
 
     def next_event(self) -> TelemetryEvent:
         sequence = self._sequence
-        vial_ids = self._settings.vial_ids
+        allocations = self._allocations
         types = MEASUREMENT_TYPES
 
-        # A cada três medições, passa ao próximo frasco. Depois, recomeça.
+        # Cada vial recebe os três tipos de medição em cada rodada.
         measurement_type = types[sequence % len(types)]
         vial_turn = sequence // len(types)
-        vial_index = vial_turn % len(vial_ids)
-        cycle = vial_turn // len(vial_ids)
+        vial_index = vial_turn % len(allocations)
+        cycle = vial_turn // len(allocations)
         value = self._value_for(measurement_type, vial_index, cycle)
 
         event = TelemetryEvent(
@@ -63,12 +66,8 @@ class SimulatedTelemetryGenerator:
             event_id=self._uuid_factory(),
             producer_id=self._settings.producer_id,
             equipment_id=self._settings.equipment_id,
-            vial_id=vial_ids[vial_index],
-            experiment_run_id=(
-                str(self._settings.experiment_ids[vial_ids[vial_index]])
-                if vial_ids[vial_index] in self._settings.experiment_ids
-                else None
-            ),
+            vial_id=str(allocations[vial_index].vial_id),
+            experiment_run_id=str(allocations[vial_index].experiment_id),
             measurement_type=measurement_type,
             value=value,
             generated_at=self._clock(),

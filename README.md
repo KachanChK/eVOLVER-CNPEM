@@ -26,7 +26,7 @@ Os valores são simulados e não representam sensores ou medições científicas
    if (!(Test-Path simulator/.env)) { Copy-Item simulator/.env.example simulator/.env }
    ```
 
-   Os exemplos trazem credenciais apenas para desenvolvimento local. Se alterá-las, mantenha a conexão do banco em `backend/.env` compatível com `.env`, e as senhas MQTT de ingestão e do simulador compatíveis com `mqtt/.env`. Os arquivos `.env` reais são privados e não devem ser enviados ao Git.
+   Os exemplos trazem credenciais apenas para desenvolvimento local. Se alterá-las, mantenha a conexão do banco em `backend/.env` compatível com `.env`, e as senhas MQTT de ingestão e do simulador compatíveis com `mqtt/.env`. `VIAL_ID` e `SIMULATOR_VIAL_IDS` de configurações antigas não são mais usados. Os arquivos `.env` reais são privados e não devem ser enviados ao Git.
 
 2. Instale as dependências Python e da interface:
 
@@ -68,9 +68,9 @@ Em outro PowerShell, também na raiz, gere leituras:
 .\scripts\simular.ps1
 ```
 
-O script consulta os experimentos ativos e envia medições para os vials correspondentes. Cada execução gera até três leituras de OD, três de pH e três de temperatura por vial; depois, encerra. Os gráficos são atualizados a cada cinco segundos.
+O simulador consulta os experimentos ativos pela ingestão via MQTT. Cada execução faz dez rodadas a cada 0,5 segundo, enviando OD, pH e temperatura para todos os vials ativos em cada rodada (30 eventos por vial). Sem experimentos ativos, encerra sem enviar medições. Os gráficos são atualizados a cada cinco segundos.
 
-O simulador usa sequências independentes para os três tipos. Por padrão, uma nova execução gera outros valores. Para repetir uma sequência em testes, defina `SIMULATOR_SEED` em `simulator/.env`; com a mesma semente e configuração, os resultados são reproduzíveis. `SIMULATOR_INTERVAL_SECONDS` ajusta o intervalo entre as medições.
+O simulador usa sequências independentes para os três tipos. Por padrão, uma nova execução gera outros valores. Para repetir uma sequência em testes, defina `SIMULATOR_SEED` em `simulator/.env`; com a mesma semente e configuração, os resultados são reproduzíveis. As rodadas terminam em cerca de cinco segundos; confirmações MQTT lentas podem prolongar a execução.
 
 **Inativar** libera o vial e mantém o histórico visível. **Excluir** oculta o experimento na interface e preserva os dados no banco.
 

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
+from time import monotonic
 
 from .config import SimulatorSettings
 from .mqtt import MqttPublisher
 from .telemetry import MEASUREMENT_TYPES, SimulatedTelemetryGenerator
 
 LOGGER = logging.getLogger(__name__)
-READINGS_PER_TYPE = 3
+ROUNDS = 10
+ROUND_INTERVAL_SECONDS = 0.5
 
 
 class SimulatedFailureError(RuntimeError):
@@ -24,51 +27,56 @@ class SimulatorRunner:
         self,
         settings: SimulatorSettings,
         *,
-        generator: SimulatedTelemetryGenerator | None = None,
         publisher: MqttPublisher | None = None,
         stop_event: threading.Event | None = None,
+        clock: Callable[[], float] = monotonic,
     ) -> None:
         self._settings = settings
-        self._generator = generator or SimulatedTelemetryGenerator(settings)
         self._publisher = publisher or MqttPublisher(settings)
         self._stop_event = stop_event or threading.Event()
+        self._clock = clock
 
     def stop(self) -> None:
         self._stop_event.set()
 
     def run(self, *, max_messages: int | None = None) -> int:
-        default_limit = READINGS_PER_TYPE * len(MEASUREMENT_TYPES) * len(self._settings.vial_ids)
-        requested_limit = max_messages if max_messages is not None else self._settings.max_messages
-        limit = (
-            min(default_limit, requested_limit) if requested_limit is not None else default_limit
-        )
         published = 0
         try:
             self._publisher.connect()
-            while not self._stop_event.is_set() and published < limit:
-                self._publisher.publish(self._generator.next_event())
-                published += 1
-
-                if self._settings.fail_after_messages == published:
-                    raise SimulatedFailureError(
-                        f"simulated failure after {published} published messages",
-                    )
-                if published >= limit:
+            allocations = self._publisher.active_vials()
+            if not allocations:
+                LOGGER.info("Nenhum vial ativo; nenhuma medicao enviada")
+                return 0
+            LOGGER.info(
+                "Simulando os vials ativos: %s", ",".join(str(a.vial_id) for a in allocations)
+            )
+            generator = SimulatedTelemetryGenerator(self._settings, allocations)
+            limit = ROUNDS * len(MEASUREMENT_TYPES) * len(allocations)
+            requested_limit = (
+                max_messages if max_messages is not None else self._settings.max_messages
+            )
+            if requested_limit is not None:
+                limit = min(limit, requested_limit)
+            started = self._clock()
+            for round_number in range(1, ROUNDS + 1):
+                deadline = started + round_number * ROUND_INTERVAL_SECONDS
+                if self._stop_event.wait(max(0.0, deadline - self._clock())):
                     break
-
-                wait_seconds = self._settings.interval_seconds
-                is_simulated_pause = self._settings.pause_after_messages == published
-                if is_simulated_pause:
-                    wait_seconds = self._settings.pause_seconds
-                    LOGGER.warning(
-                        "Pausa simulada de %s segundo(s) apos %s mensagem(ns)",
-                        wait_seconds,
-                        published,
-                    )
-                if self._stop_event.wait(wait_seconds):
+                for _ in range(len(allocations) * len(MEASUREMENT_TYPES)):
+                    if self._stop_event.is_set() or published >= limit:
+                        break
+                    self._publisher.publish(generator.next_event())
+                    published += 1
+                    if self._settings.fail_after_messages == published:
+                        raise SimulatedFailureError(
+                            f"simulated failure after {published} published messages"
+                        )
+                    if self._settings.pause_after_messages == published:
+                        LOGGER.warning("Pausa simulada apos %s mensagens", published)
+                        if self._stop_event.wait(self._settings.pause_seconds):
+                            break
+                if published >= limit or self._stop_event.is_set():
                     break
-                if is_simulated_pause:
-                    LOGGER.info("Pausa simulada concluida; retomando publicacoes")
         finally:
             self._publisher.close()
 

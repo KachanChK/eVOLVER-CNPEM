@@ -1,4 +1,4 @@
-"""Store the temporary simulator's temperature messages in PostgreSQL."""
+"""Store versioned simulator telemetry and answer active vial queries."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from evolver_contracts.pilot import (
     EQUIPMENT_ID,
     AllocationRequest,
     AllocationResponse,
-    TemperatureMessage,
 )
 from paho.mqtt import client as mqtt
 from sqlalchemy import create_engine, text
@@ -37,42 +36,6 @@ def active_vials(engine: Engine, payload: bytes) -> AllocationResponse:
             .all()
         )
     return AllocationResponse.model_validate({"request_id": request.request_id, "vials": rows})
-
-
-def store_message(engine: Engine, topic: str, payload: bytes) -> str:
-    message = TemperatureMessage.model_validate_json(payload)
-    if topic != f"evolver/dev/{message.equipment_id}/telemetry":
-        raise ValueError("equipment_id does not match the MQTT topic")
-    with engine.begin() as connection:
-        allocation = connection.execute(
-            text("""
-                SELECT e.id
-                FROM experiments e JOIN vials v ON v.vial_id = e.vial_id
-                WHERE e.id = :experiment_id AND e.vial_id = :vial_id
-                  AND v.equipment_id = :equipment_id
-                  AND e.started_at <= :generated_at
-                  AND (e.ended_at IS NULL OR :generated_at < e.ended_at)
-                  AND :generated_at <= clock_timestamp()
-                FOR SHARE OF e
-            """),
-            message.model_dump(),
-        ).scalar_one_or_none()
-        if allocation is None:
-            raise ValueError("não havia essa alocação para o vial no horário da leitura")
-        result = connection.execute(
-            text("""
-                INSERT INTO temperature_readings
-                    (event_id, generated_at, received_at, vial_id,
-                     experiment_id, temperature_celsius)
-                VALUES (:event_id, :generated_at, :received_at, :vial_id, :experiment_id, :value)
-                ON CONFLICT (event_id, generated_at) DO NOTHING
-            """),
-            {
-                **message.model_dump(),
-                "received_at": datetime.now(UTC),
-            },
-        )
-    return "gravada" if result.rowcount else "duplicada"
 
 
 def store_v1_message(engine: Engine, topic: str, payload: bytes) -> str:
@@ -154,7 +117,6 @@ def main() -> None:
             raise ConnectionError(f"MQTT connection rejected: {reason_code}")
         client.subscribe(
             [
-                ("evolver/dev/+/telemetry", 1),
                 ("evolver/v1/+/telemetry", 1),
                 (ACTIVE_VIALS_REQUEST, 1),
             ]
@@ -168,10 +130,7 @@ def main() -> None:
                 response = active_vials(engine, message.payload)
                 client.publish(ACTIVE_VIALS_RESPONSE, response.model_dump_json(), qos=1)
                 return
-            if message.topic.startswith("evolver/v1/"):
-                status = store_v1_message(engine, message.topic, message.payload)
-            else:
-                status = store_message(engine, message.topic, message.payload)
+            status = store_v1_message(engine, message.topic, message.payload)
             print(f"Medição {status}: {message.topic}", flush=True)
         except Exception as exc:
             print(f"Mensagem não gravada: {exc}", flush=True)

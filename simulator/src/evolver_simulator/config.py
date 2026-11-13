@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from typing import Self
 
 from pydantic import Field, PositiveFloat, PositiveInt, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-MAX_VIALS = 16
-MAX_VIAL_ID = 2**63 - 1
+IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 
 
 class SimulatorSettings(BaseSettings):
@@ -44,21 +41,13 @@ class SimulatorSettings(BaseSettings):
     # Identidade, frascos e ritmo das medições.
     equipment_id: str = Field(
         default="evolver-sim-01",
-        pattern=IDENTIFIER_PATTERN.pattern,
+        pattern=IDENTIFIER_PATTERN,
         validation_alias="SIMULATOR_EQUIPMENT_ID",
     )
     producer_id: str = Field(
         default="simulator-local-01",
-        pattern=IDENTIFIER_PATTERN.pattern,
+        pattern=IDENTIFIER_PATTERN,
         validation_alias="SIMULATOR_PRODUCER_ID",
-    )
-    vial_id: int = Field(default=1, ge=1, le=MAX_VIAL_ID, validation_alias="VIAL_ID")
-    vial_ids_csv: str | None = Field(default=None, validation_alias="SIMULATOR_VIAL_IDS")
-    experiment_ids: dict[str, PositiveInt] = Field(
-        default_factory=dict, validation_alias="SIMULATOR_EXPERIMENT_IDS"
-    )
-    interval_seconds: PositiveFloat = Field(
-        default=2.0, validation_alias="SIMULATOR_INTERVAL_SECONDS"
     )
     seed: int | None = Field(default=None, validation_alias="SIMULATOR_SEED")
 
@@ -100,24 +89,6 @@ class SimulatorSettings(BaseSettings):
         return stripped
 
     @model_validator(mode="after")
-    def validate_vials(self) -> Self:
-        vial_ids = self.vial_ids
-        if not vial_ids:
-            raise ValueError("SIMULATOR_VIAL_IDS must contain at least one identifier")
-        if len(vial_ids) > MAX_VIALS:
-            raise ValueError(f"SIMULATOR_VIAL_IDS supports at most {MAX_VIALS} identifiers")
-        if len(set(vial_ids)) != len(vial_ids):
-            raise ValueError("SIMULATOR_VIAL_IDS must not contain duplicates")
-        invalid = [
-            vial_id
-            for vial_id in vial_ids
-            if not re.fullmatch(r"[1-9][0-9]*", vial_id) or int(vial_id) > MAX_VIAL_ID
-        ]
-        if invalid:
-            raise ValueError(f"vial ID must be a positive database integer: {invalid[0]}")
-        return self
-
-    @model_validator(mode="after")
     def validate_simulated_scenario(self) -> Self:
         pause_is_partial = (self.pause_after_messages is None) != (self.pause_seconds is None)
         if pause_is_partial:
@@ -128,12 +99,6 @@ class SimulatorSettings(BaseSettings):
         if self.pause_after_messages is not None and self.fail_after_messages is not None:
             raise ValueError("configure either a pause scenario or a failure scenario, not both")
         return self
-
-    @property
-    def vial_ids(self) -> tuple[str, ...]:
-        if self.vial_ids_csv is None:
-            return (str(self.vial_id),)
-        return tuple(part.strip() for part in self.vial_ids_csv.split(",") if part.strip())
 
     @property
     def mqtt_username(self) -> str:
@@ -148,7 +113,3 @@ class SimulatorSettings(BaseSettings):
     @property
     def telemetry_topic(self) -> str:
         return f"evolver/v1/{self.equipment_id}/telemetry"
-
-    @property
-    def temperature_topic(self) -> str:
-        return f"evolver/dev/{self.equipment_id}/telemetry"

@@ -7,6 +7,7 @@ from uuid import UUID
 
 import pytest
 from evolver_contracts.models import TelemetryEvent, schema_sources
+from evolver_contracts.pilot import ActiveVial
 from evolver_simulator.config import SimulatorSettings
 from evolver_simulator.telemetry import SimulatedTelemetryGenerator
 from jsonschema import Draft202012Validator, FormatChecker
@@ -21,18 +22,25 @@ def make_settings(**overrides: object) -> SimulatorSettings:
     return SimulatorSettings(_env_file=None, **values)
 
 
-def make_generator(settings: SimulatorSettings) -> SimulatedTelemetryGenerator:
+def allocations(*pairs: tuple[int, int]) -> list[ActiveVial]:
+    return [ActiveVial(vial_id=vial, experiment_id=experiment) for vial, experiment in pairs]
+
+
+def make_generator(
+    settings: SimulatorSettings, vials: list[ActiveVial] | None = None
+) -> SimulatedTelemetryGenerator:
     return SimulatedTelemetryGenerator(
         settings,
+        vials if vials is not None else allocations((1, 41)),
         clock=lambda: FIXED_TIME,
         uuid_factory=lambda: FIXED_UUID,
     )
 
 
 def test_same_seed_and_configuration_repeat_values_positions_and_sequence() -> None:
-    settings = make_settings(seed=71, vial_ids_csv="1,2")
-    first = make_generator(settings)
-    second = make_generator(settings)
+    settings = make_settings(seed=71)
+    first = make_generator(settings, allocations((1, 41), (2, 42)))
+    second = make_generator(settings, allocations((1, 41), (2, 42)))
 
     first_series = [first.next_event() for _ in range(12)]
     second_series = [second.next_event() for _ in range(12)]
@@ -73,7 +81,8 @@ def test_measurement_trends_are_not_forced_to_move_in_lockstep() -> None:
 
 def test_positions_cycle_in_declared_order_and_sequence_starts_at_zero() -> None:
     generator = make_generator(
-        make_settings(vial_ids_csv="3,1,2", od_noise=0, od_variation=0),
+        make_settings(od_noise=0, od_variation=0),
+        allocations((3, 43), (1, 41), (2, 42)),
     )
 
     events = [generator.next_event() for _ in range(10)]
@@ -95,7 +104,8 @@ def test_positions_cycle_in_declared_order_and_sequence_starts_at_zero() -> None
 
 def test_active_experiment_id_is_included_for_each_vial() -> None:
     generator = make_generator(
-        make_settings(vial_ids_csv="1,2", experiment_ids={"1": 41, "2": 42}),
+        make_settings(),
+        allocations((1, 41), (2, 42)),
     )
     events = [generator.next_event() for _ in range(6)]
     assert [event.experiment_run_id for event in events] == ["41"] * 3 + ["42"] * 3
@@ -103,13 +113,13 @@ def test_active_experiment_id_is_included_for_each_vial() -> None:
 
 def test_noise_stays_within_configured_range() -> None:
     settings = make_settings(
-        vial_ids_csv="1",
         od_baseline=0.5,
         od_variation=0,
         od_noise=0.01,
     )
     generator = SimulatedTelemetryGenerator(
         settings,
+        allocations((1, 41)),
         rng=random.Random(9),
         clock=lambda: FIXED_TIME,
         uuid_factory=lambda: FIXED_UUID,
@@ -139,7 +149,6 @@ def test_ph_and_temperature_noise_stay_within_configured_mock_range(
 ) -> None:
     generator = make_generator(
         make_settings(
-            vial_ids_csv="1",
             od_variation=0,
             od_noise=0,
             ph_variation=0,
@@ -189,6 +198,7 @@ def test_event_contains_required_fields_and_matches_runtime_model_and_schema() -
 def test_naive_clock_value_is_rejected_by_shared_contract() -> None:
     generator = SimulatedTelemetryGenerator(
         make_settings(),
+        allocations((1, 41)),
         clock=lambda: datetime(2026, 10, 29, 12, 0),
         uuid_factory=lambda: FIXED_UUID,
     )

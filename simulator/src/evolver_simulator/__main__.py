@@ -25,12 +25,12 @@ def positive_int(value: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Publica ate tres medicoes de OD, pH e temperatura por frasco",
+        description="Publica dez medicoes de OD, pH e temperatura por vial ativo",
     )
     parser.add_argument(
         "--max-messages",
         type=positive_int,
-        help="limita as medicoes a N; nao ultrapassa tres de cada tipo por frasco",
+        help="limita o total de eventos; nao ultrapassa dez de cada tipo por vial",
     )
     return parser
 

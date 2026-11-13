@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
-from evolver_simulator.config import MAX_VIALS, SimulatorSettings
+from evolver_simulator.config import SimulatorSettings
 from pydantic import ValidationError
 
 
@@ -19,7 +19,6 @@ def test_defaults_match_mosquitto_acl_identity_and_topic() -> None:
     assert settings.equipment_id == "evolver-sim-01"
     assert settings.mqtt_username == settings.equipment_id
     assert settings.telemetry_topic == "evolver/v1/evolver-sim-01/telemetry"
-    assert settings.vial_ids == ("1",)
     assert settings.seed is None
     assert (settings.ph_baseline, settings.temperature_baseline) == (7.0, 37.0)
 
@@ -32,7 +31,6 @@ def test_password_is_required() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("interval_seconds", 0),
         ("od_baseline", -0.1),
         ("od_variation", -0.1),
         ("od_noise", -0.1),
@@ -45,31 +43,14 @@ def test_password_is_required() -> None:
         ("mqtt_protocol_version", 4),
         ("mqtt_host", "  "),
         ("mqtt_simulator_password", "  "),
-        ("vial_ids_csv", ""),
-        ("vial_id", 0),
-        ("vial_ids_csv", "1,1"),
-        ("vial_ids_csv", "vial-01"),
-        ("vial_ids_csv", "01"),
-        ("vial_ids_csv", "9223372036854775808"),
         ("pause_after_messages", 0),
         ("pause_seconds", 0),
         ("fail_after_messages", 0),
-        ("vial_ids_csv", ",".join(str(index + 1) for index in range(MAX_VIALS + 1))),
     ],
 )
 def test_invalid_configuration_is_rejected(field: str, value: object) -> None:
     with pytest.raises(ValidationError):
         make_settings(**{field: value})
-
-
-def test_vial_ids_are_trimmed_and_keep_declared_order() -> None:
-    settings = make_settings(vial_ids_csv=" 2, 1 ")
-
-    assert settings.vial_ids == ("2", "1")
-
-
-def test_vial_id_matches_the_database_setting() -> None:
-    assert make_settings(vial_id=42).vial_ids == ("42",)
 
 
 @pytest.mark.parametrize(
@@ -102,7 +83,7 @@ def test_independent_broker_examples_match_versioned_publisher(
 ) -> None:
     root = Path(__file__).resolve().parents[2]
     for key in list(os.environ):
-        if key.startswith(("MQTT_", "SIMULATOR_")) or key == "VIAL_ID":
+        if key.startswith(("MQTT_", "SIMULATOR_")):
             monkeypatch.delenv(key)
     settings = SimulatorSettings(_env_file=root / "simulator" / ".env.example")
     broker_env = (root / "mqtt" / ".env.example").read_text(encoding="utf-8")
@@ -110,5 +91,6 @@ def test_independent_broker_examples_match_versioned_publisher(
     assert f"MQTT_SIMULATOR_PASSWORD={settings.mqtt_simulator_password}" in broker_env
     simulator_acl = acl.split(f"user {settings.mqtt_username}\n", 1)[1].split("\nuser ", 1)[0]
     assert f"topic write {settings.telemetry_topic}" in simulator_acl
-    assert f"topic write {settings.temperature_topic}" in simulator_acl
+    assert "topic write evolver/dev/evolver-sim-01/active-vials/request" in simulator_acl
+    assert "topic read evolver/dev/evolver-sim-01/active-vials/response" in simulator_acl
     assert "topic read evolver/v1/+/telemetry" in acl

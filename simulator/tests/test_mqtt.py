@@ -9,6 +9,7 @@ from uuid import UUID
 import paho.mqtt.client as mqtt
 import pytest
 from evolver_contracts.models import TelemetryEvent
+from evolver_contracts.pilot import ACTIVE_VIALS_REQUEST, ACTIVE_VIALS_RESPONSE
 from evolver_simulator.config import SimulatorSettings
 from evolver_simulator.mqtt import MqttConnectionError, MqttPublisher, MqttPublishError
 
@@ -52,13 +53,21 @@ class FakeClient:
         connect_result: int = mqtt.MQTT_ERR_SUCCESS,
         connect_failure: bool = False,
         message_info: FakeMessageInfo | None = None,
+        allocation_response: list[dict[str, int]] | None = None,
+        wrong_request_id: bool = False,
+        invalid_response: bool = False,
     ) -> None:
         self.connect_result = connect_result
         self.connect_failure = connect_failure
         self.message_info = message_info or FakeMessageInfo()
+        self.allocation_response = allocation_response
+        self.wrong_request_id = wrong_request_id
+        self.invalid_response = invalid_response
         self.on_connect: Any = None
         self.on_disconnect: Any = None
         self.on_publish: Any = None
+        self.on_subscribe: Any = None
+        self.on_message: Any = None
         self.username: str | None = None
         self.password: str | None = None
         self.connect_call: tuple[Any, ...] | None = None
@@ -67,6 +76,7 @@ class FakeClient:
         self.loop_started = False
         self.loop_stopped = False
         self.disconnected = False
+        self.subscriptions: list[str] = []
 
     def username_pw_set(self, username: str, password: str) -> None:
         self.username = username
@@ -91,7 +101,32 @@ class FakeClient:
                 self.message_info.reason_code,
                 None,
             )
+        if args[0] == ACTIVE_VIALS_REQUEST and self.allocation_response is not None:
+            request_id = json.loads(kwargs["payload"])["request_id"]
+            if self.wrong_request_id:
+                request_id = "00000000-0000-4000-8000-000000000000"
+            payload = json.dumps(
+                {"request_id": request_id, "vials": self.allocation_response}
+            ).encode()
+            if self.invalid_response:
+                payload = b"not-json"
+            message = type(
+                "Message",
+                (),
+                {
+                    "topic": ACTIVE_VIALS_RESPONSE,
+                    "retain": False,
+                    "payload": payload,
+                },
+            )()
+            self.on_message(self, None, message)
         return self.message_info
+
+    def subscribe(self, topic: str, qos: int) -> tuple[int, int]:
+        assert qos == 1
+        self.subscriptions.append(topic)
+        self.on_subscribe(self, None, 1, [FakeReasonCode()], None)
+        return mqtt.MQTT_ERR_SUCCESS, 1
 
     def disconnect(self) -> None:
         self.disconnected = True
@@ -145,6 +180,48 @@ def test_client_uses_mqtt5_authenticated_identity_and_connection_parameters() ->
     )
     publisher.close()
     assert fake.disconnected and fake.loop_stopped
+
+
+def test_active_vials_request_returns_correlated_allocations() -> None:
+    fake = FakeClient(
+        allocation_response=[
+            {"vial_id": 1, "experiment_id": 41},
+            {"vial_id": 3, "experiment_id": 43},
+        ]
+    )
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+    found = publisher.active_vials()
+    assert [(v.vial_id, v.experiment_id) for v in found] == [(1, 41), (3, 43)]
+    assert fake.subscriptions == [ACTIVE_VIALS_RESPONSE]
+    assert fake.publish_calls[0][0] == (ACTIVE_VIALS_REQUEST,)
+    publisher.close()
+
+
+def test_empty_active_vials_is_valid() -> None:
+    fake = FakeClient(allocation_response=[])
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+    assert publisher.active_vials() == []
+    publisher.close()
+
+
+@pytest.mark.parametrize("response_kind", ["missing", "unmatched", "invalid"])
+def test_unusable_response_fails_without_fallback(response_kind: str) -> None:
+    fake = FakeClient(
+        allocation_response=[{"vial_id": 1, "experiment_id": 41}]
+        if response_kind != "missing"
+        else None,
+        wrong_request_id=response_kind == "unmatched",
+        invalid_response=response_kind == "invalid",
+    )
+    publisher = MqttPublisher(
+        make_settings(mqtt_connect_timeout_seconds=0.001), client_factory=lambda **_kwargs: fake
+    )
+    publisher.connect()
+    with pytest.raises(MqttConnectionError, match="timed out waiting for active vials"):
+        publisher.active_vials()
+    publisher.close()
 
 
 def test_publish_uses_contract_json_topic_qos_one_and_no_retain() -> None:

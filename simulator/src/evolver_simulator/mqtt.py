@@ -6,9 +6,18 @@ import logging
 import threading
 from collections.abc import Callable
 from typing import Any
+from uuid import UUID, uuid4
 
 import paho.mqtt.client as mqtt
 from evolver_contracts.models import TelemetryEvent
+from evolver_contracts.pilot import (
+    ACTIVE_VIALS_REQUEST,
+    ACTIVE_VIALS_RESPONSE,
+    ActiveVial,
+    AllocationRequest,
+    AllocationResponse,
+)
+from pydantic import ValidationError
 
 from .config import SimulatorSettings
 
@@ -40,6 +49,11 @@ class MqttPublisher:
         self._publish_results: dict[int, mqtt.ReasonCode] = {}
         self._publish_results_lock = threading.Lock()
         self._loop_started = False
+        self._subscription_finished = threading.Event()
+        self._subscription_error: str | None = None
+        self._allocation_received = threading.Event()
+        self._allocation_request_id: UUID | None = None
+        self._allocations: list[ActiveVial] | None = None
         self._client = client_factory(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=settings.mqtt_client_id,
@@ -49,6 +63,32 @@ class MqttPublisher:
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_publish = self._on_publish
+        self._client.on_subscribe = self._on_subscribe
+        self._client.on_message = self._on_message
+
+    def _on_subscribe(
+        self,
+        _client: mqtt.Client,
+        _userdata: Any,
+        _mid: int,
+        reason_codes: list[mqtt.ReasonCode],
+        _properties: mqtt.Properties | None,
+    ) -> None:
+        self._subscription_error = next(
+            (str(code) for code in reason_codes if code.is_failure), None
+        )
+        self._subscription_finished.set()
+
+    def _on_message(self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
+        if message.topic != ACTIVE_VIALS_RESPONSE or message.retain:
+            return
+        try:
+            response = AllocationResponse.model_validate_json(message.payload)
+        except ValidationError:
+            return
+        if response.request_id == self._allocation_request_id:
+            self._allocations = response.vials
+            self._allocation_received.set()
 
     def _on_connect(
         self,
@@ -134,6 +174,30 @@ class MqttPublisher:
             event.event_id,
             event.sequence,
         )
+
+    def active_vials(self) -> list[ActiveVial]:
+        if not self._connected.is_set():
+            raise MqttConnectionError("MQTT client is not connected")
+        self._subscription_finished.clear()
+        self._subscription_error = None
+        result, _mid = self._client.subscribe(ACTIVE_VIALS_RESPONSE, qos=1)
+        if result != mqtt.MQTT_ERR_SUCCESS:
+            raise MqttConnectionError(f"MQTT subscribe returned error code {result}")
+        if not self._subscription_finished.wait(self._settings.mqtt_connect_timeout_seconds):
+            raise MqttConnectionError("timed out waiting for active vial subscription")
+        if self._subscription_error is not None:
+            raise MqttConnectionError(
+                f"active vial subscription rejected: {self._subscription_error}"
+            )
+        self._allocation_request_id = uuid4()
+        self._allocation_received.clear()
+        self._allocations = None
+        request = AllocationRequest(request_id=self._allocation_request_id)
+        self._publish_payload(ACTIVE_VIALS_REQUEST, request.model_dump_json())
+        if not self._allocation_received.wait(self._settings.mqtt_connect_timeout_seconds):
+            raise MqttConnectionError("timed out waiting for active vials from ingestion")
+        assert self._allocations is not None
+        return self._allocations
 
     def _publish_payload(self, topic: str, payload: str) -> None:
         info = self._client.publish(

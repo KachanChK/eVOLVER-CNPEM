@@ -124,8 +124,8 @@ use `docker compose down -v` como método de restauração: ele remove o volume.
 
 ## Aplicação
 
-O simulador publica OD, pH e temperatura simulados. A ingestão atual recebe e grava
-somente temperatura; API e frontend ainda não existem como serviços executáveis.
+O simulador consulta os vials ativos via MQTT e publica OD, pH e temperatura simulados.
+A ingestão grava os três tipos; a API e o frontend são processos locais.
 
 Cada projeto Python tem seu próprio pacote no workspace `uv` da raiz. O comando do
 simulador e a ingestão funcionam após iniciar o Compose independente em `mqtt/` e

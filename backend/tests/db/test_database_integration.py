@@ -11,8 +11,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from evolver.api.main import app
-from evolver.ingestion.__main__ import active_vials, store_message, store_v1_message
-from evolver_contracts.pilot import TELEMETRY_TOPIC
+from evolver.ingestion.__main__ import active_vials, store_v1_message
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
@@ -112,39 +111,13 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         assert all(create(vial).status_code == 201 for vial in range(2, 13))
         assert free_ids() == []
 
-        message = {
-            "equipment_id": "evolver-sim-01",
-            "event_id": str(uuid4()),
-            "vial_id": 1,
-            "experiment_id": first["id"],
-            "measurement": "temperature",
-            "value": 37.0,
-            "unit": "celsius",
-            "generated_at": database_time(),
-        }
+        old_allocation_time = database_time()
         assert client.post(f"{first_url}/inactivate").json()["status"] == "inactive"
         assert free_ids() == [1]
         second = create(1).json()
         second_url = f"/api/experiments/{second['id']}"
-        payload = json.dumps(message).encode()
-        assert store_message(engine, TELEMETRY_TOPIC, payload) == "gravada"
-        assert store_message(engine, TELEMETRY_TOPIC, payload) == "duplicada"
-        with pytest.raises(ValueError, match="topic"):
-            store_message(engine, "evolver/dev/another/telemetry", payload)
-        with pytest.raises(ValueError, match="alocação"):
-            store_message(engine, TELEMETRY_TOPIC, json.dumps({**message, "vial_id": 2}).encode())
         assert client.get(f"{second_url}/temperature-readings").json() == []
-        newer = {**message, "event_id": str(uuid4()), "generated_at": database_time()}
-        with pytest.raises(ValueError, match="alocação"):
-            store_message(engine, TELEMETRY_TOPIC, json.dumps(newer).encode())
-        newer["experiment_id"] = second["id"]
-        assert store_message(engine, TELEMETRY_TOPIC, json.dumps(newer).encode()) == "gravada"
-        assert [r["event_id"] for r in client.get(f"{first_url}/temperature-readings").json()] == [
-            message["event_id"]
-        ]
-        assert [r["event_id"] for r in client.get(f"{second_url}/temperature-readings").json()] == [
-            newer["event_id"]
-        ]
+        newer_time = database_time()
         v1_topic = "evolver/v1/evolver-sim-01/telemetry"
         v1 = {
             "schema_version": "1.0",
@@ -154,7 +127,7 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
             "vial_id": "1",
             "measurement_type": "ph",
             "value": 7.1,
-            "generated_at": message["generated_at"],
+            "generated_at": old_allocation_time,
             "sequence": 1,
         }
         # A delayed reading must stay with the old experiment after vial reuse.
@@ -170,7 +143,7 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
                     {
                         **v1,
                         "experiment_run_id": str(first["id"]),
-                        "generated_at": newer["generated_at"],
+                        "generated_at": newer_time,
                     }
                 ).encode(),
             )
@@ -180,7 +153,7 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
                 "event_id": str(uuid4()),
                 "measurement_type": kind,
                 "value": value,
-                "generated_at": newer["generated_at"],
+                "generated_at": newer_time,
             }
             assert store_v1_message(engine, v1_topic, json.dumps(event).encode()) == "gravada"
         assert client.get(f"{second_url}/readings/od").json()[0]["value"] == 0.42
@@ -197,7 +170,7 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         assert free_ids() == [1]
         assert len(client.get("/api/experiments").json()) == 11
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT count(*) FROM temperature_readings")) == 3
+            assert connection.scalar(text("SELECT count(*) FROM temperature_readings")) == 1
             assert connection.scalar(text("SELECT count(*) FROM ph_readings")) == 2
             assert connection.scalar(text("SELECT count(*) FROM od_readings")) == 2
     engine.dispose()
