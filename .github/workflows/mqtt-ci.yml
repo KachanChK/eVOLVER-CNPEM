@@ -1,0 +1,61 @@
+name: CI - Smoke test do MQTT
+
+on:
+  pull_request:
+    paths:
+      - infra/mosquitto/**
+      - compose.yaml
+      - .env.example
+      - .github/workflows/mqtt-ci.yml
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - infra/mosquitto/**
+      - compose.yaml
+      - .env.example
+      - .github/workflows/mqtt-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mqtt:
+    name: 'Broker MQTT: autenticacao, ACL e retencao'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Obter o codigo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Preparar o .env de teste
+        run: cp .env.example .env
+
+      - name: Subir o broker e esperar ficar healthy
+        run: docker compose up -d --wait mosquitto
+
+      - name: Executar o smoke test
+        run: docker compose exec -T mosquitto sh /mosquitto/config/smoke-test.sh
+
+      - name: Reiniciar o broker e repetir o smoke test
+        run: |
+          docker compose restart mosquitto
+          docker compose up -d --wait mosquitto
+          docker compose exec -T mosquitto sh /mosquitto/config/smoke-test.sh
+
+      - name: Mostrar os logs do broker
+        if: failure()
+        run: docker compose logs mosquitto
+
+      - name: Derrubar os servicos
+        if: always()
+        run: docker compose down -v
