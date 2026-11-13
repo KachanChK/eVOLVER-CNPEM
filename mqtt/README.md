@@ -25,5 +25,5 @@ docker compose down
 Não use `docker compose down -v` como rotina, pois `-v` apaga a persistência local
 do broker.
 
-O roteiro completo para observar uma temperatura saindo do simulador e chegando a
+O roteiro completo para observar medições saindo do simulador e chegando a
 um assinante está em [plano-mqtt-independente.md](../docs/plano-mqtt-independente.md).

@@ -76,7 +76,7 @@ Versões e faixas escolhidas para o piloto; a tabela não afirma que todas já e
 
 ## Estrutura do repositório
 
-Estrutura prevista para o monorepo. Os documentos de planejamento estão em `docs/`; os contratos MQTT, seus exemplos e testes ficam no pacote compartilhado. Backend e simulador possuem projetos Python próprios, mas os serviços de aplicação ainda aguardam implementação.
+Estrutura prevista para o monorepo. Os documentos de planejamento estão em `docs/`; os contratos MQTT, seus exemplos e testes ficam no pacote compartilhado. Backend e simulador possuem projetos Python próprios, mas o simulador já publica telemetria; API e ingestão aguardam implementação.
 
 ```text
 eVOLVER-CNPEM/
@@ -89,7 +89,7 @@ eVOLVER-CNPEM/
 │   │   ├── api/             # app FastAPI (consultas, comandos, SSE)
 │   ├── migrations/          # Alembic
 │   └── tests/
-├── simulator/               # projeto Python independente; serviço futuro
+├── simulator/               # produtor Python independente
 │   └── src/evolver_simulator/ # simulador externo + futura fila SQLite
 ├── mqtt/                    # Mosquitto independente: Compose, configuração e testes
 ├── frontend/                # Vue 3 + Vite (package.json, package-lock.json)
@@ -105,7 +105,7 @@ eVOLVER-CNPEM/
 └── README.md                # como rodar
 ```
 
-Simulador e backend dependem do mesmo pacote `evolver-contracts`, mas o simulador tem projeto e, futuramente, processo próprios. API e ingestão também serão processos separados dentro do backend. O simulador não deve importar `evolver.db` nem `evolver.api`: sua comunicação com os serviços centrais ocorre por MQTT. Conferir essa separação ao criar os pontos de entrada e testar cada processo isoladamente.
+Simulador e backend dependem do mesmo pacote `evolver-contracts`, mas o simulador tem projeto e processo próprios. API e ingestão também serão processos separados dentro do backend. O simulador não deve importar `evolver.db` nem `evolver.api`: sua comunicação com os serviços centrais ocorre por MQTT. Conferir essa separação ao criar os pontos de entrada e testar cada processo isoladamente.
 
 ## Modos de desenvolvimento
 
@@ -148,7 +148,7 @@ uv run --package evolver-cnpem-backend uvicorn evolver.api.main:app --reload    
 ```
 
 ```bash
-uv run --package evolver-cnpem-simulator python -m evolver_simulator
+uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator
 ```
 
 Em outro terminal, a partir da raiz:

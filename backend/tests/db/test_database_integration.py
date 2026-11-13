@@ -11,8 +11,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from evolver.api.main import app
-from evolver.ingestion.__main__ import active_vials, store_message
-from evolver_contracts.pilot import TELEMETRY_TOPIC
+from evolver.ingestion.__main__ import active_vials, store_v1_message
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
@@ -26,10 +25,53 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", database_url)
     backend_root = Path(__file__).resolve().parents[2]
     config = Config(str(backend_root / "alembic.ini"))
-    command.upgrade(config, "head")
-
+    command.upgrade(config, "20261111_02")
     engine = create_engine(database_url)
+    # Populate the old combined table before migrating, then compare every field.
+    historical_ids = {"ph": uuid4(), "od": uuid4()}
+    historical_time = datetime.now(UTC)
+    with engine.begin() as connection:
+        historical_experiment = connection.scalar(
+            text("""
+                INSERT INTO experiments (name, vial_id, started_at, ended_at, deleted_at)
+                VALUES ('Anterior', 1, now(), now(), now()) RETURNING id
+            """)
+        )
+        for kind, value in (("ph", 7.25), ("od", 0.47)):
+            connection.execute(
+                text("""
+                    INSERT INTO other_readings
+                    (event_id, generated_at, received_at, vial_id, experiment_id,
+                     measurement_type, value)
+                    VALUES (:id, :time, :time, 1, :experiment, :kind, :value)
+                """),
+                {
+                    "id": historical_ids[kind],
+                    "time": historical_time,
+                    "experiment": historical_experiment,
+                    "kind": kind,
+                    "value": value,
+                },
+            )
+    command.upgrade(config, "head")
     with engine.connect() as connection:
+        for kind, value in (("ph", 7.25), ("od", 0.47)):
+            row = connection.execute(
+                text(f"""
+                    SELECT event_id, generated_at, received_at, vial_id, experiment_id, {kind}_value
+                    FROM {kind}_readings WHERE event_id = :id
+                """),
+                {"id": historical_ids[kind]},
+            ).one()
+            assert tuple(row) == (
+                historical_ids[kind],
+                historical_time,
+                historical_time,
+                1,
+                historical_experiment,
+                value,
+            )
+        assert connection.scalar(text("SELECT to_regclass('public.other_readings')")) is None
         assert (
             connection.execute(
                 text(
@@ -45,6 +87,10 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
 
         def create(vial: int):
             return client.post("/api/experiments", json={"name": f"Teste {vial}", "vial_id": vial})
+
+        def database_time():
+            with engine.connect() as connection:
+                return connection.scalar(text("SELECT clock_timestamp()")).isoformat()
 
         def free_ids():
             return [vial["vial_id"] for vial in client.get("/api/vials/available").json()]
@@ -65,39 +111,58 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         assert all(create(vial).status_code == 201 for vial in range(2, 13))
         assert free_ids() == []
 
-        message = {
-            "equipment_id": "evolver-sim-01",
-            "event_id": str(uuid4()),
-            "vial_id": 1,
-            "experiment_id": first["id"],
-            "measurement": "temperature",
-            "value": 37.0,
-            "unit": "celsius",
-            "generated_at": datetime.now(UTC).isoformat(),
-        }
+        old_allocation_time = database_time()
         assert client.post(f"{first_url}/inactivate").json()["status"] == "inactive"
         assert free_ids() == [1]
         second = create(1).json()
         second_url = f"/api/experiments/{second['id']}"
-        payload = json.dumps(message).encode()
-        assert store_message(engine, TELEMETRY_TOPIC, payload) == "gravada"
-        assert store_message(engine, TELEMETRY_TOPIC, payload) == "duplicada"
-        with pytest.raises(ValueError, match="topic"):
-            store_message(engine, "evolver/dev/another/telemetry", payload)
-        with pytest.raises(ValueError, match="alocação"):
-            store_message(engine, TELEMETRY_TOPIC, json.dumps({**message, "vial_id": 2}).encode())
         assert client.get(f"{second_url}/temperature-readings").json() == []
-        newer = {**message, "event_id": str(uuid4()), "generated_at": datetime.now(UTC).isoformat()}
-        with pytest.raises(ValueError, match="alocação"):
-            store_message(engine, TELEMETRY_TOPIC, json.dumps(newer).encode())
-        newer["experiment_id"] = second["id"]
-        assert store_message(engine, TELEMETRY_TOPIC, json.dumps(newer).encode()) == "gravada"
-        assert [r["event_id"] for r in client.get(f"{first_url}/temperature-readings").json()] == [
-            message["event_id"]
+        newer_time = database_time()
+        v1_topic = "evolver/v1/evolver-sim-01/telemetry"
+        v1 = {
+            "schema_version": "1.0",
+            "event_id": str(uuid4()),
+            "producer_id": "simulator-local-01",
+            "equipment_id": "evolver-sim-01",
+            "vial_id": "1",
+            "measurement_type": "ph",
+            "value": 7.1,
+            "generated_at": old_allocation_time,
+            "sequence": 1,
+        }
+        # A delayed reading must stay with the old experiment after vial reuse.
+        assert store_v1_message(engine, v1_topic, json.dumps(v1).encode()) == "gravada"
+        assert store_v1_message(engine, v1_topic, json.dumps(v1).encode()) == "duplicada"
+        assert client.get(f"{first_url}/readings/ph").json()[0]["value"] == 7.1
+        assert client.get(f"{second_url}/readings/ph").json() == []
+        with pytest.raises(ValueError, match="experimento ativo"):
+            store_v1_message(
+                engine,
+                v1_topic,
+                json.dumps(
+                    {
+                        **v1,
+                        "experiment_run_id": str(first["id"]),
+                        "generated_at": newer_time,
+                    }
+                ).encode(),
+            )
+        for kind, value in [("od", 0.42), ("temperature", 36.8)]:
+            event = {
+                **v1,
+                "event_id": str(uuid4()),
+                "measurement_type": kind,
+                "value": value,
+                "generated_at": newer_time,
+            }
+            assert store_v1_message(engine, v1_topic, json.dumps(event).encode()) == "gravada"
+        assert client.get(f"{second_url}/readings/od").json()[0]["value"] == 0.42
+        assert 36.8 in [
+            row["temperature_celsius"]
+            for row in client.get(f"{second_url}/temperature-readings").json()
         ]
-        assert [r["event_id"] for r in client.get(f"{second_url}/temperature-readings").json()] == [
-            newer["event_id"]
-        ]
+        with pytest.raises(ValueError):
+            store_v1_message(engine, v1_topic, json.dumps({**v1, "vial_id": "99"}).encode())
         assert client.delete(first_url).status_code == 204
         assert client.delete(second_url).status_code == 204
         assert client.get(second_url).status_code == 404
@@ -105,7 +170,9 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         assert free_ids() == [1]
         assert len(client.get("/api/experiments").json()) == 11
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT count(*) FROM temperature_readings")) == 2
+            assert connection.scalar(text("SELECT count(*) FROM temperature_readings")) == 1
+            assert connection.scalar(text("SELECT count(*) FROM ph_readings")) == 2
+            assert connection.scalar(text("SELECT count(*) FROM od_readings")) == 2
     engine.dispose()
 
 

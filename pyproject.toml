@@ -20,7 +20,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/contracts/tests"]
+testpaths = ["packages/contracts/tests", "simulator/tests", "backend/tests/db"]
 markers = ["integration: requires a disposable PostgreSQL + TimescaleDB database"]
 
 [tool.ruff]

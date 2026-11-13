@@ -4,10 +4,10 @@ import os
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from evolver.db.models import Experiment, TemperatureReading, Vial
+from evolver.db.models import Experiment, OdReading, PhReading, TemperatureReading, Vial
 from evolver.db.queries import get_temperature_history
 from evolver_contracts.pilot import EQUIPMENT_ID, VialID
 from fastapi import Depends, FastAPI, HTTPException, Path, Request, Response
@@ -70,6 +70,15 @@ class ReadingView(BaseModel):
 
     event_id: UUID
     temperature_celsius: float
+    generated_at: datetime
+    received_at: datetime
+
+
+class OtherReadingView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    value: float
     generated_at: datetime
     received_at: datetime
 
@@ -150,6 +159,24 @@ def experiment_details(experiment_id: ExperimentID, db: Database) -> Experiment:
 def temperature_history(experiment_id: ExperimentID, db: Database) -> list[TemperatureReading]:
     visible_experiment(db, experiment_id)
     return get_temperature_history(db, experiment_id)
+
+
+@app.get(
+    "/api/experiments/{experiment_id}/readings/{measurement_type}",
+    response_model=list[OtherReadingView],
+)
+def other_history(
+    experiment_id: ExperimentID, measurement_type: Literal["ph", "od"], db: Database
+) -> list[PhReading] | list[OdReading]:
+    visible_experiment(db, experiment_id)
+    model = PhReading if measurement_type == "ph" else OdReading
+    return list(
+        db.scalars(
+            select(model)
+            .where(model.experiment_id == experiment_id)
+            .order_by(model.generated_at, model.event_id)
+        )
+    )
 
 
 @app.post("/api/experiments/{experiment_id}/inactivate", response_model=ExperimentView)

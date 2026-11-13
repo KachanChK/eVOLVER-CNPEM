@@ -5,7 +5,12 @@ import { Line } from 'vue-chartjs'
 
 Chart.register(LineElement, LinearScale, PointElement, Tooltip)
 
-const props = defineProps({ readings: { type: Array, required: true } })
+const props = defineProps({
+  readings: { type: Array, required: true },
+  title: { type: String, default: 'Temperatura' },
+  valueKey: { type: String, default: 'temperature_celsius' },
+  unit: { type: String, default: ' °C' },
+})
 const dateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })
 const axisTime = new Intl.DateTimeFormat('pt-BR', {
   day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -16,7 +21,7 @@ const data = computed(() => ({
   datasets: [{
     data: props.readings.map((reading) => ({
       x: Date.parse(reading.generated_at),
-      y: reading.temperature_celsius,
+      y: reading[props.valueKey],
     })),
     borderColor: '#0062c7',
     backgroundColor: '#0062c7',
@@ -38,13 +43,13 @@ const options = computed(() => {
         ticks: { maxTicksLimit: 5, maxRotation: 0, callback: (value) => axisTime.format(value) },
         grid: { display: false },
       },
-      y: { grace: '5%', ticks: { callback: (value) => `${degrees.format(value)} °C` } },
+      y: { grace: '5%', ticks: { callback: (value) => `${degrees.format(value)}${props.unit}` } },
     },
     plugins: {
       tooltip: {
         callbacks: {
           title: ([point]) => dateTime.format(point.parsed.x),
-          label: (point) => `${degrees.format(point.parsed.y)} °C`,
+          label: (point) => `${degrees.format(point.parsed.y)}${props.unit}`,
         },
       },
     },
@@ -53,32 +58,32 @@ const options = computed(() => {
 </script>
 
 <template>
-  <section class="panel temperature" aria-labelledby="temperature-title">
-    <h2 id="temperature-title">Temperatura</h2>
+  <section class="panel temperature" :aria-label="title">
+    <h2>{{ title }}</h2>
     <template v-if="latest">
       <div class="latest">
-        <strong>{{ degrees.format(latest.temperature_celsius) }} °C</strong>
+        <strong>{{ degrees.format(latest[valueKey]) }}{{ unit }}</strong>
         <span>Última leitura · {{ dateTime.format(new Date(latest.generated_at)) }}</span>
       </div>
       <div class="chart">
-        <Line :data="data" :options="options" aria-label="Gráfico de temperatura em graus Celsius ao longo do tempo" />
+        <Line :data="data" :options="options" :aria-label="`Gráfico de ${title} ao longo do tempo`" />
       </div>
       <details>
         <summary>Ver leituras ({{ readings.length }})</summary>
         <div class="table-scroll" tabindex="0" role="region" aria-label="Leituras de temperatura">
           <table>
-            <thead><tr><th scope="col">Gerada em</th><th scope="col">Recebida em</th><th scope="col">Temperatura</th></tr></thead>
+            <thead><tr><th scope="col">Gerada em</th><th scope="col">Recebida em</th><th scope="col">{{ title }}</th></tr></thead>
             <tbody>
               <tr v-for="reading in readings" :key="`${reading.event_id}-${reading.generated_at}`">
                 <td>{{ dateTime.format(new Date(reading.generated_at)) }}</td>
                 <td>{{ dateTime.format(new Date(reading.received_at)) }}</td>
-                <td>{{ degrees.format(reading.temperature_celsius) }} °C</td>
+                <td>{{ degrees.format(reading[valueKey]) }}{{ unit }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </details>
     </template>
-    <p v-else class="muted">Nenhuma leitura de temperatura registrada.</p>
+    <p v-else class="muted">Nenhuma leitura registrada.</p>
   </section>
 </template>

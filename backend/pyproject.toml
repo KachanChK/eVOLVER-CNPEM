@@ -10,6 +10,7 @@ dependencies = [
   "psycopg[binary]>=3.2,<4",
   "sqlalchemy>=2.0,<3",
   "paho-mqtt>=2,<3",
+  "python-dotenv[cli]>=1,<2",
   "uvicorn>=0.30,<1",
 ]
 

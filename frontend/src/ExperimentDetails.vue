@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from './api'
 import TemperatureHistory from './TemperatureHistory.vue'
@@ -9,6 +9,8 @@ const emit = defineEmits(['changed'])
 const router = useRouter()
 const experiment = ref(null)
 const readings = ref([])
+const phReadings = ref([])
+const odReadings = ref([])
 const loading = ref(false)
 const error = ref('')
 const actionError = ref('')
@@ -16,15 +18,27 @@ const pending = ref(false)
 const heading = ref(null)
 const base = `/experiments/${encodeURIComponent(props.id)}`
 const dateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+let pollTimer
+
+async function loadReadings() {
+  const [temperature, ph, od] = await Promise.all([
+    request(`${base}/temperature-readings`),
+    request(`${base}/readings/ph`),
+    request(`${base}/readings/od`),
+  ])
+  readings.value = temperature
+  phReadings.value = ph
+  odReadings.value = od
+  if (experiment.value) error.value = ''
+}
 
 async function load() {
   if (!props.id) return
   loading.value = true
   error.value = ''
   try {
-    const [details, history] = await Promise.all([request(base), request(`${base}/temperature-readings`)])
+    const [details] = await Promise.all([request(base), loadReadings()])
     experiment.value = details
-    readings.value = history
     await nextTick()
     heading.value?.focus({ preventScroll: true })
   } catch (failure) {
@@ -58,13 +72,19 @@ async function change(action) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  if (props.id) pollTimer = setInterval(() => {
+    loadReadings().catch(() => { error.value = 'Não foi possível atualizar as leituras.' })
+  }, 5000)
+})
+onUnmounted(() => clearInterval(pollTimer))
 </script>
 
 <template>
   <section v-if="!id" class="panel empty">
     <h1>Experimentos</h1>
-    <p class="muted">Selecione um experimento no menu para ver suas leituras de temperatura.</p>
+    <p class="muted">Selecione um experimento no menu para ver suas leituras.</p>
   </section>
   <p v-else-if="loading" role="status">Carregando experimento…</p>
   <div v-else-if="error" class="panel" role="alert">
@@ -86,5 +106,7 @@ onMounted(load)
     </header>
     <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
     <TemperatureHistory :readings="readings" />
+    <TemperatureHistory :readings="phReadings" title="pH" value-key="value" unit="" />
+    <TemperatureHistory :readings="odReadings" title="Densidade óptica (OD)" value-key="value" unit="" />
   </template>
 </template>

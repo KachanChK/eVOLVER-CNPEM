@@ -124,17 +124,17 @@ use `docker compose down -v` como método de restauração: ele remove o volume.
 
 ## Aplicação
 
-O simulador publica uma temperatura de teste. A ingestão recebe MQTT e grava no
-banco; API e frontend ainda não existem como serviços executáveis.
+O simulador consulta os vials ativos via MQTT e publica OD, pH e temperatura simulados.
+A ingestão grava os três tipos; a API e o frontend são processos locais.
 
 Cada projeto Python tem seu próprio pacote no workspace `uv` da raiz. O comando do
 simulador e a ingestão funcionam após iniciar o Compose independente em `mqtt/` e
-o banco. Consulte o [teste completo](../README.md#teste-local-completo):
+o banco. Consulte o [teste completo](../README.md#7-receber-e-enviar-a-temperatura):
 
 ```bash
-uv run --package evolver-cnpem-backend python -m evolver.ingestion
+uv run --env-file backend/.env --package evolver-cnpem-backend python -m evolver.ingestion
 uv run --package evolver-cnpem-backend uvicorn evolver.api.main:app --reload
-uv run --package evolver-cnpem-simulator python -m evolver_simulator
+uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator
 ```
 
 ```bash

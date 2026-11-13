@@ -82,3 +82,43 @@ class TemperatureReading(Base):
     temperature_celsius: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
 
     vial: Mapped[Vial] = relationship()
+
+
+class PhReading(Base):
+    __tablename__ = "ph_readings"
+    __table_args__ = (
+        PrimaryKeyConstraint("event_id", "generated_at"),
+        Index("ix_ph_readings_vial_time", "vial_id", "generated_at"),
+        Index("ix_ph_readings_experiment_time", "experiment_id", "generated_at"),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id", ondelete="RESTRICT"))
+    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id", ondelete="RESTRICT"))
+    ph_value: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
+
+    @property
+    def value(self) -> float:
+        return self.ph_value
+
+
+class OdReading(Base):
+    __tablename__ = "od_readings"
+    __table_args__ = (
+        PrimaryKeyConstraint("event_id", "generated_at"),
+        Index("ix_od_readings_vial_time", "vial_id", "generated_at"),
+        Index("ix_od_readings_experiment_time", "experiment_id", "generated_at"),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id", ondelete="RESTRICT"))
+    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id", ondelete="RESTRICT"))
+    od_value: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
+
+    @property
+    def value(self) -> float:
+        return self.od_value

@@ -1,1 +1,1 @@
-"""Pacote reservado para o simulador externo do piloto."""
+"""Produtor externo de telemetria simulada do piloto."""
