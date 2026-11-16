@@ -60,7 +60,7 @@ Com os contêineres em execução, na raiz do repositório:
 .\scripts\iniciar-local.ps1
 ```
 
-O comando inicia a API, a ingestão e a interface em segundo plano. Abra [http://127.0.0.1:5173](http://127.0.0.1:5173), clique em **Criar experimento** e escolha um dos 12 vials livres. O script avisa se as portas 8000 ou 5173 já estiverem em uso; não é necessário iniciá-lo novamente enquanto o programa estiver funcionando.
+O comando abre uma janela de PowerShell para cada serviço local: API, ingestão e interface. A saída de cada processo aparece na respectiva janela; pressione **Ctrl+C** nela para interromper somente aquele serviço. Abra [http://127.0.0.1:5173](http://127.0.0.1:5173), clique em **Criar experimento** e escolha um dos 12 vials livres. O script avisa se as portas 8000 ou 5173 já estiverem em uso; não é necessário iniciá-lo novamente enquanto o programa estiver funcionando.
 
 Em outro PowerShell, também na raiz, gere leituras:
 
@@ -74,7 +74,7 @@ O simulador usa sequências independentes para os três tipos. Por padrão, uma 
 
 **Inativar** libera o vial e mantém o histórico visível. **Excluir** oculta o experimento na interface e preserva os dados no banco.
 
-## Consultar o banco e os registros
+## Consultar o banco e acompanhar os serviços
 
 As principais tabelas no banco `evolver` são `vials`, `experiments`, `temperature_readings`, `ph_readings` e `od_readings`. As leituras mantêm o ID do experimento e do vial.
 
@@ -88,12 +88,7 @@ docker compose exec timescaledb psql -U evolver -d evolver -c "SELECT experiment
 
 Os comandos usam o nome de banco e usuário dos exemplos; ajuste-os se os tiver alterado. No DBeaver, conecte a `127.0.0.1:5432` com o banco, usuário e senha configurados em `.env`.
 
-Os registros da API, ingestão e interface ficam em `.local`, por exemplo:
-
-```powershell
-Get-Content .local/ingestao.log -Tail 20
-Get-Content .local/api-error.log -Tail 20
-```
+As mensagens da API, ingestão e interface aparecem nas janelas abertas pelo script e são gravadas em `.local/api.log`, `.local/ingestao.log` e `.local/interface.log`. Se um serviço encerrar, a janela permanece aberta para você ler o erro.
 
 O PUBACK confirma a entrega ao broker, não a gravação. Mantenha a ingestão em execução antes de iniciar o simulador e confirme o resultado na interface ou no banco. Neste piloto não há fila de reenvio após falha; mantenha também os relógios do simulador e do banco sincronizados.
 
@@ -116,6 +111,6 @@ docker compose stop
 docker compose --env-file mqtt/.env -f mqtt/compose.yaml stop
 ```
 
-A API, a ingestão e a interface iniciadas pelo script são processos locais separados. Seus PIDs ficam em `.local/pids.json` e podem ser usados para identificá-los no Gerenciador de Tarefas. Não use `docker compose down -v` se quiser manter o banco: essa opção remove o volume de dados.
+Para encerrar a aplicação local, pressione **Ctrl+C** nas três janelas dos serviços. Os contêineres continuam em execução até receberem os comandos `docker compose stop` acima. Não use `docker compose down -v` se quiser manter o banco: essa opção remove o volume de dados.
 
 Leia [AGENTS.md](AGENTS.md) antes de alterar o repositório com agentes.
