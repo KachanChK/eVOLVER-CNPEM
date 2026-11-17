@@ -68,11 +68,22 @@ Em outro PowerShell, também na raiz, gere leituras:
 .\scripts\simular.ps1
 ```
 
-O simulador consulta os experimentos ativos pela ingestão via MQTT. Cada execução faz dez rodadas a cada 0,5 segundo, enviando OD, pH e temperatura para todos os vials ativos em cada rodada (30 eventos por vial). Sem experimentos ativos, encerra sem enviar medições. Os gráficos são atualizados a cada cinco segundos.
+O simulador envia OD, pH e temperatura para todos os vials ativos em rodadas a cada 0,5 segundo, **sem limite de duração**. Para parar, pressione **Ctrl+C na janela do simulador**. A lista de experimentos ativos é consultada pela ingestão via MQTT a cada rodada: novos experimentos começam a receber medições e os encerrados deixam de recebê-las. Sem experimentos ativos, o simulador continua aguardando. Os gráficos são atualizados a cada cinco segundos.
 
-O simulador usa sequências independentes para os três tipos. Por padrão, uma nova execução gera outros valores. Para repetir uma sequência em testes, defina `SIMULATOR_SEED` em `simulator/.env`; com a mesma semente e configuração, os resultados são reproduzíveis. As rodadas terminam em cerca de cinco segundos; confirmações MQTT lentas podem prolongar a execução.
+O simulador usa sequências independentes para os três tipos. Por padrão, uma nova execução gera outros valores. Para repetir uma sequência em testes, defina `SIMULATOR_SEED` em `simulator/.env`; com a mesma semente, configuração e sequência de vials ativos por rodada, os valores são reproduzíveis. Confirmações MQTT lentas podem atrasar as rodadas. O limite opcional `SIMULATOR_MAX_MESSAGES` continua disponível para testes curtos; deixe-o sem definir para simular continuamente.
 
 **Inativar** libera o vial e mantém o histórico visível. **Excluir** oculta o experimento na interface e preserva os dados no banco.
+
+## Acompanhar os gráficos
+
+- Os três gráficos começam mostrando o **último minuto**. Use **1 min**, **5 min**, **30 min** ou **Tudo** para mudar o período de temperatura, pH e OD juntos.
+- **Pausar visualização** congela as curvas e o período mostrado, sem parar o simulador ou a gravação no banco. Use **Retomar visualização** para voltar aos dados atuais. Você também pode trocar de período enquanto a visualização está pausada.
+- Intervalos maiores que cinco segundos sem medições aparecem como espaços com a indicação **Sem leituras**. A linha não liga os dois lados da pausa. Esse intervalo considera o ritmo atual do simulador, de uma leitura de cada tipo a cada 0,5 segundo.
+- Cada gráfico informa há quanto tempo a última leitura foi recebida. Após 15 segundos sem dados novos, o aviso fica destacado. Se uma atualização falhar, os dados anteriores continuam visíveis com um aviso.
+- **Mostrar média de 5 s** acrescenta uma linha tracejada com a média das leituras dos últimos cinco segundos. A curva original continua visível e a média recomeça após uma lacuna. A opção começa desligada.
+- Em períodos longos, a curva usa uma seleção de pontos que preserva os maiores e menores valores por trecho. Todas as leituras originais do período continuam disponíveis na tabela, em páginas de 50, da mais recente para a mais antiga. Os registros no banco não são alterados.
+
+Experimentos encerrados mostram o período final da execução, sem deslocar o gráfico conforme o relógio avança.
 
 ## Consultar o banco e acompanhar os serviços
 
@@ -100,6 +111,7 @@ Na raiz:
 uv run --locked --all-packages ruff check backend/src backend/tests simulator/src simulator/tests packages/contracts/src packages/contracts/tests
 uv run --locked --all-packages pytest
 npm --prefix frontend run build
+npm --prefix frontend test
 ```
 
 Os testes de integração exigem bancos TimescaleDB descartáveis; sem as URLs de teste, são ignorados. Consulte [as instruções de integração](backend/migrations/README.md).

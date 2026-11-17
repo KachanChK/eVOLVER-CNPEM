@@ -6,6 +6,7 @@ import argparse
 import logging
 import signal
 from collections.abc import Sequence
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -25,13 +26,14 @@ def positive_int(value: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Publica dez medicoes de OD, pH e temperatura por vial ativo",
+        description="Simula OD, pH e temperatura continuamente; pressione Ctrl+C para parar",
     )
     parser.add_argument(
         "--max-messages",
         type=positive_int,
-        help="limita o total de eventos; nao ultrapassa dez de cada tipo por vial",
+        help="encerra apos este total de medicoes; por padrao, executa sem limite",
     )
+    parser.add_argument("--env-file", type=Path, help="arquivo de configuracao do simulador")
     return parser
 
 
@@ -39,7 +41,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        settings = SimulatorSettings()
+        settings = (
+            SimulatorSettings(_env_file=args.env_file)
+            if args.env_file is not None
+            else SimulatorSettings()
+        )
     except ValidationError as exc:
         LOGGER.error("Configuracao invalida: %s", exc)
         return 2
@@ -55,6 +61,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         previous_handlers[current_signal] = signal.signal(current_signal, request_stop)
 
     try:
+        LOGGER.info("Simulacao iniciada. Pressione Ctrl+C para parar.")
         runner.run(max_messages=args.max_messages)
     except SimulatedFailureError as exc:
         LOGGER.error("Cenario de falha simulada concluido: %s", exc)
