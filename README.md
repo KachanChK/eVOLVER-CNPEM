@@ -68,9 +68,9 @@ Em outro PowerShell, também na raiz, gere leituras:
 .\scripts\simular.ps1
 ```
 
-O simulador consulta os experimentos ativos pela ingestão via MQTT. Cada execução faz dez rodadas a cada 0,5 segundo, enviando OD, pH e temperatura para todos os vials ativos em cada rodada (30 eventos por vial). Sem experimentos ativos, encerra sem enviar medições. Os gráficos são atualizados a cada cinco segundos.
+O simulador envia OD, pH e temperatura para todos os vials ativos em rodadas a cada 0,5 segundo, **sem limite de duração**. Para parar, pressione **Ctrl+C na janela do simulador**. A lista de experimentos ativos é consultada pela ingestão via MQTT a cada rodada: novos experimentos começam a receber medições e os encerrados deixam de recebê-las. Sem experimentos ativos, o simulador continua aguardando. Os gráficos são atualizados a cada cinco segundos.
 
-O simulador usa sequências independentes para os três tipos. Por padrão, uma nova execução gera outros valores. Para repetir uma sequência em testes, defina `SIMULATOR_SEED` em `simulator/.env`; com a mesma semente e configuração, os resultados são reproduzíveis. As rodadas terminam em cerca de cinco segundos; confirmações MQTT lentas podem prolongar a execução.
+O simulador usa sequências independentes para os três tipos. Por padrão, uma nova execução gera outros valores. Para repetir uma sequência em testes, defina `SIMULATOR_SEED` em `simulator/.env`; com a mesma semente, configuração e sequência de vials ativos por rodada, os valores são reproduzíveis. Confirmações MQTT lentas podem atrasar as rodadas. O limite opcional `SIMULATOR_MAX_MESSAGES` continua disponível para testes curtos; deixe-o sem definir para simular continuamente.
 
 **Inativar** libera o vial e mantém o histórico visível. **Excluir** oculta o experimento na interface e preserva os dados no banco.
 
