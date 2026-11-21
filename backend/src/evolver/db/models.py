@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     PrimaryKeyConstraint,
     String,
+    Text,
     Uuid,
     text,
 )
@@ -52,6 +53,7 @@ class Experiment(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    culture_type: Mapped[str | None] = mapped_column(Text)
     vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id", ondelete="RESTRICT"))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

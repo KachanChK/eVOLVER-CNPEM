@@ -33,8 +33,8 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     with engine.begin() as connection:
         historical_experiment = connection.scalar(
             text("""
-                INSERT INTO experiments (name, vial_id, started_at, ended_at, deleted_at)
-                VALUES ('Anterior', 1, now(), now(), now()) RETURNING id
+                INSERT INTO experiments (name, vial_id, started_at, ended_at)
+                VALUES ('Anterior', 1, now(), now()) RETURNING id
             """)
         )
         for kind, value in (("ph", 7.25), ("od", 0.47)):
@@ -86,7 +86,10 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     with TestClient(app) as client:
 
         def create(vial: int):
-            return client.post("/api/experiments", json={"name": f"Teste {vial}", "vial_id": vial})
+            return client.post(
+                "/api/experiments",
+                json={"name": f"Teste {vial}", "vial_id": vial, "culture_type": "  Levedura  "},
+            )
 
         def database_time():
             with engine.connect() as connection:
@@ -97,13 +100,40 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
 
         assert free_ids() == list(range(1, 13))
         assert active_vials(engine, request).vials == []
-        assert client.post("/api/experiments", json={"name": " ", "vial_id": 1}).status_code == 422
+        legacy = client.get(f"/api/experiments/{historical_experiment}")
+        assert legacy.status_code == 200
+        assert legacy.json()["name"] == "Anterior"
+        assert legacy.json()["culture_type"] is None
+        assert client.get("/api/experiments").json() == [legacy.json()]
+
+        payload = {"name": "Teste", "vial_id": 1}
+        for fields in (
+            {},
+            {"culture_type": ""},
+            {"culture_type": " \t\n "},
+            {"culture_type": "\u0085"},
+        ):
+            invalid = client.post("/api/experiments", json={**payload, **fields})
+            assert invalid.status_code == 422
+            assert invalid.json()["detail"][0]["loc"] == ["body", "culture_type"]
+
+        nul = client.post("/api/experiments", json={**payload, "culture_type": "Leve\x00dura"})
+        assert nul.status_code == 422
+        nul_error = nul.json()["detail"][0]
+        assert nul_error["loc"] == ["body", "culture_type"]
+        assert "Tipo de cultura n\u00e3o pode conter o caractere NUL (U+0000)." in nul_error["msg"]
+
+        invalid_name = client.post(
+            "/api/experiments", json={**payload, "name": " ", "culture_type": "Levedura"}
+        )
+        assert invalid_name.status_code == 422
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             attempts = list(pool.map(create, [1, 1]))
         assert sorted(attempt.status_code for attempt in attempts) == [201, 409]
         first = next(attempt.json() for attempt in attempts if attempt.status_code == 201)
         first_url = f"/api/experiments/{first['id']}"
+        assert first["culture_type"] == "Levedura"
         assert client.get(first_url).json() == first
         assert free_ids() == list(range(2, 13))
         assert [vial.experiment_id for vial in active_vials(engine, request).vials] == [first["id"]]
@@ -168,8 +198,14 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         assert client.get(second_url).status_code == 404
         assert client.get(f"{second_url}/temperature-readings").status_code == 404
         assert free_ids() == [1]
-        assert len(client.get("/api/experiments").json()) == 11
+        assert len(client.get("/api/experiments").json()) == 12
         with engine.connect() as connection:
+            assert (
+                connection.scalar(
+                    text("SELECT culture_type FROM experiments WHERE id = :id"), {"id": first["id"]}
+                )
+                == "Levedura"
+            )
             assert connection.scalar(text("SELECT count(*) FROM temperature_readings")) == 1
             assert connection.scalar(text("SELECT count(*) FROM ph_readings")) == 2
             assert connection.scalar(text("SELECT count(*) FROM od_readings")) == 2
