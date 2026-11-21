@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Identifier": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "const": "1.0",
+      "type": "string"
+    },
+    "ShortDetail": {
+      "maxLength": 250,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "equipment_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "reason_code": {
+      "enum": [
+        "schema_invalid",
+        "unsupported_schema_version",
+        "invalid_origin",
+        "unknown_equipment",
+        "unknown_vial"
+      ],
+      "title": "Reason Code",
+      "type": "string"
+    },
+    "disposition": {
+      "const": "quarantined",
+      "title": "Disposition",
+      "type": "string"
+    },
+    "detail": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ShortDetail"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "rejected_at": {
+      "format": "date-time",
+      "title": "Rejected At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "equipment_id",
+    "reason_code",
+    "disposition",
+    "rejected_at"
+  ],
+  "title": "TelemetryRejection",
+  "type": "object"
+}

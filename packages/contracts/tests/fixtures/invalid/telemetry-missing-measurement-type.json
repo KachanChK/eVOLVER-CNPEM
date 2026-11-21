@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "event_id": "44444444-4444-4444-8444-444444444444",
+  "producer_id": "simulator-local-01",
+  "equipment_id": "evolver-sim-01",
+  "vial_id": "vial-01",
+  "value": 0.24,
+  "generated_at": "2026-10-27T13:03:00Z",
+  "sequence": 43
+}

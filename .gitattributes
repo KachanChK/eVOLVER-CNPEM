@@ -1,0 +1,4 @@
+# Arquivos lidos dentro de contêineres Linux precisam de LF mesmo em checkout no Windows.
+*.sh text eol=lf
+infra/mosquitto/acl text eol=lf
+infra/mosquitto/mosquitto.conf text eol=lf

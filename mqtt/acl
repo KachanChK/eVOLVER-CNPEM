@@ -1,0 +1,26 @@
+# Verificação de saúde do Compose.
+user evolver-health
+topic write evolver/health
+
+# Ingestão: consulta alocações e recebe telemetria v1.
+user evolver-ingestion
+topic read evolver/dev/evolver-sim-01/active-vials/request
+topic write evolver/dev/evolver-sim-01/active-vials/response
+topic read evolver/v1/+/telemetry
+topic read evolver/v1/+/command-results
+topic write evolver/v1/+/telemetry/ack
+topic write evolver/v1/+/telemetry/rejection
+
+# API: somente publica comandos.
+user evolver-api
+topic write evolver/v1/+/commands
+
+# Simulador: consulta alocações e publica telemetria v1.
+user evolver-sim-01
+topic write evolver/dev/evolver-sim-01/active-vials/request
+topic read evolver/dev/evolver-sim-01/active-vials/response
+topic write evolver/v1/evolver-sim-01/telemetry
+topic read evolver/v1/evolver-sim-01/telemetry/ack
+topic read evolver/v1/evolver-sim-01/telemetry/rejection
+topic read evolver/v1/evolver-sim-01/commands
+topic write evolver/v1/evolver-sim-01/command-results

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Identifier": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "const": "1.0",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "equipment_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "status": {
+      "enum": [
+        "persisted",
+        "duplicate"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "acknowledged_at": {
+      "format": "date-time",
+      "title": "Acknowledged At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "equipment_id",
+    "status",
+    "acknowledged_at"
+  ],
+  "title": "TelemetryAcknowledgement",
+  "type": "object"
+}

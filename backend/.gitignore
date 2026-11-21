@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.contract-test-deps/
+.uv-tool/
+.venv/

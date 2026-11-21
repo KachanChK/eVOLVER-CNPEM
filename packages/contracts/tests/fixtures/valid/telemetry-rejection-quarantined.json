@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "event_id": "44444444-4444-4444-8444-444444444444",
+  "equipment_id": "evolver-sim-01",
+  "reason_code": "schema_invalid",
+  "disposition": "quarantined",
+  "detail": "measurement_type is required",
+  "rejected_at": "2026-10-27T13:03:01Z"
+}

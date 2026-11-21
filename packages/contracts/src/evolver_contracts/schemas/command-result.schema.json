@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ExecutedCommandResult": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "equipment_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "simulated": {
+          "const": true,
+          "title": "Simulated",
+          "type": "boolean"
+        },
+        "reported_at": {
+          "format": "date-time",
+          "title": "Reported At",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShortDetail"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "const": "executed",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "command_id",
+        "equipment_id",
+        "simulated",
+        "reported_at",
+        "status"
+      ],
+      "title": "ExecutedCommandResult",
+      "type": "object"
+    },
+    "FailedCommandResult": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "equipment_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "simulated": {
+          "const": true,
+          "title": "Simulated",
+          "type": "boolean"
+        },
+        "reported_at": {
+          "format": "date-time",
+          "title": "Reported At",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShortDetail"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "const": "failed",
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "const": "simulation_error",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "command_id",
+        "equipment_id",
+        "simulated",
+        "reported_at",
+        "status",
+        "reason_code"
+      ],
+      "title": "FailedCommandResult",
+      "type": "object"
+    },
+    "Identifier": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+      "type": "string"
+    },
+    "ReceivedCommandResult": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "equipment_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "simulated": {
+          "const": true,
+          "title": "Simulated",
+          "type": "boolean"
+        },
+        "reported_at": {
+          "format": "date-time",
+          "title": "Reported At",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShortDetail"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "const": "received",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "command_id",
+        "equipment_id",
+        "simulated",
+        "reported_at",
+        "status"
+      ],
+      "title": "ReceivedCommandResult",
+      "type": "object"
+    },
+    "RejectedCommandResult": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "equipment_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "simulated": {
+          "const": true,
+          "title": "Simulated",
+          "type": "boolean"
+        },
+        "reported_at": {
+          "format": "date-time",
+          "title": "Reported At",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShortDetail"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "const": "rejected",
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "enum": [
+            "expired",
+            "unsupported_target",
+            "unsupported_action",
+            "invalid_payload"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "command_id",
+        "equipment_id",
+        "simulated",
+        "reported_at",
+        "status",
+        "reason_code"
+      ],
+      "title": "RejectedCommandResult",
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "const": "1.0",
+      "type": "string"
+    },
+    "ShortDetail": {
+      "maxLength": 250,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "executed": "#/$defs/ExecutedCommandResult",
+      "failed": "#/$defs/FailedCommandResult",
+      "received": "#/$defs/ReceivedCommandResult",
+      "rejected": "#/$defs/RejectedCommandResult"
+    },
+    "propertyName": "status"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ReceivedCommandResult"
+    },
+    {
+      "$ref": "#/$defs/ExecutedCommandResult"
+    },
+    {
+      "$ref": "#/$defs/RejectedCommandResult"
+    },
+    {
+      "$ref": "#/$defs/FailedCommandResult"
+    }
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Identifier": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+      "type": "string"
+    },
+    "PumpCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "equipment_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "experiment_run_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "author_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "target_type": {
+          "const": "pump",
+          "title": "Target Type",
+          "type": "string"
+        },
+        "pump_id": {
+          "enum": [
+            1,
+            2,
+            3
+          ],
+          "title": "Pump Id",
+          "type": "integer"
+        },
+        "action": {
+          "enum": [
+            "turn_on",
+            "turn_off"
+          ],
+          "title": "Action",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "command_id",
+        "equipment_id",
+        "author_id",
+        "created_at",
+        "expires_at",
+        "target_type",
+        "pump_id",
+        "action"
+      ],
+      "title": "PumpCommand",
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "const": "1.0",
+      "type": "string"
+    },
+    "TemperatureSetpointCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "equipment_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "experiment_run_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "author_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "target_type": {
+          "const": "temperature_setpoint",
+          "title": "Target Type",
+          "type": "string"
+        },
+        "vial_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "action": {
+          "const": "set",
+          "title": "Action",
+          "type": "string"
+        },
+        "setpoint": {
+          "title": "Setpoint",
+          "type": "number"
+        }
+      },
+      "required": [
+        "schema_version",
+        "command_id",
+        "equipment_id",
+        "author_id",
+        "created_at",
+        "expires_at",
+        "target_type",
+        "vial_id",
+        "action",
+        "setpoint"
+      ],
+      "title": "TemperatureSetpointCommand",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "pump": "#/$defs/PumpCommand",
+      "temperature_setpoint": "#/$defs/TemperatureSetpointCommand"
+    },
+    "propertyName": "target_type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/TemperatureSetpointCommand"
+    },
+    {
+      "$ref": "#/$defs/PumpCommand"
+    }
+  ]
+}
