@@ -38,10 +38,13 @@ Na raiz, execute o simulador:
 .\scripts\simular.ps1
 ```
 
-O simulador consulta a ingestão via MQTT para descobrir os vials em uso. Faz dez rodadas
-em cinco segundos, a cada 0,5 segundo. Em cada rodada envia OD, pH e temperatura
-para todos os vials ativos: 30 eventos por vial em cada execução. Sem vials ativos,
-encerra sem enviar medições. Confirmações MQTT lentas podem prolongar a execução.
+O simulador executa continuamente, com rodadas a cada 0,5 segundo. Em cada rodada,
+consulta a ingestão via MQTT para descobrir os vials em uso e envia OD, pH e temperatura
+para cada um. Novos experimentos passam a receber medições automaticamente; experimentos
+encerrados deixam de recebê-las na próxima consulta. Sem vials ativos, continua aguardando.
+Para encerrar, pressione **Ctrl+C na janela do simulador**. Os demais serviços continuam
+funcionando. Confirmações MQTT lentas podem atrasar as rodadas; falhas de conexão ainda
+são informadas e encerram o programa.
 
 O terminal mostra o valor de cada medição enviada, por exemplo:
 
@@ -59,8 +62,8 @@ Para um teste mais curto com uma medição de cada tipo:
 uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator --max-messages 3
 ```
 
-O limite conta medições geradas, não mensagens MQTT. `--max-messages` pode reduzir
-a quantidade, mas não aumenta o limite de dez medições de cada tipo por vial. Cada medição é publicada no
+O limite conta medições geradas, não mensagens de consulta MQTT. Sem limite configurado,
+a execução continua até a interrupção por Ctrl+C. Cada medição é publicada no
 contrato `evolver/v1/{equipment_id}/telemetry`. A ingestão salva temperatura em
 `temperature_readings`, pH em `ph_readings` e OD em `od_readings`. O PUBACK
 confirma a entrega ao broker, não a gravação no banco: confira o log da ingestão ou
@@ -68,11 +71,11 @@ consulte a tabela para verificar o salvamento.
 
 ## Ajustes opcionais
 
-- `SIMULATOR_SEED`: opcional; com o mesmo número e a mesma configuração, repete
-  as sequências para facilitar testes. Sem esse ajuste, cada execução começa com
-  novas sequências.
-- `SIMULATOR_MAX_MESSAGES`: limite menor de medições; `--max-messages` tem prioridade.
-  Nenhum dos dois aumenta o limite de dez medições por tipo e vial.
+- `SIMULATOR_SEED`: opcional; com o mesmo número, a mesma configuração e a mesma
+  sequência de vials ativos por rodada, repete os valores para facilitar testes.
+  Sem esse ajuste, cada execução começa com novas sequências.
+- `SIMULATOR_MAX_MESSAGES`: limite opcional de medições; `--max-messages` tem prioridade.
+  Deixe ambos sem definir para executar sem limite.
 - Para experimentar uma pausa, configure `SIMULATOR_PAUSE_AFTER_MESSAGES` e
   `SIMULATOR_PAUSE_SECONDS`. Para simular uma falha, use `SIMULATOR_FAIL_AFTER_MESSAGES`.
 

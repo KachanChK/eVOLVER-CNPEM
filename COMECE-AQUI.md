@@ -16,4 +16,6 @@ Abra http://127.0.0.1:5173, crie um experimento e execute em outro PowerShell:
 .\scripts\simular.ps1
 ```
 
+O simulador continua gerando medições até você pressionar **Ctrl+C nessa janela**. Sem experimentos ativos, ele aguarda; ao criar um experimento, as medições começam automaticamente.
+
 Se a aplicação já estiver em execução, não é necessário iniciar os serviços novamente.

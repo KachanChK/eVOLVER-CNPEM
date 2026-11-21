@@ -48,18 +48,25 @@ class SimulatedTelemetryGenerator:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._sequence = 0
+        self._position = 0
+        self._cycle = 0
+
+    def update_allocations(self, allocations: list[ActiveVial]) -> None:
+        """Atualiza os frascos entre rodadas, preservando a sequência e os geradores."""
+        self._allocations = list(allocations)
+        self._position = 0
 
     def next_event(self) -> TelemetryEvent:
         sequence = self._sequence
         allocations = self._allocations
         types = MEASUREMENT_TYPES
+        if not allocations:
+            raise ValueError("no active vials to simulate")
 
         # Cada vial recebe os três tipos de medição em cada rodada.
-        measurement_type = types[sequence % len(types)]
-        vial_turn = sequence // len(types)
-        vial_index = vial_turn % len(allocations)
-        cycle = vial_turn // len(allocations)
-        value = self._value_for(measurement_type, vial_index, cycle)
+        measurement_type = types[self._position % len(types)]
+        vial_index = self._position // len(types)
+        value = self._value_for(measurement_type, vial_index, self._cycle)
 
         event = TelemetryEvent(
             schema_version="1.0",
@@ -74,6 +81,10 @@ class SimulatedTelemetryGenerator:
             sequence=sequence,
         )
         self._sequence += 1
+        self._position += 1
+        if self._position == len(allocations) * len(types):
+            self._position = 0
+            self._cycle += 1
         return event
 
     def _value_for(self, measurement_type: str, vial_index: int, cycle: int) -> float:
