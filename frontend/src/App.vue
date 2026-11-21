@@ -133,7 +133,7 @@ onMounted(refresh)
         v-model="cultureType"
         type="text"
         required
-        pattern=".*\S.*"
+        pattern=".*[^\s\u0085].*"
         :aria-invalid="cultureTypeError ? 'true' : undefined"
         :aria-describedby="cultureTypeError ? 'culture-type-error' : undefined"
         @invalid.prevent="validateCultureType"

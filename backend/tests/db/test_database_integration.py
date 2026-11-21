@@ -107,10 +107,21 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         assert client.get("/api/experiments").json() == [legacy.json()]
 
         payload = {"name": "Teste", "vial_id": 1}
-        for fields in ({}, {"culture_type": ""}, {"culture_type": " \t\n "}):
+        for fields in (
+            {},
+            {"culture_type": ""},
+            {"culture_type": " \t\n "},
+            {"culture_type": "\u0085"},
+        ):
             invalid = client.post("/api/experiments", json={**payload, **fields})
             assert invalid.status_code == 422
             assert invalid.json()["detail"][0]["loc"] == ["body", "culture_type"]
+
+        nul = client.post("/api/experiments", json={**payload, "culture_type": "Leve\x00dura"})
+        assert nul.status_code == 422
+        nul_error = nul.json()["detail"][0]
+        assert nul_error["loc"] == ["body", "culture_type"]
+        assert "Tipo de cultura n\u00e3o pode conter o caractere NUL (U+0000)." in nul_error["msg"]
 
         invalid_name = client.post(
             "/api/experiments", json={**payload, "name": " ", "culture_type": "Levedura"}
