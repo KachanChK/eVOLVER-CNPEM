@@ -34,6 +34,7 @@ main { width: min(100%, 70rem); padding: clamp(1rem, 4vw, 3rem); }
 .panel h2, .empty h1 { margin-bottom: .75rem; }
 .detail-header { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: .75rem 1.5rem; margin-bottom: 1.25rem; }
 .detail-header h1 { margin: .25rem 0 .5rem; }
+.detail-header .muted { overflow-wrap: anywhere; }
 .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 
 button, input, select { font: inherit; border: 1px solid #aeb8c7; border-radius: .65rem; min-height: 2.75rem; padding: .45rem .75rem; color: inherit; background: #fff; }

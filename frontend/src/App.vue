@@ -10,6 +10,8 @@ const loading = ref(true)
 const loadError = ref('')
 const dialog = ref(null)
 const name = ref('')
+const cultureType = ref('')
+const cultureTypeError = ref('')
 const vialId = ref('')
 const saving = ref(false)
 const formError = ref('')
@@ -36,9 +38,16 @@ async function refresh() {
 
 function openForm() {
   name.value = ''
+  cultureType.value = ''
+  cultureTypeError.value = ''
   vialId.value = ''
   formError.value = ''
   dialog.value.showModal()
+}
+
+function validateCultureType(event) {
+  cultureTypeError.value = 'Informe o tipo de cultura.'
+  event.target.focus()
 }
 
 async function createExperiment() {
@@ -49,7 +58,11 @@ async function createExperiment() {
     const experiment = await request('/experiments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.value.trim(), vial_id: vialId.value }),
+      body: JSON.stringify({
+        name: name.value.trim(),
+        culture_type: cultureType.value.trim(),
+        vial_id: vialId.value,
+      }),
     })
     dialog.value.close()
     await router.push({ name: 'experiment', params: { id: experiment.id } })
@@ -114,6 +127,19 @@ onMounted(refresh)
       <h2 id="create-title">Novo experimento</h2>
       <label for="name">Nome</label>
       <input id="name" v-model="name" type="text" maxlength="120" required autofocus />
+      <label for="culture-type">Tipo de cultura</label>
+      <input
+        id="culture-type"
+        v-model="cultureType"
+        type="text"
+        required
+        pattern=".*\S.*"
+        :aria-invalid="cultureTypeError ? 'true' : undefined"
+        :aria-describedby="cultureTypeError ? 'culture-type-error' : undefined"
+        @invalid.prevent="validateCultureType"
+        @input="cultureTypeError = ''"
+      />
+      <p v-if="cultureTypeError" id="culture-type-error" class="error" role="alert">{{ cultureTypeError }}</p>
       <label for="vial">Vial</label>
       <select id="vial" v-model="vialId" required :disabled="loading || !vials.length">
         <option value="" disabled>Selecione um vial</option>

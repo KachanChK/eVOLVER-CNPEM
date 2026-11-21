@@ -44,6 +44,7 @@ class CreateExperiment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+    culture_type: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     vial_id: VialID
 
 
@@ -52,6 +53,7 @@ class ExperimentView(BaseModel):
 
     id: int
     name: str
+    culture_type: str | None
     vial_id: int
     status: str
     started_at: datetime
@@ -135,7 +137,12 @@ def create_experiment(data: CreateExperiment, db: Database) -> Experiment:
         is not None
     ):
         raise HTTPException(409, "Este vial já está em uso. Escolha outro vial.")
-    experiment = Experiment(name=data.name, vial_id=data.vial_id, started_at=func.clock_timestamp())
+    experiment = Experiment(
+        name=data.name,
+        culture_type=data.culture_type,
+        vial_id=data.vial_id,
+        started_at=func.clock_timestamp(),
+    )
     db.add(experiment)
     try:
         db.commit()

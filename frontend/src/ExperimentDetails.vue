@@ -138,6 +138,7 @@ onUnmounted(() => {
       <div>
         <p class="meta">Vial {{ experiment.vial_id }} · {{ experiment.status === 'active' ? 'Ativo' : 'Inativo' }}</p>
         <h1 ref="heading" tabindex="-1">{{ experiment.name }}</h1>
+        <p class="muted">Tipo de cultura · {{ experiment.culture_type ?? 'Não informado' }}</p>
         <p class="muted">Início · {{ dateTime.format(new Date(experiment.started_at)) }}</p>
         <p v-if="experiment.ended_at" class="muted">Fim · {{ dateTime.format(new Date(experiment.ended_at)) }}</p>
       </div>
