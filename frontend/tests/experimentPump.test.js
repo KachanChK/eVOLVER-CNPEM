@@ -34,7 +34,11 @@ const code = compiled.content.replace(/from (['"])([^'"]+)\1/g, (_, quote, path)
 const { default: ExperimentDetails } = await import(asModule(code))
 
 function node(type, text = '') {
-  return { type, text, props: {}, children: [], parent: null, focus() {}, addEventListener() {} }
+  return {
+    type, text, props: {}, children: [], parent: null,
+    focus() { this.focused = true },
+    addEventListener() {},
+  }
 }
 
 function remove(child) {
@@ -265,4 +269,115 @@ for (const deleting of [false, true]) {
       }
     })
   }
+}
+
+
+
+test('an unconfirmed closure is actionable while initial readings time out', async (t) => {
+  const root = node('root')
+  const base = '/api/experiments/1'
+  const start = new Date().toISOString()
+  const details = { id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start }
+  const timeouts = new Map()
+  let temperatureSignal
+  let slow = true
+  let poll
+  t.mock.method(AbortSignal, 'timeout', (delay) => {
+    const controller = new AbortController()
+    timeouts.set(controller.signal, { controller, delay })
+    return controller.signal
+  })
+  t.mock.method(globalThis, 'setInterval', (callback, ms) => {
+    if (ms === 5000) poll = callback
+    return 1
+  })
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (url === base) return Response.json(details)
+    if (url === base + '/closure') return Response.json({ state: 'unconfirmed', action: 'delete' })
+    if (url === base + '/pump') return Response.json({ state: 'automatic', ending: true })
+    if (url === base + '/temperature-readings' && slow) {
+      temperatureSignal = options?.signal
+      return new Promise((_resolve, reject) => {
+        temperatureSignal?.addEventListener('abort', () => reject(temperatureSignal.reason), { once: true })
+      })
+    }
+    return Response.json([{ generated_at: start, value: 0.7, temperature_celsius: 37 }])
+  })
+
+  const app = renderer.createApp(ExperimentDetails, { id: '1' })
+  app.mount(root)
+  t.after(() => app.unmount())
+  await settle()
+  assert.doesNotMatch(visibleText(root), /Carregando experimento/)
+  const heading = descendants(root).find((el) => el.type === 'h1')
+  assert.ok(heading.focused)
+  const retry = descendants(root).find((el) => el.type === 'button' &&
+    visibleText(el).trim() === 'Tentar desligar novamente')
+  assert.ok(retry && !retry.props.disabled)
+  assert.ok(descendants(root).some((el) => el.props.role === 'status' &&
+    visibleText(el).includes('ficou sem confirmação')))
+
+  const { controller, delay } = timeouts.get(temperatureSignal)
+  assert.ok(delay > 0 && delay <= 10000)
+  controller.abort(new DOMException('Leitura expirou', 'TimeoutError'))
+  await settle()
+  assert.match(visibleText(root), /Não foi possível atualizar as leituras/)
+  assert.ok(descendants(root).includes(retry))
+
+  slow = false
+  poll()
+  await settle()
+  assert.doesNotMatch(visibleText(root), /Não foi possível atualizar as leituras/)
+  assert.deepEqual(descendants(root).filter((el) => el.type === 'chart').map((el) => el.props.count), [1, 1, 1])
+})
+
+
+for (const closureFirst of [false, true]) {
+  test('ended_at takes precedence with ' + (closureFirst ? 'early pending' : 'late unconfirmed'), async (t) => {
+    routes.length = 0
+    const root = node('root')
+    const base = '/api/experiments/1'
+    const start = new Date().toISOString()
+    const details = {
+      id: 1, name: 'Experimento de teste', vial_id: 1, status: 'inactive',
+      started_at: start, ended_at: start,
+    }
+    const closure = { state: closureFirst ? 'pending' : 'unconfirmed', action: 'inactivate' }
+    let finishDetails
+    let finishClosure
+    let deletes = 0
+    let confirmations = 0
+    globalThis.confirm = () => { confirmations++; return true }
+    t.after(() => { delete globalThis.confirm })
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      if (url === base && options?.method === 'DELETE') {
+        deletes++
+        return new Response(null, { status: 204 })
+      }
+      if (url === base) return new Promise((resolve) => { finishDetails = () => resolve(Response.json(details)) })
+      if (url === base + '/closure') {
+        return new Promise((resolve) => { finishClosure = () => resolve(Response.json(closure)) })
+      }
+      if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+      return Response.json([])
+    })
+    const app = renderer.createApp(ExperimentDetails, { id: '1' })
+    app.mount(root)
+    t.after(() => app.unmount())
+    if (closureFirst) finishClosure()
+    else finishDetails()
+    await settle()
+    if (closureFirst) finishDetails()
+    else finishClosure()
+    await settle()
+    assert.match(visibleText(root), /Vial 1 · Inativo/)
+    assert.doesNotMatch(visibleText(root), /O vial continua ocupado|Tentar desligar novamente/)
+    const exclude = descendants(root).find((el) => el.type === 'button' &&
+      visibleText(el).trim() === 'Excluir')
+    assert.ok(exclude)
+    await exclude.props.onClick()
+    assert.equal(confirmations, 1)
+    assert.equal(deletes, 1)
+    assert.deepEqual(routes, [{ name: 'home' }])
+  })
 }

@@ -224,6 +224,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
             "od_min": 0.2, "od_max": 0.7,
         }).json()["id"]
         assert reading(pending_end, 0.7, 1, db_now(), vial_id=2) == "gravada"
+        mark_sent(commands(pending_end)[-1]["command_id"])
         assert client.delete(f"/api/experiments/{pending_end}").status_code == 202
         assert len(commands(pending_end)) == 1
         with engine.begin() as connection:
@@ -366,8 +367,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         with engine.begin() as connection:
             invalidate_controls(connection)
         assert client.post(f"/api/experiments/{pending_end_id}/inactivate").status_code == 202
-        with engine.begin() as connection:
-            expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
+        assert commands(pending_end_id)[0]["result_status"] == "superseded"
         ready_off(pending_end_id)
         executed(commands(pending_end_id)[-1]["command_id"])
         assert client.get(f"/api/experiments/{pending_end_id}").json()["status"] == "inactive"
@@ -804,3 +804,43 @@ def test_ending_does_not_retry_failed_off_from_od(control_database: Engine) -> N
         assert retry.command_id != off.command_id
         run.result(retry.command_id)
         assert client.get(f"{base}/closure").json()["state"] == "completed"
+
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("action", ["inactivate", "delete"])
+def test_closure_supersedes_unreserved_resume_on(control_database: Engine, action: str) -> None:
+    engine = control_database
+    with TestClient(app) as client:
+        run = PumpRun(engine, client)
+        run.mode("pause", "paused")
+        run.od(0.7, 1, run.now())
+        run.mode("resume", "automatic")
+        on, = run.queued()
+        assert on.action == "turn_on"
+        base = run.url.removesuffix("/pump")
+
+        def close_experiment():
+            return client.delete(base) if action == "delete" else client.post(f"{base}/inactivate")
+
+        status = 204 if action == "delete" else 200
+        assert close_experiment().status_code == status
+        closure = client.get(f"{base}/closure").json()
+        assert closure["action"] == action and closure["state"] == "completed"
+        assert closure["ended_at"]
+        assert close_experiment().status_code == status
+        assert client.get(f"{base}/closure").json() == closure
+        assert 1 in {vial["vial_id"] for vial in client.get("/api/vials/available").json()}
+        with engine.begin() as connection:
+            # The publisher may have snapshotted this command before acquiring the lock.
+            assert not command_is_current(connection, on)
+            assert connection.execute(text("""
+                SELECT confirmed_state, desired_state, pending_command_id FROM pump_control
+                WHERE experiment_id = :id
+            """), {"id": run.id}).one() == ("off", "off", None)
+        run.result(on.command_id)
+        with engine.connect() as connection:
+            assert connection.execute(text("""
+                SELECT desired_state, sent_at, result_status, result_at IS NOT NULL
+                FROM pump_commands WHERE experiment_id = :id
+            """), {"id": run.id}).all() == [("on", None, "superseded", True)]

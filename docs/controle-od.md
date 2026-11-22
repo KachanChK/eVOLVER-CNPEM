@@ -35,9 +35,11 @@ não entram no controle automático.
   recente solicita um `turn_off` de reconciliação; somente
   o resultado `executed` confirma o estado desligado e libera decisões futuras.
   Para experimento pausado ou em encerramento, o desligamento seguro é enviado
-  sem aguardar OD nova. Um `turn_on` pendente continua bloqueado; após seu
-  resultado ou expiração, solicita-se `turn_off`. Um `turn_off` já pendente pode
-  ser enviado e sua execução confirma o desligamento e conclui o encerramento.
+  sem aguardar OD nova. No encerramento, um `turn_on` que a ingestão ainda não
+  reservou para envio é cancelado e fica no histórico. Se já houve reserva,
+  aguarda-se seu resultado ou expiração antes de solicitar `turn_off`.
+  Um `turn_off` já pendente pode ser enviado. Sua execução confirma o
+  desligamento e conclui o encerramento.
   A repetição automática fica bloqueada se essa confirmação faltar. Uma queda
   na sequência do produtor também inicia essa reconciliação após reinício do
   simulador. Uma leitura antiga não a inicia.

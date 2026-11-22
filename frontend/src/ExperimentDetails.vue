@@ -14,12 +14,14 @@ const readings = ref([])
 const phReadings = ref([])
 const odReadings = ref([])
 const loading = ref(false)
+const initialReadings = ref(true)
 const error = ref('')
 const actionError = ref('')
 const pending = ref(false)
 const closure = ref(null)
 const closureError = ref('')
-const closing = computed(() => ['pending', 'unconfirmed'].includes(closure.value?.state))
+const closing = computed(() => !experiment.value?.ended_at &&
+  ['pending', 'unconfirmed'].includes(closure.value?.state))
 const heading = ref(null)
 const period = ref(60_000)
 const showAverage = ref(false)
@@ -62,6 +64,7 @@ const base = `/experiments/${encodeURIComponent(props.id)}`
 const dateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 let pollTimer
 let clockTimer
+let detailsRequest = false
 let readingRequest = false
 let closureRequest = false
 let pumpRequest = false
@@ -72,28 +75,25 @@ let pumpRevision = 0
 async function loadReadings() {
   if (readingRequest || pending.value) return
   readingRequest = true
-  const revision = actionRevision
   try {
-    const details = request(base).then((data) => {
-      if (!disposed && revision === actionRevision) {
-        experiment.value = closure.value?.state === 'completed' && closure.value.action === 'inactivate'
-          ? { ...data, status: 'inactive', ended_at: closure.value.ended_at }
-          : data
-      }
-    })
+    const options = { signal: AbortSignal.timeout(5000) }
     const [temperature, ph, od] = await Promise.all([
-      request(`${base}/temperature-readings`),
-      request(`${base}/readings/ph`),
-      request(`${base}/readings/od`),
-      details,
+      request(`${base}/temperature-readings`, options),
+      request(`${base}/readings/ph`, options),
+      request(`${base}/readings/od`, options),
     ])
     if (disposed) return
     readings.value = temperature
     phReadings.value = ph
     odReadings.value = od
     updateError.value = ''
+  } catch {
+    if (!disposed) {
+      updateError.value = 'Não foi possível atualizar as leituras. Exibindo os últimos dados recebidos.'
+    }
   } finally {
     readingRequest = false
+    initialReadings.value = false
     viewTime.value = Date.now()
   }
 }
@@ -116,22 +116,34 @@ async function loadPump() {
   }
 }
 
-async function load() {
-  if (!props.id) return
-  loading.value = true
-  error.value = ''
+async function loadDetails() {
+  if (detailsRequest || pending.value) return
+  detailsRequest = true
+  const initial = !experiment.value
+  const revision = actionRevision
+  if (initial) {
+    loading.value = true
+    error.value = ''
+  }
   try {
-    await loadReadings()
+    const data = await request(base, { signal: AbortSignal.timeout(5000) })
+    if (disposed || revision !== actionRevision) return
+    const endedAt = data.ended_at ?? experiment.value?.ended_at ?? closure.value?.ended_at
+    experiment.value = endedAt ? { ...data, status: 'inactive', ended_at: endedAt } : data
+  } catch (failure) {
+    if (initial && !disposed && revision === actionRevision) error.value = failure.message
+  } finally {
+    detailsRequest = false
+    if (initial) loading.value = false
+  }
+  if (initial && experiment.value) {
     await nextTick()
     heading.value?.focus({ preventScroll: true })
-  } catch (failure) {
-    error.value = failure.message
-  } finally {
-    loading.value = false
   }
 }
 
 async function applyClosure(next, announce = false) {
+  if (experiment.value?.ended_at && next.state !== 'completed') return
   const previous = closure.value
   closure.value = next
   if (next.state === 'none') return
@@ -169,7 +181,7 @@ async function loadClosure() {
 }
 
 async function change(action) {
-  if (pending.value || pendingPump.value || closure.value?.state === 'pending') return
+  if (pending.value || pendingPump.value || (closing.value && closure.value.state === 'pending')) return
   const deleting = action === 'delete'
   const confirmation = deleting
     ? 'Excluir este experimento da interface? O histórico será preservado no banco.'
@@ -193,7 +205,7 @@ async function change(action) {
       if (!deleting) experiment.value = result
       await applyClosure({ state: 'completed', action, ended_at: result?.ended_at }, true)
     } else {
-      actionError.value = 'A API não confirmou o encerramento. Aguarde a atualiza??o ou tente novamente.'
+      actionError.value = 'A API não confirmou o encerramento. Aguarde a atualização ou tente novamente.'
     }
   } catch (failure) {
     if (!disposed) actionError.value = failure.message
@@ -217,15 +229,15 @@ async function changePumpMode() {
 }
 
 onMounted(() => {
-  load()
   if (props.id) {
-    loadPump()
-    loadClosure()
-    pollTimer = setInterval(() => {
+    const refresh = () => {
+      loadDetails()
       loadClosure()
       loadPump()
-      loadReadings().catch(() => { updateError.value = 'Não foi possível atualizar as leituras. Exibindo os últimos dados recebidos.' })
-    }, 5000)
+      loadReadings()
+    }
+    refresh()
+    pollTimer = setInterval(refresh, 5000)
   }
   clockTimer = setInterval(() => { now.value = Date.now() }, 1000)
 })
@@ -244,7 +256,7 @@ onUnmounted(() => {
   <p v-else-if="loading" role="status">Carregando experimento…</p>
   <div v-else-if="error" class="panel" role="alert">
     <p>{{ error }}</p>
-    <button @click="load">Tentar novamente</button>
+    <button type="button" @click="loadDetails">Tentar novamente</button>
   </div>
   <template v-else-if="experiment">
     <header class="detail-header">
@@ -305,7 +317,8 @@ onUnmounted(() => {
       <p class="muted history-range">{{ rangeLabel }}</p>
     </section>
     <p v-if="updateError" class="notice" role="alert">{{ updateError }}</p>
-    <div class="history-panels">
+    <p v-if="initialReadings" role="status">Carregando leituras…</p>
+    <div v-else class="history-panels">
       <TemperatureHistory :readings="displayedSeries[0]" :live-readings="readings" :window="window" :now="now" :paused="!!paused" :show-average="showAverage" />
       <TemperatureHistory :readings="displayedSeries[1]" :live-readings="phReadings" :window="window" :now="now" :paused="!!paused" :show-average="showAverage" title="pH" value-key="value" unit="" color="#7546b6" />
       <TemperatureHistory :readings="displayedSeries[2]" :live-readings="odReadings" :window="window" :now="now" :paused="!!paused" :show-average="showAverage" title="Densidade óptica (OD)" value-key="value" unit="" color="#087d78" />

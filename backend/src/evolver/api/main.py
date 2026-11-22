@@ -37,7 +37,7 @@ from pydantic import (
     WithJsonSchema,
     field_validator,
 )
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -423,9 +423,25 @@ def request_end(db: Session, experiment: Experiment, *, delete: bool) -> Respons
     control.ending = True
     control.delete_requested = control.delete_requested or delete
     if control.pending_command_id is not None:
-        db.flush()
-        expire_commands(db.connection(), now, experiment_id=experiment.id)
-        db.refresh(control)
+        # The experiment lock also guards the publisher's reservation.
+        cancelled = db.execute(
+            update(PumpCommandRecord)
+            .where(
+                PumpCommandRecord.command_id == control.pending_command_id,
+                PumpCommandRecord.experiment_id == experiment.id,
+                PumpCommandRecord.desired_state == "on",
+                PumpCommandRecord.result_status == "pending",
+                PumpCommandRecord.sent_at.is_(None),
+            )
+            .values(result_status="superseded", result_at=now)
+        ).rowcount
+        if cancelled:
+            control.pending_command_id = None
+            control.desired_state = "off"
+        else:
+            db.flush()
+            expire_commands(db.connection(), now, experiment_id=experiment.id)
+            db.refresh(control)
     if (
         control.confirmed_state == "off"
         and not control.reconcile_required
