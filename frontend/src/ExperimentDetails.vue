@@ -24,6 +24,14 @@ const paused = shallowRef(null)
 const now = ref(Date.now())
 const viewTime = ref(Date.now())
 const updateError = ref('')
+const pumpStatus = {
+  automatic: 'Bomba em modo automático',
+  pausing: 'Pausando…',
+  paused: 'Bomba pausada',
+  off_unconfirmed: 'Desligamento não confirmado. O modo automático está pausado.',
+}
+const pump = ref(null)
+const pumpAction = computed(() => pump.value?.state === 'automatic' ? 'pause' : 'resume')
 const liveSeries = computed(() => [readings.value, phReadings.value, odReadings.value])
 const displayedSeries = computed(() => paused.value?.series ?? liveSeries.value)
 const window = computed(() => historyWindow(
@@ -48,19 +56,27 @@ let pollTimer
 let clockTimer
 let readingRequest = false
 let disposed = false
+let actionRevision = 0
 
 async function loadReadings() {
-  if (readingRequest) return
+  if (readingRequest || pending.value) return
   readingRequest = true
+  const revision = actionRevision
   try {
-    const [details, temperature, ph, od] = await Promise.all([
-      request(base),
+    const details = request(base).then((data) => {
+      if (!disposed && revision === actionRevision) experiment.value = data
+    })
+    const pumpDetails = request(`${base}/pump`).then((data) => {
+      if (!disposed && revision === actionRevision) pump.value = data
+    })
+    const [temperature, ph, od] = await Promise.all([
       request(`${base}/temperature-readings`),
       request(`${base}/readings/ph`),
       request(`${base}/readings/od`),
+      details,
+      pumpDetails,
     ])
     if (disposed) return
-    experiment.value = details
     readings.value = temperature
     phReadings.value = ph
     odReadings.value = od
@@ -92,6 +108,7 @@ async function change(action) {
     ? 'Excluir este experimento da interface? O histórico será preservado no banco.'
     : 'Inativar este experimento e liberar o vial? O histórico continuará disponível.'
   if (!globalThis.confirm(confirmation)) return
+  actionRevision++
   pending.value = true
   actionError.value = ''
   try {
@@ -103,6 +120,20 @@ async function change(action) {
       experiment.value = await request(`${base}/inactivate`, { method: 'POST' })
       emit('changed', 'Experimento inativado. Vial liberado.')
     }
+  } catch (failure) {
+    actionError.value = failure.message
+  } finally {
+    pending.value = false
+  }
+}
+
+async function changePumpMode() {
+  actionRevision++
+  pending.value = true
+  actionError.value = ''
+  try {
+    const state = await request(`${base}/pump/${pumpAction.value}`, { method: 'POST' })
+    if (!disposed) pump.value = state
   } catch (failure) {
     actionError.value = failure.message
   } finally {
@@ -150,6 +181,15 @@ onUnmounted(() => {
       </div>
     </header>
     <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
+    <section v-if="experiment.status === 'active' && pump && !pump.ending"
+      class="pump-controls panel" aria-label="Controle da bomba">
+      <button type="button" :disabled="pending" @click="changePumpMode">
+        {{ pumpAction === 'pause' ? 'Pausar bomba' : 'Despausar bomba' }}
+      </button>
+      <p :class="pump.state === 'off_unconfirmed' ? 'danger' : 'muted'" role="status">
+        {{ pumpStatus[pump.state] }}
+      </p>
+    </section>
     <section class="history-controls panel" aria-label="Controles dos gráficos">
       <div class="history-toolbar">
         <div>

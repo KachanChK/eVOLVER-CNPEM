@@ -20,7 +20,7 @@ from evolver.db.models import (
     Vial,
 )
 from evolver.db.queries import get_temperature_history
-from evolver.ingestion.control import queue_command
+from evolver.ingestion.control import pause_control, queue_command, resume_control
 from evolver_contracts.pilot import EQUIPMENT_ID, VialID
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response
 from fastapi.encoders import jsonable_encoder
@@ -37,6 +37,7 @@ from pydantic import (
     field_validator,
 )
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -162,6 +163,11 @@ class VialView(BaseModel):
     label: str | None
 
 
+class PumpView(BaseModel):
+    state: Literal["automatic", "pausing", "paused", "off_unconfirmed"]
+    ending: bool
+
+
 class ReadingView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -270,9 +276,51 @@ def create_experiment(data: CreateExperiment, db: Database) -> Experiment:
 app.include_router(experiment_creation)
 
 
+def pump_view(control: PumpControl) -> PumpView:
+    if not control.paused:
+        state = "automatic"
+    elif control.pending_command_id is not None:
+        state = "pausing"
+    elif control.confirmed_state == "off" and not control.reconcile_required:
+        state = "paused"
+    else:
+        state = "off_unconfirmed"
+    return PumpView(state=state, ending=control.ending)
+
+
 @app.get("/api/experiments/{experiment_id}", response_model=ExperimentView)
 def experiment_details(experiment_id: ExperimentID, db: Database) -> Experiment:
     return visible_experiment(db, experiment_id)
+
+
+@app.get("/api/experiments/{experiment_id}/pump", response_model=PumpView)
+def get_pump(experiment_id: ExperimentID, db: Database) -> PumpView:
+    visible_experiment(db, experiment_id)
+    return pump_view(db.get(PumpControl, experiment_id))
+
+
+@app.post("/api/experiments/{experiment_id}/pump/pause", response_model=PumpView)
+def pause_pump(experiment_id: ExperimentID, db: Database) -> PumpView:
+    return change_pump_mode(db, experiment_id, pause_control)
+
+
+@app.post("/api/experiments/{experiment_id}/pump/resume", response_model=PumpView)
+def resume_pump(experiment_id: ExperimentID, db: Database) -> PumpView:
+    return change_pump_mode(db, experiment_id, resume_control)
+
+
+def change_pump_mode(
+    db: Session, experiment_id: int, change: Callable[[Connection, int, datetime], None],
+) -> PumpView:
+    experiment = visible_experiment(db, experiment_id, lock=True)
+    control = db.get(PumpControl, experiment_id, with_for_update=True)
+    if experiment.ended_at is not None or control.ending:
+        raise HTTPException(409, "A bomba só pode ser controlada em um experimento ativo.")
+    change(db.connection(), experiment_id, db.scalar(select(func.clock_timestamp())))
+    db.refresh(control)
+    result = pump_view(control)
+    db.commit()
+    return result
 
 
 @app.get("/api/experiments/{experiment_id}/temperature-readings", response_model=list[ReadingView])

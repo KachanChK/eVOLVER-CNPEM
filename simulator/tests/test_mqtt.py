@@ -338,6 +338,38 @@ def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
     next_run.close()
 
 
+def test_simulator_handles_turn_off_after_a_pending_turn_on(tmp_path: Path) -> None:
+    fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
+    publisher = MqttPublisher(
+        make_settings(pump_state_path=tmp_path / "pump.sqlite3"),
+        client_factory=lambda **_kwargs: fake,
+    )
+    publisher.connect()
+    try:
+        now = datetime.now(UTC)
+        command_ids = []
+        for action in ("turn_on", "turn_off"):
+            command = PumpCommand(
+                schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
+                experiment_run_id="41", author_id="evolver-od-control",
+                created_at=now, expires_at=now + timedelta(seconds=10),
+                target_type="pump", pump_id=1, action=action,
+            )
+            command_ids.append(str(command.command_id))
+            message = mqtt.MQTTMessage(topic=b"evolver/v1/evolver-sim-01/commands")
+            message.payload = command.model_dump_json().encode()
+            publisher._on_message(fake, None, message)
+        publisher._command_executor.submit(lambda: None).result(timeout=5)
+        results = [
+            json.loads(kwargs["payload"]) for args, kwargs in fake.publish_calls
+            if args[0] == "evolver/v1/evolver-sim-01/command-results"
+        ]
+        assert [r["command_id"] for r in results if r["status"] == "executed"] == command_ids
+        assert publisher._pump_states == {(41, 1): False}
+    finally:
+        publisher.close()
+
+
 def test_pump_command_is_not_executed_when_state_cannot_be_saved(tmp_path: Path) -> None:
     fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
     publisher = MqttPublisher(

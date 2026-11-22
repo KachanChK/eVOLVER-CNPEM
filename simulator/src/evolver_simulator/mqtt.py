@@ -6,6 +6,7 @@ import logging
 import sqlite3
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import UTC, datetime
 from typing import Any
@@ -64,6 +65,7 @@ class MqttPublisher:
         self._allocation_request_id: UUID | None = None
         self._allocations: list[ActiveVial] | None = None
         self._allocation_lock = threading.Lock()
+        self._command_executor = ThreadPoolExecutor(max_workers=1)
         self._command_lock = threading.Lock()
         self._pump_states: dict[tuple[int, int], bool] = {}
         self._client = client_factory(
@@ -94,9 +96,7 @@ class MqttPublisher:
     def _on_message(self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
         command_topic = f"evolver/v1/{self._settings.equipment_id}/commands"
         if message.topic == command_topic and not message.retain:
-            threading.Thread(
-                target=self._handle_command, args=(message.payload,), daemon=True,
-            ).start()
+            self._command_executor.submit(self._handle_command, message.payload)
             return
         if message.topic != ACTIVE_VIALS_RESPONSE or message.retain:
             return
@@ -366,5 +366,7 @@ class MqttPublisher:
         finally:
             self._client.loop_stop()
             self._loop_started = False
+            self._command_executor.shutdown(wait=True, cancel_futures=True)
+            self._command_executor = ThreadPoolExecutor(max_workers=1)
             with self._publish_results_lock:
                 self._publish_results.clear()
