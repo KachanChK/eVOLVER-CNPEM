@@ -4,6 +4,7 @@ import os
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from math import isfinite
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -11,8 +12,17 @@ from evolver.db.models import Experiment, OdReading, PhReading, TemperatureReadi
 from evolver.db.queries import get_temperature_history
 from evolver_contracts.pilot import EQUIPMENT_ID, VialID
 from fastapi import Depends, FastAPI, HTTPException, Path, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationInfo,
+    field_validator,
+)
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -38,6 +48,7 @@ def get_session(request: Request) -> Iterator[Session]:
 
 Database = Annotated[Session, Depends(get_session)]
 ExperimentID = Annotated[int, Path(gt=0, le=2**63 - 1)]
+OdLimit = Annotated[float, Field(strict=True, allow_inf_nan=False, ge=0.10, le=0.80)]
 
 
 class CreateExperiment(BaseModel):
@@ -46,6 +57,16 @@ class CreateExperiment(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
     culture_type: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     vial_id: VialID
+    od_min: OdLimit
+    od_max: OdLimit
+
+    @field_validator("od_max")
+    @classmethod
+    def require_ordered_od_limits(cls, value: float, info: ValidationInfo) -> float:
+        minimum = info.data.get("od_min")
+        if minimum is not None and value <= minimum:
+            raise ValueError("A OD máxima deve ser maior que a OD mínima.")
+        return value
 
     @field_validator("culture_type")
     @classmethod
@@ -61,6 +82,8 @@ class ExperimentView(BaseModel):
     id: int
     name: str
     culture_type: str | None
+    od_min: float | None
+    od_max: float | None
     vial_id: int
     status: str
     started_at: datetime
@@ -90,6 +113,15 @@ class OtherReadingView(BaseModel):
     value: float
     generated_at: datetime
     received_at: datetime
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Validation errors can contain non-finite inputs that JSON cannot represent.
+    detail = jsonable_encoder(
+        exc.errors(), custom_encoder={float: lambda value: value if isfinite(value) else str(value)}
+    )
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 
 @app.exception_handler(OperationalError)
@@ -147,6 +179,8 @@ def create_experiment(data: CreateExperiment, db: Database) -> Experiment:
     experiment = Experiment(
         name=data.name,
         culture_type=data.culture_type,
+        od_min=data.od_min,
+        od_max=data.od_max,
         vial_id=data.vial_id,
         started_at=func.clock_timestamp(),
     )

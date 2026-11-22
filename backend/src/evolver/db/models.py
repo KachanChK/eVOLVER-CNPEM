@@ -43,6 +43,12 @@ class Experiment(Base):
             "deleted_at IS NULL OR (ended_at IS NOT NULL AND deleted_at >= ended_at)",
             name="ck_experiment_deletion",
         ),
+        CheckConstraint(
+            "(od_min IS NULL AND od_max IS NULL) OR "
+            "(od_min IS NOT NULL AND od_max IS NOT NULL "
+            "AND od_min >= 0.10 AND od_max <= 0.80 AND od_min < od_max)",
+            name="ck_experiment_od_limits",
+        ),
         Index(
             "uq_experiments_active_vial",
             "vial_id",
@@ -54,6 +60,8 @@ class Experiment(Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     culture_type: Mapped[str | None] = mapped_column(Text)
+    od_min: Mapped[float | None] = mapped_column(Float(precision=53))
+    od_max: Mapped[float | None] = mapped_column(Float(precision=53))
     vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id", ondelete="RESTRICT"))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -62,6 +70,16 @@ class Experiment(Base):
     @property
     def status(self) -> str:
         return "active" if self.ended_at is None else "inactive"
+
+    @property
+    def eligible_for_od_control(self) -> bool:
+        return (
+            self.ended_at is None
+            and self.deleted_at is None
+            and self.od_min is not None
+            and self.od_max is not None
+            and 0.10 <= self.od_min < self.od_max <= 0.80
+        )
 
 
 class TemperatureReading(Base):

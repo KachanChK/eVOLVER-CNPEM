@@ -1,7 +1,8 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from './api'
+import { parseOdLimits } from './odLimits.js'
 
 const router = useRouter()
 const experiments = ref([])
@@ -13,6 +14,9 @@ const name = ref('')
 const cultureType = ref('')
 const cultureTypeError = ref('')
 const vialId = ref('')
+const odLimits = reactive({ od_min: '', od_max: '' })
+const odErrors = ref({})
+const odFields = { od_min: 'OD mínima', od_max: 'OD máxima' }
 const saving = ref(false)
 const formError = ref('')
 const notice = ref('')
@@ -41,6 +45,8 @@ function openForm() {
   cultureType.value = ''
   cultureTypeError.value = ''
   vialId.value = ''
+  Object.assign(odLimits, { od_min: '', od_max: '' })
+  odErrors.value = {}
   formError.value = ''
   dialog.value.showModal()
 }
@@ -50,10 +56,25 @@ function validateCultureType(event) {
   event.target.focus()
 }
 
+function updateOdErrors() {
+  if (odErrors.value.od_min || odErrors.value.od_max) {
+    odErrors.value = parseOdLimits(odLimits).errors
+  }
+}
+
 async function createExperiment() {
   if (saving.value) return
-  saving.value = true
   formError.value = ''
+  const { errors, values } = parseOdLimits(odLimits)
+  odErrors.value = errors
+  const firstInvalid = Object.keys(odFields).find((field) => errors[field])
+  if (firstInvalid) {
+    await nextTick()
+    dialog.value.querySelector(`[name="${firstInvalid}"]`).focus()
+    return
+  }
+
+  saving.value = true
   try {
     const experiment = await request('/experiments', {
       method: 'POST',
@@ -62,6 +83,7 @@ async function createExperiment() {
         name: name.value.trim(),
         culture_type: cultureType.value.trim(),
         vial_id: vialId.value,
+        ...values,
       }),
     })
     dialog.value.close()
@@ -147,6 +169,26 @@ onMounted(refresh)
           {{ vial.label ?? `Vial ${vial.vial_id}` }}
         </option>
       </select>
+      <p id="od-limits-hint" class="muted">Limites obrigatórios de 0,10 a 0,80. Use vírgula decimal.</p>
+      <template v-for="(label, field) in odFields" :key="field">
+        <label :for="field">{{ label }}</label>
+        <input
+          :id="field"
+          v-model="odLimits[field]"
+          :name="field"
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
+          spellcheck="false"
+          aria-required="true"
+          :aria-invalid="odErrors[field] ? 'true' : undefined"
+          :aria-describedby="odErrors[field] ? `od-limits-hint ${field}-error` : 'od-limits-hint'"
+          @input="updateOdErrors"
+        />
+        <p v-if="odErrors[field]" :id="`${field}-error`" class="error" role="alert">
+          {{ odErrors[field] }}
+        </p>
+      </template>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
       <p v-if="!loading && !loadError && !vials.length" class="message" role="status">{{ noVials }}</p>
       <div class="actions">
