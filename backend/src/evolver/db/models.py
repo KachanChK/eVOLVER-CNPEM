@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
@@ -13,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Numeric,
     PrimaryKeyConstraint,
     String,
     Text,
@@ -20,6 +22,9 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+OD_MIN = Decimal("0.10")
+OD_MAX = Decimal("0.80")
 
 
 class Base(DeclarativeBase):
@@ -60,8 +65,8 @@ class Experiment(Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     culture_type: Mapped[str | None] = mapped_column(Text)
-    od_min: Mapped[float | None] = mapped_column(Float(precision=53))
-    od_max: Mapped[float | None] = mapped_column(Float(precision=53))
+    od_min: Mapped[Decimal | None] = mapped_column(Numeric)
+    od_max: Mapped[Decimal | None] = mapped_column(Numeric)
     vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id", ondelete="RESTRICT"))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -78,7 +83,7 @@ class Experiment(Base):
             and self.deleted_at is None
             and self.od_min is not None
             and self.od_max is not None
-            and 0.10 <= self.od_min < self.od_max <= 0.80
+            and OD_MIN <= self.od_min < self.od_max <= OD_MAX
         )
 
 

@@ -1,26 +1,37 @@
 """HTTP API for the local experiment interface."""
 
+import json
 import os
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from math import isfinite
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
 from uuid import UUID
 
-from evolver.db.models import Experiment, OdReading, PhReading, TemperatureReading, Vial
+from evolver.db.models import (
+    OD_MAX,
+    OD_MIN,
+    Experiment,
+    OdReading,
+    PhReading,
+    TemperatureReading,
+    Vial,
+)
 from evolver.db.queries import get_temperature_history
 from evolver_contracts.pilot import EQUIPMENT_ID, VialID
-from fastapi import Depends, FastAPI, HTTPException, Path, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     StringConstraints,
     ValidationInfo,
+    WithJsonSchema,
     field_validator,
 )
 from sqlalchemy import create_engine, func, select
@@ -48,7 +59,43 @@ def get_session(request: Request) -> Iterator[Session]:
 
 Database = Annotated[Session, Depends(get_session)]
 ExperimentID = Annotated[int, Path(gt=0, le=2**63 - 1)]
-OdLimit = Annotated[float, Field(strict=True, allow_inf_nan=False, ge=0.10, le=0.80)]
+OdLimit = Annotated[
+    Decimal,
+    Field(strict=True, allow_inf_nan=False, ge=OD_MIN, le=OD_MAX),
+    WithJsonSchema({"type": "number", "minimum": 0.10, "maximum": 0.80}, mode="validation"),
+]
+# PostgreSQL's unconstrained NUMERIC supports up to 16,383 fractional digits.
+OD_MAX_SCALE = 16_383
+
+
+def decode_decimal(token: str) -> Decimal:
+    try:
+        return Decimal(token)
+    except InvalidOperation:
+        # A JSON exponent beyond Decimal's representable range is invalid for OD.
+        return Decimal("NaN")
+
+
+class DecimalRequest(Request):
+    async def json(self) -> object:
+        if not hasattr(self, "_json"):
+            self._json = json.loads(
+                await self.body(), parse_float=decode_decimal, parse_constant=decode_decimal
+            )
+        return self._json
+
+
+class DecimalRequestRoute(APIRoute):
+    def get_route_handler(self) -> Callable[[Request], Awaitable[Response]]:
+        handler = super().get_route_handler()
+
+        async def handle(request: Request) -> Response:
+            return await handler(DecimalRequest(request.scope, request.receive))
+
+        return handle
+
+
+experiment_creation = APIRouter(route_class=DecimalRequestRoute)
 
 
 class CreateExperiment(BaseModel):
@@ -60,9 +107,25 @@ class CreateExperiment(BaseModel):
     od_min: OdLimit
     od_max: OdLimit
 
+    @field_validator("od_min", "od_max", mode="before")
+    @classmethod
+    def accept_json_integers(cls, value: object) -> object:
+        return Decimal(value) if type(value) is int else value
+
+    @field_validator("od_min", "od_max")
+    @classmethod
+    def require_storable_scale(cls, value: Decimal) -> Decimal:
+        sign, digits, exponent = value.as_tuple()
+        if exponent < -OD_MAX_SCALE:
+            excess = -exponent - OD_MAX_SCALE
+            if any(digits[-excess:]):
+                raise ValueError("O limite de OD aceita até 16383 casas decimais significativas.")
+            return Decimal((sign, digits[:-excess], -OD_MAX_SCALE))
+        return value
+
     @field_validator("od_max")
     @classmethod
-    def require_ordered_od_limits(cls, value: float, info: ValidationInfo) -> float:
+    def require_ordered_od_limits(cls, value: Decimal, info: ValidationInfo) -> Decimal:
         minimum = info.data.get("od_min")
         if minimum is not None and value <= minimum:
             raise ValueError("A OD máxima deve ser maior que a OD mínima.")
@@ -82,8 +145,8 @@ class ExperimentView(BaseModel):
     id: int
     name: str
     culture_type: str | None
-    od_min: float | None
-    od_max: float | None
+    od_min: Decimal | None
+    od_max: Decimal | None
     vial_id: int
     status: str
     started_at: datetime
@@ -117,10 +180,8 @@ class OtherReadingView(BaseModel):
 
 @app.exception_handler(RequestValidationError)
 async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
-    # Validation errors can contain non-finite inputs that JSON cannot represent.
-    detail = jsonable_encoder(
-        exc.errors(), custom_encoder={float: lambda value: value if isfinite(value) else str(value)}
-    )
+    # Keep Decimal values in validation errors serializable, including NaN and infinity.
+    detail = jsonable_encoder(exc.errors(), custom_encoder={Decimal: str})
     return JSONResponse(status_code=422, content={"detail": detail})
 
 
@@ -162,7 +223,7 @@ def list_experiments(db: Database) -> list[Experiment]:
     )
 
 
-@app.post("/api/experiments", status_code=201, response_model=ExperimentView)
+@experiment_creation.post("/api/experiments", status_code=201, response_model=ExperimentView)
 def create_experiment(data: CreateExperiment, db: Database) -> Experiment:
     vial = db.get(Vial, data.vial_id, with_for_update=True)
     if vial is None or vial.equipment_id != EQUIPMENT_ID:
@@ -196,6 +257,9 @@ def create_experiment(data: CreateExperiment, db: Database) -> Experiment:
         raise HTTPException(409, "Este vial já está em uso. Escolha outro vial.") from exc
     db.refresh(experiment)
     return experiment
+
+
+app.include_router(experiment_creation)
 
 
 @app.get("/api/experiments/{experiment_id}", response_model=ExperimentView)

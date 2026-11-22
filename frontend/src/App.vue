@@ -2,7 +2,7 @@
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from './api'
-import { parseOdLimits } from './odLimits.js'
+import { encodeExperiment, parseOdLimits } from './odLimits.js'
 
 const router = useRouter()
 const experiments = ref([])
@@ -65,9 +65,9 @@ function updateOdErrors() {
 async function createExperiment() {
   if (saving.value) return
   formError.value = ''
-  const { errors, values } = parseOdLimits(odLimits)
-  odErrors.value = errors
-  const firstInvalid = Object.keys(odFields).find((field) => errors[field])
+  const limits = parseOdLimits(odLimits)
+  odErrors.value = limits.errors
+  const firstInvalid = Object.keys(odFields).find((field) => limits.errors[field])
   if (firstInvalid) {
     await nextTick()
     dialog.value.querySelector(`[name="${firstInvalid}"]`).focus()
@@ -79,12 +79,11 @@ async function createExperiment() {
     const experiment = await request('/experiments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: encodeExperiment({
         name: name.value.trim(),
         culture_type: cultureType.value.trim(),
         vial_id: vialId.value,
-        ...values,
-      }),
+      }, limits),
     })
     dialog.value.close()
     await router.push({ name: 'experiment', params: { id: experiment.id } })
