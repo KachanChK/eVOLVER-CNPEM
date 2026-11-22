@@ -17,6 +17,9 @@ const loading = ref(false)
 const error = ref('')
 const actionError = ref('')
 const pending = ref(false)
+const closure = ref(null)
+const closureError = ref('')
+const closing = computed(() => ['pending', 'unconfirmed'].includes(closure.value?.state))
 const heading = ref(null)
 const period = ref(60_000)
 const showAverage = ref(false)
@@ -60,6 +63,7 @@ const dateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyl
 let pollTimer
 let clockTimer
 let readingRequest = false
+let closureRequest = false
 let pumpRequest = false
 let disposed = false
 let actionRevision = 0
@@ -71,7 +75,11 @@ async function loadReadings() {
   const revision = actionRevision
   try {
     const details = request(base).then((data) => {
-      if (!disposed && revision === actionRevision) experiment.value = data
+      if (!disposed && revision === actionRevision) {
+        experiment.value = closure.value?.state === 'completed' && closure.value.action === 'inactivate'
+          ? { ...data, status: 'inactive', ended_at: closure.value.ended_at }
+          : data
+      }
     })
     const [temperature, ph, od] = await Promise.all([
       request(`${base}/temperature-readings`),
@@ -91,7 +99,7 @@ async function loadReadings() {
 }
 
 async function loadPump() {
-  if (pumpRequest || pendingPump.value || pending.value || experiment.value?.status === 'inactive') return
+  if (pumpRequest || pendingPump.value || pending.value || closing.value || experiment.value?.status === 'inactive') return
   pumpRequest = true
   const revision = pumpRevision
   try {
@@ -123,27 +131,72 @@ async function load() {
   }
 }
 
+async function applyClosure(next, announce = false) {
+  const previous = closure.value
+  closure.value = next
+  if (next.state === 'none') return
+  actionError.value = ''
+  if (next.state !== 'completed' ||
+      (previous?.state === 'completed' && previous.action === next.action && !announce)) return
+
+  if (next.action === 'delete') {
+    emit('changed', 'Experimento excluído da interface.')
+    await router.replace({ name: 'home' })
+  } else {
+    if (experiment.value) {
+      experiment.value = { ...experiment.value, status: 'inactive', ended_at: next.ended_at }
+    }
+    if (announce || previous?.action) emit('changed', 'Experimento inativado. Vial liberado.')
+  }
+}
+
+async function loadClosure() {
+  if (closureRequest || pending.value) return
+  closureRequest = true
+  const revision = actionRevision
+  try {
+    const state = await request(`${base}/closure`, { signal: AbortSignal.timeout(5000) })
+    if (disposed || revision !== actionRevision) return
+    closureError.value = ''
+    await applyClosure(state)
+  } catch (failure) {
+    if (!disposed && revision === actionRevision && failure.status !== 404) {
+      closureError.value = 'Não foi possível consultar o encerramento. A consulta será repetida.'
+    }
+  } finally {
+    closureRequest = false
+  }
+}
+
 async function change(action) {
+  if (pending.value || pendingPump.value || closure.value?.state === 'pending') return
   const deleting = action === 'delete'
   const confirmation = deleting
     ? 'Excluir este experimento da interface? O histórico será preservado no banco.'
     : 'Inativar este experimento e liberar o vial? O histórico continuará disponível.'
-  if (!globalThis.confirm(confirmation)) return
+  if (!closing.value && !globalThis.confirm(confirmation)) return
   actionRevision++
   pumpRevision++
   pending.value = true
   actionError.value = ''
+  closureError.value = ''
   try {
-    if (deleting) {
-      await request(base, { method: 'DELETE' })
-      emit('changed', 'Experimento excluído da interface.')
-      await router.replace({ name: 'home' })
+    const result = await request(deleting ? base : `${base}/inactivate`, {
+      method: deleting ? 'DELETE' : 'POST',
+      signal: AbortSignal.timeout(10000),
+    })
+    if (disposed) return
+    if (result?.state === 'pending') {
+      await applyClosure(result)
+      emit('changed', '')
+    } else if (deleting ? result === undefined : result?.status === 'inactive' && result.ended_at) {
+      if (!deleting) experiment.value = result
+      await applyClosure({ state: 'completed', action, ended_at: result?.ended_at }, true)
     } else {
-      experiment.value = await request(`${base}/inactivate`, { method: 'POST' })
-      emit('changed', 'Experimento inativado. Vial liberado.')
+      actionError.value = 'A API não confirmou o encerramento. Aguarde a atualiza??o ou tente novamente.'
     }
   } catch (failure) {
-    actionError.value = failure.message
+    if (!disposed) actionError.value = failure.message
   } finally {
     pending.value = false
   }
@@ -167,7 +220,9 @@ onMounted(() => {
   load()
   if (props.id) {
     loadPump()
+    loadClosure()
     pollTimer = setInterval(() => {
+      loadClosure()
       loadPump()
       loadReadings().catch(() => { updateError.value = 'Não foi possível atualizar as leituras. Exibindo os últimos dados recebidos.' })
     }, 5000)
@@ -201,13 +256,24 @@ onUnmounted(() => {
         <p class="muted">Início · {{ dateTime.format(new Date(experiment.started_at)) }}</p>
         <p v-if="experiment.ended_at" class="muted">Fim · {{ dateTime.format(new Date(experiment.ended_at)) }}</p>
       </div>
-      <div class="actions">
-        <button v-if="experiment.status === 'active'" :disabled="pending || pendingPump" @click="change('inactivate')">Inativar</button>
-        <button class="danger" :disabled="pending || pendingPump" @click="change('delete')">Excluir</button>
+      <div v-if="!closing" class="actions">
+        <button v-if="experiment.status === 'active'" type="button" :disabled="pending || pendingPump" @click="change('inactivate')">Inativar</button>
+        <button type="button" class="danger" :disabled="pending || pendingPump" @click="change('delete')">Excluir</button>
       </div>
     </header>
     <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
-    <section v-if="experiment.status === 'active' && !pump?.ending"
+    <p v-if="closureError" class="error" role="alert">{{ closureError }}</p>
+    <section v-if="closing" class="notice" aria-label="Encerramento do experimento">
+      <p role="status">
+        {{ closure.action === 'delete' ? 'Exclusão' : 'Inativação' }} solicitada.
+        {{ closure.state === 'pending'
+          ? 'Aguardando a confirmação de que a bomba desligou. O vial continua ocupado.'
+          : 'O desligamento da bomba ficou sem confirmação. O vial continua ocupado. Verifique se o simulador está conectado e tente novamente.' }}
+      </p>
+      <button v-if="closure.state === 'unconfirmed'" type="button" :disabled="pending"
+        @click="change(closure.action)">Tentar desligar novamente</button>
+    </section>
+    <section v-if="experiment.status === 'active' && !closing && !pump?.ending"
       class="pump-controls panel" aria-label="Controle da bomba">
       <button v-if="pump" type="button" :disabled="pending || pendingPump" @click="changePumpMode">
         {{ pumpAction === 'pause' ? 'Pausar bomba' : 'Despausar bomba' }}

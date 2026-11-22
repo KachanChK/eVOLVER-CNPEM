@@ -17,7 +17,11 @@ const chart = asModule(`
     render() { return h('chart', { count: this.readings.length }) },
   }
 `)
-const router = asModule('export const useRouter = () => ({})')
+const router = asModule(`
+  export const routes = []
+  export const useRouter = () => ({ replace: (route) => routes.push(route) })
+`)
+const { routes } = await import(router)
 const imports = {
   vue: import.meta.resolve('vue'),
   'vue-router': router,
@@ -92,6 +96,7 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     const base = '/api/experiments/1'
     if (url === base) return response(experiment)
+    if (url === base + '/closure') return response({ state: 'none' })
     if (url === `${base}/pump`) return getPump()
     if (url === `${base}/pump/pause` && options?.method === 'POST') return response(pausing)
     if (url.startsWith(`${base}/readings/`) || url === `${base}/temperature-readings`) {
@@ -143,3 +148,121 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
   assert.match(text(), /Pausando…/)
   assert.ok(button('Retomar visualização'))
 })
+
+
+
+for (const deleting of [false, true]) {
+  for (const immediate of [false, true]) {
+    const action = deleting ? 'delete' : 'inactivate'
+    test('closure ' + action + (immediate ? ' completes immediately' : ' resumes polling after remount'), async (t) => {
+      routes.length = 0
+      const base = '/api/experiments/1'
+      const start = new Date().toISOString()
+      const details = {
+        id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start,
+      }
+      const notices = []
+      const startLabel = deleting ? 'Excluir' : 'Inativar'
+      const inactive = { ...details, status: 'inactive', ended_at: start }
+      const complete = { state: 'completed', action, ended_at: start }
+      let closure = { state: 'none' }
+      let unavailable = false
+      let unconfirmedResponse = !deleting && immediate
+      let submitted = 0
+      let poll
+      t.mock.method(globalThis, 'setInterval', (callback, ms) => {
+        if (ms === 5000) poll = callback
+        return 1
+      })
+      globalThis.confirm = () => true
+      t.after(() => { delete globalThis.confirm })
+      t.mock.method(globalThis, 'fetch', async (url, options) => {
+        if (options?.method === (deleting ? 'DELETE' : 'POST')) {
+          assert.equal(url, deleting ? base : base + '/inactivate')
+          submitted++
+          if (unconfirmedResponse) {
+            unconfirmedResponse = false
+            return Response.json(details)
+          }
+          if (immediate) {
+            closure = complete
+            return deleting ? new Response(null, { status: 204 }) : Response.json(inactive)
+          }
+          closure = { state: 'pending', action }
+          return Response.json(closure, { status: 202 })
+        }
+        if (url === base + '/closure') {
+          return unavailable ? Response.json({}, { status: 503 }) : Response.json(closure)
+        }
+        if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+        if (url === base) {
+          if (deleting && closure.state === 'completed') return Response.json({}, { status: 404 })
+          return Response.json(details)
+        }
+        return Response.json([])
+      })
+
+      let root = node('root')
+      let app
+      const mount = () => {
+        root = node('root')
+        app = renderer.createApp(ExperimentDetails, { id: '1', onChanged: (message) => notices.push(message) })
+        app.mount(root)
+      }
+      mount()
+      t.after(() => app.unmount())
+      const button = (label) => descendants(root).find(
+        (el) => el.type === 'button' && visibleText(el).trim() === label,
+      )
+      await settle()
+      await button(startLabel).props.onClick()
+      await settle()
+      if (!deleting && immediate) {
+        assert.match(visibleText(root), /A API não confirmou o encerramento/)
+        assert.deepEqual(notices, [])
+        await button(startLabel).props.onClick()
+        await settle()
+      }
+      const success = deleting ? 'Experimento excluído da interface.' : 'Experimento inativado. Vial liberado.'
+      if (!immediate) {
+        assert.match(visibleText(root), /Aguardando a confirmação/)
+        assert.ok(!button(startLabel))
+        assert.equal(submitted, 1)
+        assert.ok(!notices.includes(success))
+        assert.deepEqual(routes, [])
+        app.unmount()
+        mount()
+        await settle()
+        assert.match(visibleText(root), /O vial continua ocupado/)
+
+        unavailable = true
+        poll()
+        await settle()
+        assert.match(visibleText(root), /Não foi possível consultar o encerramento/)
+        assert.ok(!notices.includes(success))
+
+        unavailable = false
+        closure = { state: 'unconfirmed', action }
+        poll()
+        await settle()
+        assert.match(visibleText(root), /ficou sem confirmação/)
+        const retry = button('Tentar desligar novamente')
+        await Promise.all([retry.props.onClick(), retry.props.onClick()])
+        await settle()
+        assert.equal(submitted, 2)
+        assert.ok(!notices.includes(success))
+        assert.deepEqual(routes, [])
+
+        closure = complete
+        poll()
+        await settle()
+      }
+      assert.equal(notices.filter((message) => message === success).length, 1)
+      if (deleting) assert.deepEqual(routes, [{ name: 'home' }])
+      else {
+        assert.match(visibleText(root), /Vial 1 · Inativo/)
+        assert.ok(!button('Inativar'))
+      }
+    })
+  }
+}

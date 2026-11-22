@@ -46,8 +46,16 @@ não entram no controle automático.
   quando necessário. A API e a interface de pausar/despausar pertencem à Spec 4.
   Inativação/exclusão também bloqueia a automação e, se a bomba não estiver
   comprovadamente desligada, conclui o encerramento após resultado `executed`
-  do comando de desligar. Resultado ausente deixa o encerramento pendente para
-  inspeção, sem presumir que a bomba desligou.
+  do comando de desligar. O vial continua ocupado enquanto a solicitação
+  aguarda confirmação. Se o comando falhar ou expirar, a interface permite
+  repetir apenas o desligamento, sem criar outro comando enquanto houver um
+  pendente. A reconexão da ingestão também pode reconciliar o desligamento.
+
+As rotas POST de inativação e DELETE retornam HTTP 202 enquanto a solicitação
+aguarda execução, com a ação registrada. Quando encerram na mesma transação,
+retornam respectivamente HTTP 200 com o experimento e HTTP 204. A consulta
+GET /api/experiments/{id}/closure informa se o encerramento está pendente,
+sem confirmação ou concluído, inclusive após uma exclusão lógica.
 
 O teste com TimescaleDB descartável é
 `backend/tests/db/test_pump_control_integration.py`. Ele não valida bomba física.

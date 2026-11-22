@@ -171,7 +171,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         assert reading(experiment_id, 0.2, 8, db_now()) == "gravada"
         assert len(commands(experiment_id)) == 5
         # Ending with unknown state requests a safe off command, then completes on execution.
-        assert client.post(f"/api/experiments/{experiment_id}/inactivate").status_code == 200
+        assert client.post(f"/api/experiments/{experiment_id}/inactivate").status_code == 202
         ending = commands(experiment_id)[-1]
         assert ending["desired_state"] == "off"
         executed(ending["command_id"])
@@ -224,7 +224,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
             "od_min": 0.2, "od_max": 0.7,
         }).json()["id"]
         assert reading(pending_end, 0.7, 1, db_now(), vial_id=2) == "gravada"
-        assert client.delete(f"/api/experiments/{pending_end}").status_code == 204
+        assert client.delete(f"/api/experiments/{pending_end}").status_code == 202
         assert len(commands(pending_end)) == 1
         with engine.begin() as connection:
             expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
@@ -320,7 +320,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         executed(commands(ending_id)[-1]["command_id"])
         with engine.begin() as connection:
             invalidate_controls(connection)
-        assert client.post(f"/api/experiments/{ending_id}/inactivate").status_code == 200
+        assert client.post(f"/api/experiments/{ending_id}/inactivate").status_code == 202
         ready_off(ending_id)
         executed(commands(ending_id)[-1]["command_id"])
         assert client.get(f"/api/experiments/{ending_id}").json()["status"] == "inactive"
@@ -333,7 +333,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         old_off = commands(prior_off_id)[-1]["command_id"]
         with engine.begin() as connection:
             invalidate_controls(connection)
-        assert client.delete(f"/api/experiments/{prior_off_id}").status_code == 204
+        assert client.delete(f"/api/experiments/{prior_off_id}").status_code == 202
         assert commands(prior_off_id)[-1]["command_id"] == old_off
         ready_off(prior_off_id)
         with engine.begin() as connection:
@@ -365,7 +365,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         assert reading(pending_end_id, 0.7, 1, db_now(), vial_id=9) == "gravada"
         with engine.begin() as connection:
             invalidate_controls(connection)
-        assert client.post(f"/api/experiments/{pending_end_id}/inactivate").status_code == 200
+        assert client.post(f"/api/experiments/{pending_end_id}/inactivate").status_code == 202
         with engine.begin() as connection:
             expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
         ready_off(pending_end_id)
@@ -390,7 +390,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
                 UPDATE pump_commands SET sent_at = :now WHERE command_id = :id
             """), {"now": datetime.now(UTC), "id": old_sent_off})
             invalidate_controls(connection)
-        assert client.delete(f"/api/experiments/{sent_off_id}").status_code == 204
+        assert client.delete(f"/api/experiments/{sent_off_id}").status_code == 202
         with engine.begin() as connection:
             expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
         assert commands(sent_off_id)[-1]["command_id"] != old_sent_off
@@ -654,3 +654,153 @@ def test_resume_uses_exact_accepted_od_cursor(control_database: Engine, case: st
                 SELECT reading_event_id FROM pump_commands WHERE experiment_id = :id
             """), {"id": run.id}).scalars().all()
         assert actual == ([] if case in ("invalid_newer", "reused_vial") else [accepted_id])
+
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("action", ["inactivate", "delete"])
+@pytest.mark.parametrize("pump_state", ["off", "on", "uncertain"])
+def test_closure_status_retry_and_persistence(
+    control_database: Engine, action: str, pump_state: str,
+) -> None:
+    engine = control_database
+    with TestClient(app) as client:
+        run = PumpRun(engine, client)
+        base = run.url.removesuffix("/pump")
+        status_url = f"{base}/closure"
+        if pump_state == "on":
+            run.od(0.7, 1, run.now())
+            run.result(run.queued()[0].command_id)
+        elif pump_state == "uncertain":
+            with engine.begin() as connection:
+                connection.execute(text("""
+                    UPDATE pump_control SET reconcile_required = true WHERE experiment_id = :id
+                """), {"id": run.id})
+        assert client.get(status_url).json()["state"] == "none"
+
+        def close_experiment(api: TestClient):
+            return api.delete(base) if action == "delete" else api.post(f"{base}/inactivate")
+
+        def vial_available(api: TestClient) -> bool:
+            return 1 in {vial["vial_id"] for vial in api.get("/api/vials/available").json()}
+
+        immediate_status = 204 if action == "delete" else 200
+        requested = close_experiment(client)
+        if pump_state == "off":
+            assert requested.status_code == immediate_status
+            assert not run.queued()
+        else:
+            assert requested.status_code == 202
+            assert requested.json() == {"state": "pending", "action": action, "ended_at": None}
+            first, = run.queued()
+            assert first.action == "turn_off"
+            assert client.get(base).json()["status"] == "active"
+            assert not vial_available(client)
+            assert close_experiment(client).status_code == 202
+            assert run.queued() == [first]
+            with engine.begin() as connection:
+                connection.execute(text("""
+                    UPDATE pump_commands SET sent_at = now(), puback_at = now()
+                    WHERE command_id = :id
+                """), {"id": first.command_id})
+                record_result(connection, ReceivedCommandResult(
+                    schema_version="1.0", command_id=first.command_id,
+                    equipment_id="evolver-sim-01", simulated=True,
+                    status="received", reported_at=run.now(),
+                ))
+            assert client.get(status_url).json()["state"] == "pending"
+            assert not vial_available(client)
+
+            if pump_state == "on":
+                run.result(first.command_id, rejected=True)
+            else:
+                # Mimic a stopped ingestor: the deadline passes before the worker can sweep.
+                with engine.begin() as connection:
+                    connection.execute(text("""
+                        UPDATE pump_commands SET expires_at = now() - interval '1 second'
+                        WHERE command_id = :id
+                    """), {"id": first.command_id})
+
+            with TestClient(app) as restarted:
+                assert restarted.get(status_url).json()["state"] == "unconfirmed"
+                assert not vial_available(restarted)
+                assert close_experiment(restarted).status_code == 202
+                retry, = run.queued()
+                assert retry.action == "turn_off" and retry.command_id != first.command_id
+                assert close_experiment(restarted).status_code == 202
+                assert run.queued() == [retry]
+                run.result(first.command_id)  # Late success for a superseded attempt.
+                assert restarted.get(status_url).json()["state"] == "pending"
+                assert not vial_available(restarted)
+                run.result(retry.command_id)
+
+        result = client.get(status_url).json()
+        assert result["state"] == "completed" and result["action"] == action and result["ended_at"]
+        assert vial_available(client)
+        assert close_experiment(client).status_code == immediate_status
+        visible = client.get("/api/experiments").json()
+        if action == "delete":
+            assert client.get(base).status_code == 404
+            assert visible == []
+        else:
+            assert client.get(base).json()["status"] == "inactive"
+            assert [experiment["status"] for experiment in visible] == ["inactive"]
+        with engine.connect() as connection:
+            ended, deleted = connection.execute(text("""
+                SELECT ended_at, deleted_at FROM experiments WHERE id = :id
+            """), {"id": run.id}).one()
+            assert ended is not None
+            assert (deleted is not None) == (action == "delete")
+            if pump_state == "on":
+                assert connection.scalar(text("SELECT count(*) FROM od_readings")) == 1
+
+
+@pytest.mark.integration
+def test_ending_between_resume_claim_and_publish_queues_off(control_database: Engine) -> None:
+    engine = control_database
+    with TestClient(app) as client:
+        run = PumpRun(engine, client)
+        run.mode("pause", "paused")
+        run.od(0.7, 1, run.now())
+        run.mode("resume", "automatic")
+        on, = run.queued()
+        assert on.action == "turn_on"
+        with engine.begin() as connection:
+            assert command_is_current(connection, on)
+            connection.execute(text("""
+                UPDATE pump_commands SET sent_at = now() WHERE command_id = :id
+            """), {"id": on.command_id})
+        base = run.url.removesuffix("/pump")
+        assert client.post(f"{base}/inactivate").status_code == 202
+        with engine.begin() as connection:
+            assert not command_is_current(connection, on, claimed_here=True)
+            expire_commands(connection, on.expires_at)
+        off, = run.queued()
+        assert off.action == "turn_off"
+        run.result(off.command_id)
+        assert client.get(base).json()["status"] == "inactive"
+
+
+@pytest.mark.integration
+def test_ending_does_not_retry_failed_off_from_od(control_database: Engine) -> None:
+    engine = control_database
+    with TestClient(app) as client:
+        run = PumpRun(engine, client)
+        run.od(0.7, 1, run.now())
+        run.result(run.queued()[0].command_id)
+        base = run.url.removesuffix("/pump")
+        assert client.delete(base).status_code == 202
+        off, = run.queued()
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+            expire_commands(connection, off.expires_at)
+        assert client.get(f"{base}/closure").json()["state"] == "unconfirmed"
+        run.od(0.7, 0, run.now() + timedelta(microseconds=1))
+        assert not run.queued()
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+            queue_safety_offs(connection, run.now())
+        retry, = run.queued()
+        assert retry.command_id != off.command_id
+        run.result(retry.command_id)
+        assert client.get(f"{base}/closure").json()["state"] == "completed"
