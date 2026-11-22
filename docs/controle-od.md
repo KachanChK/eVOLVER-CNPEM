@@ -34,6 +34,10 @@ não entram no controle automático.
   Após concluir ou expirar qualquer comando pendente, a próxima OD nova e
   recente solicita um `turn_off` de reconciliação; somente
   o resultado `executed` confirma o estado desligado e libera decisões futuras.
+  Para experimento pausado ou em encerramento, o desligamento seguro é enviado
+  sem aguardar OD nova. Um `turn_on` pendente continua bloqueado; após seu
+  resultado ou expiração, solicita-se `turn_off`. Um `turn_off` já pendente pode
+  ser enviado e sua execução confirma o desligamento e conclui o encerramento.
   A repetição automática fica bloqueada se essa confirmação faltar. Uma queda
   na sequência do produtor também inicia essa reconciliação após reinício do
   simulador. Uma leitura antiga não a inicia.

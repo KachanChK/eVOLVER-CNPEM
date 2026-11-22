@@ -16,6 +16,7 @@ from evolver.ingestion.control import (
     invalidate_controls,
     pause_control,
     pending_commands,
+    queue_safety_offs,
     record_result,
 )
 from evolver_contracts.models import ExecutedCommandResult, ReceivedCommandResult, TelemetryEvent
@@ -261,6 +262,119 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
             expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
         assert reading(uncertain_id, 0.8, 4, db_now(), vial_id=4) == "gravada"
         assert len(commands(uncertain_id)) == 2
+
+        def create_controlled(vial_id: int) -> int:
+            response = client.post("/api/experiments", json={
+                "name": f"Seguro {vial_id}", "culture_type": "Levedura", "vial_id": vial_id,
+                "od_min": 0.2, "od_max": 0.7,
+            })
+            assert response.status_code == 201
+            return response.json()["id"]
+
+        def ready_off(experiment_id: int) -> None:
+            with engine.connect() as connection:
+                assert any(
+                    command.experiment_run_id == str(experiment_id)
+                    and command.action == "turn_off"
+                    for command in pending_commands(connection, datetime.now(UTC))
+                )
+
+        paused_id = create_controlled(5)
+        assert reading(paused_id, 0.7, 1, db_now(), vial_id=5) == "gravada"
+        executed(commands(paused_id)[-1]["command_id"])
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+            pause_control(connection, paused_id, datetime.now(UTC))
+        ready_off(paused_id)
+        executed(commands(paused_id)[-1]["command_id"])
+        with engine.connect() as connection:
+            assert connection.execute(text("""
+                SELECT confirmed_state, reconcile_required, paused FROM pump_control
+                WHERE experiment_id = :id
+            """), {"id": paused_id}).one() == ("off", False, True)
+
+        ending_id = create_controlled(6)
+        assert reading(ending_id, 0.7, 1, db_now(), vial_id=6) == "gravada"
+        executed(commands(ending_id)[-1]["command_id"])
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+        assert client.post(f"/api/experiments/{ending_id}/inactivate").status_code == 200
+        ready_off(ending_id)
+        executed(commands(ending_id)[-1]["command_id"])
+        assert client.get(f"/api/experiments/{ending_id}").json()["status"] == "inactive"
+        assert 6 in [item["vial_id"] for item in client.get("/api/vials/available").json()]
+
+        prior_off_id = create_controlled(7)
+        assert reading(prior_off_id, 0.7, 1, db_now(), vial_id=7) == "gravada"
+        executed(commands(prior_off_id)[-1]["command_id"])
+        assert reading(prior_off_id, 0.2, 2, db_now(), vial_id=7) == "gravada"
+        old_off = commands(prior_off_id)[-1]["command_id"]
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+        assert client.delete(f"/api/experiments/{prior_off_id}").status_code == 204
+        assert commands(prior_off_id)[-1]["command_id"] == old_off
+        ready_off(prior_off_id)
+        with engine.begin() as connection:
+            record_result(connection, ReceivedCommandResult(
+                schema_version="1.0", command_id=old_off,
+                equipment_id="evolver-sim-01", simulated=True,
+                status="received", reported_at=datetime.now(UTC),
+            ))
+        assert client.get(f"/api/experiments/{prior_off_id}").json()["status"] == "active"
+        executed(old_off)
+        assert client.get(f"/api/experiments/{prior_off_id}").status_code == 404
+        assert 7 in [item["vial_id"] for item in client.get("/api/vials/available").json()]
+
+        pending_pause_id = create_controlled(8)
+        assert reading(pending_pause_id, 0.7, 1, db_now(), vial_id=8) == "gravada"
+        pending_on = commands(pending_pause_id)[-1]["command_id"]
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+            pause_control(connection, pending_pause_id, datetime.now(UTC))
+            assert all(
+                command.experiment_run_id != str(pending_pause_id)
+                for command in pending_commands(connection, datetime.now(UTC))
+            )
+        executed(pending_on)
+        ready_off(pending_pause_id)
+        executed(commands(pending_pause_id)[-1]["command_id"])
+
+        pending_end_id = create_controlled(9)
+        assert reading(pending_end_id, 0.7, 1, db_now(), vial_id=9) == "gravada"
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+        assert client.post(f"/api/experiments/{pending_end_id}/inactivate").status_code == 200
+        with engine.begin() as connection:
+            expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
+        ready_off(pending_end_id)
+        executed(commands(pending_end_id)[-1]["command_id"])
+        assert client.get(f"/api/experiments/{pending_end_id}").json()["status"] == "inactive"
+
+        reconnect_pause_id = create_controlled(10)
+        with engine.begin() as connection:
+            pause_control(connection, reconnect_pause_id, datetime.now(UTC))
+            invalidate_controls(connection)
+            queue_safety_offs(connection, datetime.now(UTC))
+        ready_off(reconnect_pause_id)
+        executed(commands(reconnect_pause_id)[-1]["command_id"])
+
+        sent_off_id = create_controlled(11)
+        assert reading(sent_off_id, 0.7, 1, db_now(), vial_id=11) == "gravada"
+        executed(commands(sent_off_id)[-1]["command_id"])
+        assert reading(sent_off_id, 0.2, 2, db_now(), vial_id=11) == "gravada"
+        old_sent_off = commands(sent_off_id)[-1]["command_id"]
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE pump_commands SET sent_at = :now WHERE command_id = :id
+            """), {"now": datetime.now(UTC), "id": old_sent_off})
+            invalidate_controls(connection)
+        assert client.delete(f"/api/experiments/{sent_off_id}").status_code == 204
+        with engine.begin() as connection:
+            expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
+        assert commands(sent_off_id)[-1]["command_id"] != old_sent_off
+        ready_off(sent_off_id)
+        executed(commands(sent_off_id)[-1]["command_id"])
+        assert client.get(f"/api/experiments/{sent_off_id}").status_code == 404
     engine.dispose()
 
 

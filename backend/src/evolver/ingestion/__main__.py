@@ -25,6 +25,7 @@ from .control import (
     expire_commands,
     invalidate_controls,
     pending_commands,
+    queue_safety_offs,
     record_result,
 )
 
@@ -141,6 +142,8 @@ def main() -> None:
                 (f"evolver/v1/{EQUIPMENT_ID}/command-results", 1),
             ]
         )
+        with engine.begin() as connection:
+            queue_safety_offs(connection, datetime.now(UTC))
         print("Ingestão MQTT pronta para telemetria e comandos.", flush=True)
 
     def on_message(client, userdata, message) -> None:
