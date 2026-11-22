@@ -21,6 +21,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from .control import (
+    command_is_current,
     consider_od,
     expire_commands,
     invalidate_controls,
@@ -91,7 +92,7 @@ def store_v1_message(engine: Engine, topic: str, payload: bytes) -> str:
                    OR e.id = :expected_experiment_id)
               AND e.started_at <= :generated_at
               AND (e.ended_at IS NULL OR :generated_at < e.ended_at)
-              AND :generated_at <= clock_timestamp()
+              AND :generated_at <= :received_at
             FOR UPDATE OF e
         """),
             params,
@@ -173,6 +174,7 @@ def main() -> None:
 
     client.on_disconnect = on_disconnect
     client.on_message = on_message
+    awaiting_puback = {}
     try:
         client.connect(os.getenv("MQTT_HOST", "127.0.0.1"), int(os.getenv("MQTT_PORT", "1883")))
         client.loop_start()
@@ -181,27 +183,39 @@ def main() -> None:
             with engine.begin() as connection:
                 expire_commands(connection, now)
                 commands = pending_commands(connection, now) if client.is_connected() else []
-                for command in commands:
-                    connection.execute(text("""
-                        UPDATE pump_commands SET sent_at = :now
-                        WHERE command_id = :command_id AND sent_at IS NULL
-                    """), {"now": now, "command_id": command.command_id})
             for command in commands:
                 try:
-                    info = client.publish(
-                        f"evolver/v1/{EQUIPMENT_ID}/commands",
-                        command.model_dump_json(), qos=1, retain=False,
-                    )
+                    with engine.begin() as connection:
+                        if not command_is_current(connection, command):
+                            continue
+                        claimed = connection.execute(text("""
+                            UPDATE pump_commands SET sent_at = clock_timestamp()
+                            WHERE command_id = :id AND sent_at IS NULL
+                        """), {"id": command.command_id}).rowcount
+                    if not claimed:
+                        continue
+                    # Recheck after committing the claim, under the same lock as the pause.
+                    with engine.begin() as connection:
+                        if not command_is_current(connection, command, claimed_here=True):
+                            continue
+                        info = client.publish(
+                            f"evolver/v1/{EQUIPMENT_ID}/commands",
+                            command.model_dump_json(), qos=1, retain=False,
+                        )
                     if info.rc == mqtt.MQTT_ERR_SUCCESS:
-                        info.wait_for_publish(timeout=5)
-                    if info.rc == mqtt.MQTT_ERR_SUCCESS and info.is_published():
-                        with engine.begin() as connection:
-                            connection.execute(text("""
-                                UPDATE pump_commands SET puback_at = :now
-                                WHERE command_id = :command_id
-                            """), {"now": datetime.now(UTC), "command_id": command.command_id})
+                        awaiting_puback[command.command_id] = (info, command.expires_at)
                 except (RuntimeError, OSError) as exc:
                     print(f"Comando sem confirmação de transporte: {exc}", flush=True)
+            for command_id, (info, expires_at) in list(awaiting_puback.items()):
+                if info.is_published():
+                    with engine.begin() as connection:
+                        connection.execute(text("""
+                            UPDATE pump_commands SET puback_at = clock_timestamp()
+                            WHERE command_id = :command_id
+                        """), {"command_id": command_id})
+                elif expires_at > now:
+                    continue
+                del awaiting_puback[command_id]
             time.sleep(0.2)
     finally:
         client.loop_stop()

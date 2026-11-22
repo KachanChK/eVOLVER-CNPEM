@@ -305,10 +305,11 @@ def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
     now = datetime.now(UTC)
 
     def command(experiment_id: str, action: str) -> PumpCommand:
+        issued_at = now + timedelta(microseconds=1) if action == "turn_off" else now
         return PumpCommand(
             schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
             experiment_run_id=experiment_id, author_id="evolver-od-control",
-            created_at=now, expires_at=now + timedelta(seconds=10),
+            created_at=issued_at, expires_at=issued_at + timedelta(seconds=10),
             target_type="pump", pump_id=1, action=action,
         )
 
@@ -336,6 +337,87 @@ def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
     next_run._handle_command(command("42", "turn_on").model_dump_json().encode())
     assert next_run._pump_states == {(41, 1): False, (42, 1): True}
     next_run.close()
+
+
+def test_simulator_handles_turn_off_after_a_pending_turn_on(tmp_path: Path) -> None:
+    fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
+    publisher = MqttPublisher(
+        make_settings(pump_state_path=tmp_path / "pump.sqlite3"),
+        client_factory=lambda **_kwargs: fake,
+    )
+    publisher.connect()
+    try:
+        now = datetime.now(UTC)
+        command_ids = []
+        for index, action in enumerate(("turn_on", "turn_off")):
+            command = PumpCommand(
+                schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
+                experiment_run_id="41", author_id="evolver-od-control",
+                created_at=now + timedelta(microseconds=index),
+                expires_at=now + timedelta(seconds=10),
+                target_type="pump", pump_id=1, action=action,
+            )
+            command_ids.append(str(command.command_id))
+            message = mqtt.MQTTMessage(topic=b"evolver/v1/evolver-sim-01/commands")
+            message.payload = command.model_dump_json().encode()
+            publisher._on_message(fake, None, message)
+        publisher._command_executor.submit(lambda: None).result(timeout=5)
+        results = [
+            json.loads(kwargs["payload"]) for args, kwargs in fake.publish_calls
+            if args[0] == "evolver/v1/evolver-sim-01/command-results"
+        ]
+        assert [r["command_id"] for r in results if r["status"] == "executed"] == command_ids
+        assert publisher._pump_states == {(41, 1): False}
+    finally:
+        publisher.close()
+
+
+@pytest.mark.parametrize("restart_before_redelivery", [False, True])
+def test_reconnect_delivers_older_on_after_newer_off(
+    tmp_path: Path, restart_before_redelivery: bool,
+) -> None:
+    settings = make_settings(pump_state_path=tmp_path / "pump.sqlite3")
+    now = datetime.now(UTC)
+
+    def make_command(experiment: str, action: str, offset: int) -> PumpCommand:
+        return PumpCommand(
+            schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
+            experiment_run_id=experiment, author_id="evolver-od-control",
+            created_at=now + timedelta(microseconds=offset),
+            expires_at=now + timedelta(seconds=10), target_type="pump", pump_id=1,
+            action=action,
+        )
+
+    fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
+    publisher = MqttPublisher(settings, client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+    old_on = make_command("41", "turn_on", 1)
+    applied_on = make_command("41", "turn_on", 0)
+    off = make_command("41", "turn_off", 2)
+    publisher._handle_command(applied_on.model_dump_json().encode())
+    fake.on_disconnect(fake, None, object(), FakeReasonCode(), None)
+    fake.on_connect(fake, None, object(), FakeReasonCode(), None)
+    publisher._handle_command(off.model_dump_json().encode())
+    if restart_before_redelivery:
+        publisher.close()
+        fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
+        publisher = MqttPublisher(settings, client_factory=lambda **_kwargs: fake)
+        publisher.connect()
+    try:
+        for command, status in [
+            (old_on, "rejected"), (old_on, "rejected"), (applied_on, "executed"),
+            (off, "executed"),
+        ]:
+            publisher._handle_command(command.model_dump_json().encode())
+            result = json.loads(fake.publish_calls[-1][1]["payload"])
+            assert (result["command_id"], result["status"]) == (str(command.command_id), status)
+            assert publisher._pump_states == {(41, 1): False}
+        fake.allocation_response = [{"vial_id": 1, "experiment_id": 42}]
+        reusable = make_command("42", "turn_on", 0)
+        publisher._handle_command(reusable.model_dump_json().encode())
+        assert publisher._pump_states == {(41, 1): False, (42, 1): True}
+    finally:
+        publisher.close()
 
 
 def test_pump_command_is_not_executed_when_state_cannot_be_saved(tmp_path: Path) -> None:

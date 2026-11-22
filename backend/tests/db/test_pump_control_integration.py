@@ -12,6 +12,7 @@ from alembic.config import Config
 from evolver.api.main import app
 from evolver.ingestion.__main__ import store_v1_message
 from evolver.ingestion.control import (
+    command_is_current,
     expire_commands,
     invalidate_controls,
     pause_control,
@@ -19,16 +20,19 @@ from evolver.ingestion.control import (
     queue_safety_offs,
     record_result,
 )
-from evolver_contracts.models import ExecutedCommandResult, ReceivedCommandResult, TelemetryEvent
+from evolver_contracts.models import (
+    ExecutedCommandResult,
+    ReceivedCommandResult,
+    RejectedCommandResult,
+    TelemetryEvent,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Engine, make_url
 
 
-@pytest.mark.integration
-def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.fixture
+def control_database(monkeypatch: pytest.MonkeyPatch):
     database_url = os.getenv("EVOLVER_CONTROL_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("set EVOLVER_CONTROL_TEST_DATABASE_URL to a disposable TimescaleDB database")
@@ -42,6 +46,17 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
             TRUNCATE od_readings, pump_commands, pump_control, experiments
             RESTART IDENTITY CASCADE
         """))
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.integration
+def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
+    control_database: Engine,
+) -> None:
+    engine = control_database
     topic = "evolver/v1/evolver-sim-01/telemetry"
 
     def db_now() -> datetime:
@@ -75,6 +90,13 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
                 equipment_id="evolver-sim-01", simulated=True,
                 status="executed", reported_at=datetime.now(UTC),
             ))
+
+    def mark_sent(command_id) -> None:
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE pump_commands SET sent_at = clock_timestamp(), puback_at = clock_timestamp()
+                WHERE command_id = :id
+            """), {"id": command_id})
 
     with TestClient(app) as client:
         created = client.post("/api/experiments", json={
@@ -162,41 +184,41 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         assert reading(experiment_id, 0.8, 9, now + timedelta(milliseconds=5)) == "gravada"
         assert len(commands(replacement.json()["id"])) == 0
         replacement_id = replacement.json()["id"]
+        pump_url = f"/api/experiments/{replacement_id}/pump"
         assert reading(replacement_id, 0.7, 1, db_now()) == "gravada"
         pending_on = commands(replacement_id)[-1]
-        with engine.begin() as connection:
-            pause_control(connection, replacement_id, datetime.now(UTC))
-        executed(pending_on["command_id"])
+        mark_sent(pending_on["command_id"])
+        assert client.post(f"{pump_url}/pause").json()["state"] == "pausing"
         pending_off = commands(replacement_id)[-1]
         assert pending_off["desired_state"] == "off"
+        assert commands(replacement_id)[0]["result_status"] == "superseded"
+        assert client.post(f"{pump_url}/pause").json()["state"] == "pausing"
+        executed(pending_on["command_id"])
+        mark_sent(pending_off["command_id"])
+        assert client.get(pump_url).json()["state"] == "pausing"
+        with engine.begin() as connection:
+            record_result(connection, ReceivedCommandResult(
+                schema_version="1.0", command_id=pending_off["command_id"],
+                equipment_id="evolver-sim-01", simulated=True,
+                status="received", reported_at=datetime.now(UTC),
+            ))
+        assert client.get(pump_url).json()["state"] == "pausing"
         executed(pending_off["command_id"])
+        assert client.get(pump_url).json()["state"] == "paused"
         assert reading(replacement_id, 0.8, 2, db_now()) == "gravada"
         assert len(commands(replacement_id)) == 2
-        with engine.begin() as connection:
-            connection.execute(text("""
-                UPDATE pump_control SET paused = false WHERE experiment_id = :id
-            """), {"id": replacement_id})
+        assert reading(replacement_id, 0.6, 3, db_now()) == "gravada"
+        assert client.post(f"{pump_url}/resume").json()["state"] == "automatic"
+        assert len(commands(replacement_id)) == 2
         with ThreadPoolExecutor(max_workers=2) as pool:
-            paused = pool.submit(lambda: _pause(engine, replacement_id))
-            measured = pool.submit(reading, replacement_id, 0.7, 3, db_now())
-            paused.result()
+            paused = pool.submit(client.post, f"{pump_url}/pause")
+            measured = pool.submit(reading, replacement_id, 0.7, 4, db_now())
+            assert paused.result().json()["state"] == "paused"
             assert measured.result() == "gravada"
         race_commands = commands(replacement_id)
-        if len(race_commands) == 3:
-            assert race_commands[-1]["desired_state"] == "on"
-            executed(race_commands[-1]["command_id"])
-            assert commands(replacement_id)[-1]["desired_state"] == "off"
-        else:
-            assert len(race_commands) == 2
-        # A new backend connection sees the persisted pause and cannot reuse old OD.
-        restarted = create_engine(database_url)
-        with restarted.connect() as connection:
-            assert connection.scalar(text("""
-                SELECT paused FROM pump_control WHERE experiment_id = :id
-            """), {"id": replacement_id})
-        restarted.dispose()
-        assert reading(replacement_id, 0.8, 4, db_now()) == "gravada"
-        assert not any(row["desired_state"] == "on" for row in commands(replacement_id)[3:])
+        assert all(row["result_status"] == "superseded" for row in race_commands[2:])
+        assert reading(replacement_id, 0.8, 5, db_now()) == "gravada"
+        assert commands(replacement_id) == race_commands
         pending_end = client.post("/api/experiments", json={
             "name": "Encerramento", "culture_type": "Levedura", "vial_id": 2,
             "od_min": 0.2, "od_max": 0.7,
@@ -332,7 +354,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
             invalidate_controls(connection)
             pause_control(connection, pending_pause_id, datetime.now(UTC))
             assert all(
-                command.experiment_run_id != str(pending_pause_id)
+                command.experiment_run_id != str(pending_pause_id) or command.action == "turn_off"
                 for command in pending_commands(connection, datetime.now(UTC))
             )
         executed(pending_on)
@@ -375,9 +397,260 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         ready_off(sent_off_id)
         executed(commands(sent_off_id)[-1]["command_id"])
         assert client.get(f"/api/experiments/{sent_off_id}").status_code == 404
-    engine.dispose()
+
+        pause_id = create_controlled(12)
+        base = f"/api/experiments/{pause_id}"
+
+        def set_mode(action: str, state: str, *, path: str = base) -> None:
+            response = client.post(f"{path}/pump/{action}")
+            assert response.status_code == 200
+            assert response.json()["state"] == state
+
+        # Pausing and resuming before the first reading leaves the outbox empty.
+        set_mode("pause", "paused")
+        set_mode("pause", "paused")
+        set_mode("resume", "automatic")
+        set_mode("resume", "automatic")
+        assert commands(pause_id) == []
+
+        # Resume at the threshold, then cancel a queued on order before publication.
+        set_mode("pause", "paused")
+        assert reading(pause_id, 0.7, 1, db_now(), vial_id=12) == "gravada"
+        set_mode("resume", "automatic")
+        on = commands(pause_id)[-1]
+        assert on["desired_state"] == "on" and on["reading_event_id"] is not None
+        set_mode("resume", "automatic")
+        assert commands(pause_id) == [on]
+        with engine.connect() as connection:
+            batched_on = next(c for c in pending_commands(connection, db_now())
+                              if c.command_id == on["command_id"])
+        set_mode("pause", "paused")
+        with engine.begin() as connection:
+            assert not command_is_current(connection, batched_on, db_now())
+        assert [row["result_status"] for row in commands(pause_id)] == ["superseded"]
+        set_mode("resume", "automatic")
+        executed(commands(pause_id)[-1]["command_id"])
+        set_mode("pause", "pausing")
+        ready_off(pause_id)
+        off = commands(pause_id)[-1]
+        assert off["desired_state"] == "off" and off["reading_event_id"] is None
+        with engine.begin() as connection:
+            record_result(connection, RejectedCommandResult(
+                schema_version="1.0", command_id=off["command_id"],
+                equipment_id="evolver-sim-01", simulated=True, status="rejected",
+                reason_code="invalid_payload", reported_at=datetime.now(UTC),
+            ))
+        set_mode("pause", "off_unconfirmed")
+        assert reading(pause_id, 0.8, 2, db_now(), vial_id=12) == "gravada"
+        assert len(commands(pause_id)) == 3
+        # MQTT reconnection reconciles the persisted pause without OD.
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+            queue_safety_offs(connection, db_now())
+        assert client.get(f"{base}/pump").json()["state"] == "pausing"
+        executed(commands(pause_id)[-1]["command_id"])
+
+        assert reading(pause_id, 0.81, 3, db_now(), vial_id=12) == "gravada"
+        set_mode("resume", "automatic")
+        assert len(commands(pause_id)) == 4
+        assert client.post(f"{base}/inactivate").status_code == 200
+        assert client.post(f"{base}/pump/resume").status_code == 409
+        new_id = create_controlled(12)
+        new_base = f"/api/experiments/{new_id}"
+        assert client.get(f"{new_base}/pump").json()["state"] == "automatic"
+        set_mode("pause", "paused", path=new_base)
+        set_mode("resume", "automatic", path=new_base)
+        assert commands(new_id) == []
+
+        set_mode("pause", "paused", path=new_base)
+        now = db_now()
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE experiments SET started_at = :before WHERE id = :id
+            """), {"id": new_id, "before": now - timedelta(seconds=30)})
+        assert reading(new_id, 0.8, 1, now - timedelta(seconds=11), vial_id=12) == "gravada"
+        set_mode("resume", "automatic", path=new_base)
+        assert commands(new_id) == []
+
+        assert reading(new_id, 0.8, 2, db_now(), vial_id=12) == "gravada"
+        mark_sent(commands(new_id)[-1]["command_id"])
+        set_mode("pause", "pausing", path=new_base)
+        with engine.begin() as connection:
+            expire_commands(connection, db_now() + timedelta(seconds=11))
+        assert client.get(f"{new_base}/pump").json()["state"] == "off_unconfirmed"
+    with TestClient(app) as restarted:
+        assert restarted.get(f"{new_base}/pump").json()["state"] == "off_unconfirmed"
 
 
-def _pause(engine, experiment_id: int) -> None:
-    with engine.begin() as connection:
-        pause_control(connection, experiment_id, datetime.now(UTC))
+class PumpRun:
+    def __init__(self, engine: Engine, client: TestClient) -> None:
+        self.engine = engine
+        self.client = client
+        response = client.post("/api/experiments", json={
+            "name": "Retomada", "culture_type": "Simulada", "vial_id": 1,
+            "od_min": 0.2, "od_max": 0.7,
+        })
+        assert response.status_code == 201
+        self.id = response.json()["id"]
+        self.url = f"/api/experiments/{self.id}/pump"
+
+    def now(self) -> datetime:
+        with self.engine.connect() as connection:
+            return connection.scalar(text("SELECT clock_timestamp()"))
+
+    def mode(self, action: str, state: str) -> None:
+        response = self.client.post(f"{self.url}/{action}")
+        assert response.status_code == 200
+        assert response.json()["state"] == state
+
+    def od(self, value: float, sequence: int, generated_at: datetime) -> UUID:
+        event = TelemetryEvent(
+            schema_version="1.0", event_id=uuid4(), producer_id="simulator-local-01",
+            equipment_id="evolver-sim-01", vial_id="1", experiment_run_id=str(self.id),
+            measurement_type="od", value=value, generated_at=generated_at, sequence=sequence,
+        )
+        assert store_v1_message(
+            self.engine, "evolver/v1/evolver-sim-01/telemetry", event.model_dump_json().encode(),
+        ) == "gravada"
+        return event.event_id
+
+    def queued(self):
+        with self.engine.connect() as connection:
+            return pending_commands(connection, self.now())
+
+    def result(self, command_id: UUID, *, rejected: bool = False) -> None:
+        fields = dict(schema_version="1.0", command_id=command_id,
+                      equipment_id="evolver-sim-01", simulated=True, reported_at=self.now())
+        result = (
+            RejectedCommandResult(status="rejected", reason_code="invalid_payload", **fields)
+            if rejected else ExecutedCommandResult(status="executed", **fields)
+        )
+        with self.engine.begin() as connection:
+            record_result(connection, result)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("scenario", [
+    "lower_before_claim", "lower_after_claim", "stale_after_claim",
+    "expired_unsent", "stale_previous_claim",
+])
+def test_resume_on_revalidates_od_before_publication(
+    control_database: Engine, scenario: str,
+) -> None:
+    with TestClient(app) as client:
+        run = PumpRun(control_database, client)
+        run.mode("pause", "paused")
+        generated_at = run.now() - timedelta(seconds=2)
+        with run.engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE experiments SET started_at = :at WHERE id = :id
+            """), {"at": generated_at, "id": run.id})
+        run.od(0.7, 1, generated_at)
+        run.mode("resume", "automatic")
+        turn_on, = run.queued()
+        assert turn_on.action == "turn_on"
+        if scenario not in ("lower_before_claim", "expired_unsent"):
+            with run.engine.begin() as connection:
+                assert command_is_current(connection, turn_on)
+                connection.execute(text("""
+                    UPDATE pump_commands SET sent_at = clock_timestamp() WHERE command_id = :id
+                """), {"id": turn_on.command_id})
+        if scenario.startswith("lower"):
+            run.od(0.2, 2, run.now())
+        with run.engine.begin() as connection:
+            if scenario != "expired_unsent":
+                checked_at = run.now()
+                if scenario.startswith("stale"):
+                    checked_at = generated_at + timedelta(seconds=10, microseconds=1)
+                    assert checked_at < turn_on.expires_at
+                assert not command_is_current(
+                    connection, turn_on, checked_at,
+                    claimed_here=scenario in ("lower_after_claim", "stale_after_claim"),
+                )
+            expire_commands(connection, turn_on.expires_at + timedelta(microseconds=1))
+            actual = connection.execute(text("""
+                SELECT p.result_status, p.sent_at IS NOT NULL, c.confirmed_state,
+                       c.pending_command_id, c.reconcile_required
+                FROM pump_commands p JOIN pump_control c ON c.experiment_id = p.experiment_id
+                WHERE p.command_id = :id
+            """), {"id": turn_on.command_id}).one()
+        expected = ("superseded", False, "off", None, False)
+        if scenario == "stale_previous_claim":
+            expected = ("unknown", True, "unknown", None, True)
+        assert actual == expected
+        assert run.queued() == []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("od, failure", [(0.6, "none"), (0.7, "none"), (0.7, "before"),
+                                         (0.7, "after")])
+def test_resumption_persists_and_evaluates_od_when_off_executes(
+    control_database: Engine, od: float, failure: str,
+) -> None:
+    with TestClient(app) as client:
+        run = PumpRun(control_database, client)
+        run.od(0.7, 1, run.now())
+        turn_on, = run.queued()
+        run.result(turn_on.command_id)
+        with run.engine.begin() as connection:
+            pause_control(connection, run.id, turn_on.created_at - timedelta(seconds=1))
+        turn_off, = run.queued()
+        assert turn_off.action == "turn_off" and turn_off.created_at > turn_on.created_at
+        with run.engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE pump_commands SET sent_at = clock_timestamp() WHERE command_id = :id
+            """), {"id": turn_off.command_id})
+        if failure == "before":
+            run.result(turn_off.command_id, rejected=True)
+            assert client.get(run.url).json()["state"] == "off_unconfirmed"
+        run.mode("resume", "resuming")
+        run.mode("resume", "resuming")
+        if failure == "after":
+            run.result(turn_off.command_id, rejected=True)
+        if failure != "none":
+            replacement, = run.queued()
+            assert replacement.action == "turn_off"
+            assert replacement.command_id != turn_off.command_id
+            turn_off = replacement
+        else:
+            assert run.queued() == []
+        run.od(od, 2, run.now())
+    with TestClient(app) as restarted:
+        assert restarted.get(run.url).json()["state"] == "resuming"
+        run.result(turn_off.command_id)
+        assert restarted.get(run.url).json()["state"] == "automatic"
+        assert [item.action for item in run.queued()] == (["turn_on"] if od >= 0.7 else [])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("case", [
+    "older_sequence", "same_identity", "invalid_newer", "future", "reused_vial",
+])
+def test_resume_uses_exact_accepted_od_cursor(control_database: Engine, case: str) -> None:
+    with TestClient(app) as client:
+        run = PumpRun(control_database, client)
+        run.mode("pause", "paused")
+        timestamp = run.now()
+        accepted_id = run.od(0.7, 2, timestamp)
+        if case == "older_sequence":
+            run.od(0.2, 1, timestamp)
+        elif case == "same_identity":
+            run.od(0.2, 2, timestamp)
+        elif case == "invalid_newer":
+            run.od(0.81, 3, timestamp)
+        elif case == "future":
+            with pytest.raises(ValueError, match="experimento ativo"):
+                run.od(0.2, 3, timestamp + timedelta(seconds=5))
+        else:
+            previous = run
+            inactive = client.post(previous.url.removesuffix("/pump") + "/inactivate")
+            assert inactive.json()["status"] == "inactive"
+            run = PumpRun(control_database, client)
+            run.mode("pause", "paused")
+            previous.od(0.8, 3, timestamp)
+        run.mode("resume", "automatic")
+        with run.engine.connect() as connection:
+            actual = connection.execute(text("""
+                SELECT reading_event_id FROM pump_commands WHERE experiment_id = :id
+            """), {"id": run.id}).scalars().all()
+        assert actual == ([] if case in ("invalid_newer", "reused_vial") else [accepted_id])

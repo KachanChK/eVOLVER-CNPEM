@@ -58,6 +58,7 @@ dialog .actions { justify-content: flex-end; margin-top: .75rem; }
 .latest { display: grid; gap: .15rem; color: var(--muted); }
 .latest strong { font-size: 1.75rem; font-variant-numeric: tabular-nums; color: #18212c; }
 .chart { position: relative; height: clamp(15rem, 30vw, 19rem); margin: 1rem 0; }
+.pump-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1rem; }
 .history-controls { margin-bottom: 1.5rem; }
 .history-toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; }
 .control-label { display: block; font-weight: 650; margin-bottom: .5rem; }
