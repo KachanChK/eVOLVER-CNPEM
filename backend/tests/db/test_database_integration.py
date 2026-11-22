@@ -4,6 +4,7 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,9 +12,11 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from evolver.api.main import app
+from evolver.db.models import Experiment
 from evolver.ingestion.__main__ import active_vials, store_v1_message
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
 
 @pytest.mark.integration
@@ -53,8 +56,23 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
                     "value": value,
                 },
             )
+    command.upgrade(config, "20261121_02")
+    with engine.begin() as connection:
+        migrated_experiment = connection.scalar(
+            text("""
+                INSERT INTO experiments
+                (name, vial_id, started_at, ended_at, deleted_at, od_min, od_max)
+                VALUES ('Limites anteriores', 1, now(), now(), now(), 0.1, 0.10000000000000002)
+                RETURNING id
+            """)
+        )
     command.upgrade(config, "head")
     with engine.connect() as connection:
+        migrated_limits = connection.execute(
+            text("SELECT od_min, od_max FROM experiments WHERE id = :id"),
+            {"id": migrated_experiment},
+        ).one()
+        assert tuple(migrated_limits) == (Decimal("0.1"), Decimal("0.10000000000000002"))
         for kind, value in (("ph", 7.25), ("od", 0.47)):
             row = connection.execute(
                 text(f"""
@@ -85,10 +103,26 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with TestClient(app) as client:
 
-        def create(vial: int):
+        def create(vial: int, od_min: float = 0.10, od_max: float = 0.80):
             return client.post(
                 "/api/experiments",
-                json={"name": f"Teste {vial}", "vial_id": vial, "culture_type": "  Levedura  "},
+                json={
+                    "name": f"Teste {vial}",
+                    "vial_id": vial,
+                    "culture_type": "  Levedura  ",
+                    "od_min": od_min,
+                    "od_max": od_max,
+                },
+            )
+
+        def create_raw(vial: int, minimum: str, maximum: str):
+            return client.post(
+                "/api/experiments",
+                content=(
+                    f'{{"name":"Preciso {vial}","vial_id":{vial},"culture_type":"Levedura",'
+                    f'"od_min":{minimum},"od_max":{maximum}}}'
+                ),
+                headers={"Content-Type": "application/json"},
             )
 
         def database_time():
@@ -104,9 +138,17 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         assert legacy.status_code == 200
         assert legacy.json()["name"] == "Anterior"
         assert legacy.json()["culture_type"] is None
+        assert legacy.json()["od_min"] is None
+        assert legacy.json()["od_max"] is None
         assert client.get("/api/experiments").json() == [legacy.json()]
+        with Session(engine) as session:
+            legacy_experiment = session.get(Experiment, historical_experiment)
+            assert not legacy_experiment.eligible_for_od_control
+            legacy_experiment.ended_at = None
+            assert legacy_experiment.status == "active"
+            assert not legacy_experiment.eligible_for_od_control
 
-        payload = {"name": "Teste", "vial_id": 1}
+        payload = {"name": "Teste", "vial_id": 1, "od_min": 0.10, "od_max": 0.80}
         for fields in (
             {},
             {"culture_type": ""},
@@ -128,17 +170,89 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         assert invalid_name.status_code == 422
 
+        valid_payload = {**payload, "culture_type": "Levedura"}
+        for field in ("od_min", "od_max"):
+            missing = {key: value for key, value in valid_payload.items() if key != field}
+            response = client.post("/api/experiments", json=missing)
+            assert response.status_code == 422
+            assert response.json()["detail"][0]["loc"] == ["body", field]
+            for invalid_limit in (None, True, "0.7", "0,7", "", [], 0.09, 0.81, 1):
+                response = client.post(
+                    "/api/experiments", json={**valid_payload, field: invalid_limit}
+                )
+                assert response.status_code == 422
+                assert response.json()["detail"][0]["loc"] == ["body", field]
+            for non_finite in ("NaN", "Infinity", "-Infinity", "1e999"):
+                raw = json.dumps({**valid_payload, field: "$limit"})
+                response = client.post(
+                    "/api/experiments",
+                    content=raw.replace('"$limit"', non_finite),
+                    headers={"Content-Type": "application/json"},
+                )
+                assert response.status_code == 422
+                assert response.json()["detail"][0]["loc"] == ["body", field]
+        for maximum in (0.60, 0.50):
+            response = client.post(
+                "/api/experiments", json={**valid_payload, "od_min": 0.60, "od_max": maximum}
+            )
+            assert response.status_code == 422
+            assert response.json()["detail"][0]["loc"] == ["body", "od_max"]
+        low = "0.0999999999999999999"
+        high = "0.8000000000000000001"
+        close_min = "0.1000000000000000000000000000000001"
+        close_max = "0.1000000000000000000000000000000002"
+        max_scale_limit = "0.1" + "0" * 16_381 + "1"
+        for minimum, maximum, invalid_field in (
+            (low, "0.8", "od_min"),
+            ("0.1", high, "od_max"),
+            ("999999999999999999e9999999999999999999", "0.8", "od_min"),
+            (close_max, close_min, "od_max"),
+            (close_min, f"{close_min}0", "od_max"),
+            (f"0.1{'0' * 16_382}1", "0.8", "od_min"),
+        ):
+            response = create_raw(1, minimum, maximum)
+            assert response.status_code == 422
+            assert response.json()["detail"][0]["loc"] == ["body", invalid_field]
+        assert free_ids() == list(range(1, 13))
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             attempts = list(pool.map(create, [1, 1]))
         assert sorted(attempt.status_code for attempt in attempts) == [201, 409]
         first = next(attempt.json() for attempt in attempts if attempt.status_code == 201)
         first_url = f"/api/experiments/{first['id']}"
         assert first["culture_type"] == "Levedura"
+        assert (first["od_min"], first["od_max"]) == ("0.1", "0.8")
         assert client.get(first_url).json() == first
         assert free_ids() == list(range(2, 13))
         assert [vial.experiment_id for vial in active_vials(engine, request).vials] == [first["id"]]
         assert client.get(f"{first_url}/temperature-readings").json() == []
-        assert all(create(vial).status_code == 201 for vial in range(2, 13))
+        precise_response = create(2, 0.125, 0.7)
+        assert precise_response.status_code == 201
+        precise = precise_response.json()
+        precise_url = f"/api/experiments/{precise['id']}"
+        assert (precise["od_min"], precise["od_max"]) == ("0.125", "0.7")
+        assert client.get(precise_url).json() == precise
+        with Session(engine) as session:
+            configured = session.get(Experiment, precise["id"])
+            assert configured.eligible_for_od_control
+            configured.ended_at = datetime.now(UTC)
+            assert not configured.eligible_for_od_control
+        close_response = create_raw(3, close_min, close_max)
+        assert close_response.status_code == 201
+        close_pair = close_response.json()
+        close_url = f"/api/experiments/{close_pair['id']}"
+        assert (close_pair["od_min"], close_pair["od_max"]) == (close_min, close_max)
+        assert client.get(close_url).json() == close_pair
+        with Session(engine) as session:
+            stored = session.get(Experiment, close_pair["id"])
+            assert (stored.od_min, stored.od_max) == (Decimal(close_min), Decimal(close_max))
+            assert stored.eligible_for_od_control
+
+        scale_response = create_raw(4, f"{max_scale_limit}0", "8e-1")
+        assert scale_response.status_code == 201
+        assert scale_response.json()["od_min"] == max_scale_limit
+        assert scale_response.json()["od_max"] == "0.8"
+        assert all(create(vial).status_code == 201 for vial in range(5, 13))
         assert free_ids() == []
 
         old_allocation_time = database_time()
@@ -210,6 +324,13 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
             assert connection.scalar(text("SELECT count(*) FROM ph_readings")) == 2
             assert connection.scalar(text("SELECT count(*) FROM od_readings")) == 2
     engine.dispose()
+
+    with TestClient(app) as restarted_client:
+        assert restarted_client.get(precise_url).json() == precise
+        assert restarted_client.get(close_url).json() == close_pair
+        assert restarted_client.get(f"/api/experiments/{historical_experiment}").json() == (
+            legacy.json()
+        )
 
 
 @pytest.mark.integration

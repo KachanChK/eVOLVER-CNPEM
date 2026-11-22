@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { request } from './api'
 import TemperatureHistory from './TemperatureHistory.vue'
 import { historyWindow, PERIODS } from './history.js'
+import { formatOdLimits } from './odLimits.js'
 
 const props = defineProps({ id: { type: String, default: '' } })
 const emit = defineEmits(['changed'])
@@ -139,6 +140,7 @@ onUnmounted(() => {
         <p class="meta">Vial {{ experiment.vial_id }} · {{ experiment.status === 'active' ? 'Ativo' : 'Inativo' }}</p>
         <h1 ref="heading" tabindex="-1">{{ experiment.name }}</h1>
         <p class="muted">Tipo de cultura · {{ experiment.culture_type ?? 'Não informado' }}</p>
+        <p class="muted">Limites de OD · {{ formatOdLimits(experiment) }}</p>
         <p class="muted">Início · {{ dateTime.format(new Date(experiment.started_at)) }}</p>
         <p v-if="experiment.ended_at" class="muted">Fim · {{ dateTime.format(new Date(experiment.ended_at)) }}</p>
       </div>
