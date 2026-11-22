@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -63,8 +65,7 @@ class MqttPublisher:
         self._allocations: list[ActiveVial] | None = None
         self._allocation_lock = threading.Lock()
         self._command_lock = threading.Lock()
-        self._pump_states: dict[int, bool] = {}
-        self._completed_commands: dict[UUID, tuple[str, str | None]] = {}
+        self._pump_states: dict[tuple[int, int], bool] = {}
         self._client = client_factory(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=settings.mqtt_client_id,
@@ -116,32 +117,84 @@ class MqttPublisher:
                 return
             if command.equipment_id != self._settings.equipment_id:
                 return
-            if command.command_id in self._completed_commands:
-                status, reason = self._completed_commands[command.command_id]
-                self._send_command_result(command, status, reason)
-                return
-            reason = None
-            if command.is_expired_at(datetime.now(UTC)):
-                reason = "expired"
-            elif command.pump_id != 1 or command.experiment_run_id is None:
-                reason = "invalid_payload"
-            else:
-                try:
-                    allocations = self.active_vials()
-                except (MqttConnectionError, MqttPublishError):
-                    LOGGER.warning("Não foi possível verificar o experimento do comando")
-                    return
-                if not any(str(v.experiment_id) == command.experiment_run_id for v in allocations):
-                    reason = "invalid_payload"
-            if reason:
-                self._send_command_result(command, "rejected", reason)
-                self._completed_commands[command.command_id] = ("rejected", reason)
-                return
-            self._send_command_result(command, "received")
-            experiment_id = int(command.experiment_run_id)
-            self._pump_states[experiment_id] = command.action == "turn_on"
-            self._send_command_result(command, "executed")
-            self._completed_commands[command.command_id] = ("executed", None)
+            try:
+                with closing(self._state_database()) as database:
+                    previous = database.execute(
+                        "SELECT status, reason FROM completed_commands WHERE command_id = ?",
+                        (str(command.command_id),),
+                    ).fetchone()
+                    if previous:
+                        self._send_command_result(command, *previous)
+                        return
+                    reason = None
+                    if command.is_expired_at(datetime.now(UTC)):
+                        reason = "expired"
+                    elif command.pump_id != 1 or command.experiment_run_id is None:
+                        reason = "invalid_payload"
+                    else:
+                        try:
+                            allocations = self.active_vials()
+                        except (MqttConnectionError, MqttPublishError):
+                            LOGGER.warning("Não foi possível verificar o experimento do comando")
+                            return
+                        active = next(
+                            (v for v in allocations
+                             if str(v.experiment_id) == command.experiment_run_id), None,
+                        )
+                        if active is None:
+                            reason = "invalid_payload"
+                    if reason:
+                        with database:
+                            database.execute(
+                                "INSERT INTO completed_commands VALUES (?, ?, ?)",
+                                (str(command.command_id), "rejected", reason),
+                            )
+                        self._send_command_result(command, "rejected", reason)
+                        return
+                    self._send_command_result(command, "received")
+                    experiment_id = int(command.experiment_run_id)
+                    state = command.action == "turn_on"
+                    with database:
+                        database.execute(
+                            "INSERT OR REPLACE INTO pump_states VALUES (?, ?, ?)",
+                            (experiment_id, active.vial_id, state),
+                        )
+                        database.execute(
+                            "INSERT INTO completed_commands VALUES (?, ?, ?)",
+                            (str(command.command_id), "executed", None),
+                        )
+                    self._pump_states[experiment_id, active.vial_id] = state
+                    self._send_command_result(command, "executed")
+            except (OSError, sqlite3.Error) as exc:
+                LOGGER.error("Estado da bomba não persistido: %s", exc)
+
+    def _state_database(self) -> sqlite3.Connection:
+        path = self._settings.pump_state_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        database = sqlite3.connect(path)
+        try:
+            database.execute("""
+                CREATE TABLE IF NOT EXISTS pump_states (
+                    experiment_id INTEGER NOT NULL, vial_id INTEGER NOT NULL,
+                    is_on INTEGER NOT NULL,
+                    PRIMARY KEY (experiment_id, vial_id)
+                )
+            """)
+            database.execute("""
+                CREATE TABLE IF NOT EXISTS completed_commands (
+                    command_id TEXT PRIMARY KEY, status TEXT NOT NULL, reason TEXT
+                )
+            """)
+            self._pump_states = {
+                (experiment_id, vial_id): bool(is_on)
+                for experiment_id, vial_id, is_on in database.execute(
+                    "SELECT experiment_id, vial_id, is_on FROM pump_states"
+                )
+            }
+        except Exception:
+            database.close()
+            raise
+        return database
 
     def _send_command_result(
         self, command: PumpCommand, status: str, reason: str | None = None,

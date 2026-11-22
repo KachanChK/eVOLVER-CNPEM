@@ -20,7 +20,13 @@ from pydantic import TypeAdapter
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from .control import consider_od, expire_commands, pending_commands, record_result
+from .control import (
+    consider_od,
+    expire_commands,
+    invalidate_controls,
+    pending_commands,
+    record_result,
+)
 
 
 def active_vials(engine: Engine, payload: bytes) -> AllocationResponse:
@@ -126,6 +132,8 @@ def main() -> None:
         del userdata, flags, properties
         if reason_code.is_failure:
             raise ConnectionError(f"MQTT connection rejected: {reason_code}")
+        with engine.begin() as connection:
+            invalidate_controls(connection)
         client.subscribe(
             [
                 ("evolver/v1/+/telemetry", 1),
@@ -155,6 +163,12 @@ def main() -> None:
             print(f"Mensagem não gravada: {exc}", flush=True)
 
     client.on_connect = on_connect
+    def on_disconnect(client, userdata, flags, reason_code, properties) -> None:
+        del client, userdata, flags, reason_code, properties
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+
+    client.on_disconnect = on_disconnect
     client.on_message = on_message
     try:
         client.connect(os.getenv("MQTT_HOST", "127.0.0.1"), int(os.getenv("MQTT_PORT", "1883")))

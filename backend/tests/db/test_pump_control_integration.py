@@ -13,6 +13,7 @@ from evolver.api.main import app
 from evolver.ingestion.__main__ import store_v1_message
 from evolver.ingestion.control import (
     expire_commands,
+    invalidate_controls,
     pause_control,
     pending_commands,
     record_result,
@@ -208,6 +209,58 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         assert safe_off["desired_state"] == "off"
         executed(safe_off["command_id"])
         assert client.get(f"/api/experiments/{pending_end}").status_code == 404
+
+        resumed_id = client.post("/api/experiments", json={
+            "name": "Reconexão", "culture_type": "Levedura", "vial_id": 3,
+            "od_min": 0.2, "od_max": 0.7,
+        }).json()["id"]
+        first_od_time = db_now()
+        assert reading(resumed_id, 0.7, 1, first_od_time, vial_id=3) == "gravada"
+        executed(commands(resumed_id)[-1]["command_id"])
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+        with engine.connect() as connection:
+            assert connection.execute(text("""
+                SELECT confirmed_state, reconcile_required FROM pump_control
+                WHERE experiment_id = :id
+            """), {"id": resumed_id}).one() == ("unknown", True)
+        assert reading(resumed_id, 0.8, 1, first_od_time, vial_id=3) == "gravada"
+        assert len(commands(resumed_id)) == 1
+        assert reading(resumed_id, 0.8, 2, db_now(), vial_id=3) == "gravada"
+        with engine.connect() as connection:
+            assert connection.scalar(text("""
+                SELECT reason FROM pump_commands WHERE command_id = :id
+            """), {"id": commands(resumed_id)[-1]["command_id"]}) == "reconcile"
+        assert commands(resumed_id)[-1]["desired_state"] == "off"
+        executed(commands(resumed_id)[-1]["command_id"])
+        assert reading(resumed_id, 0.8, 3, db_now(), vial_id=3) == "gravada"
+        assert commands(resumed_id)[-1]["desired_state"] == "on"
+        executed(commands(resumed_id)[-1]["command_id"])
+        # A lower producer sequence means a simulator restart, even on the same MQTT session.
+        assert reading(resumed_id, 0.8, 0, db_now(), vial_id=3) == "gravada"
+        assert commands(resumed_id)[-1]["desired_state"] == "off"
+
+        uncertain_id = client.post("/api/experiments", json={
+            "name": "Pendente", "culture_type": "Levedura", "vial_id": 4,
+            "od_min": 0.2, "od_max": 0.7,
+        }).json()["id"]
+        assert reading(uncertain_id, 0.7, 1, db_now(), vial_id=4) == "gravada"
+        with engine.begin() as connection:
+            invalidate_controls(connection)
+            assert all(
+                command.experiment_run_id != str(uncertain_id)
+                for command in pending_commands(connection, datetime.now(UTC))
+            )
+        assert reading(uncertain_id, 0.8, 2, db_now(), vial_id=4) == "gravada"
+        assert len(commands(uncertain_id)) == 1
+        with engine.begin() as connection:
+            expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
+        assert reading(uncertain_id, 0.8, 3, db_now(), vial_id=4) == "gravada"
+        assert [row["desired_state"] for row in commands(uncertain_id)] == ["on", "off"]
+        with engine.begin() as connection:
+            expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
+        assert reading(uncertain_id, 0.8, 4, db_now(), vial_id=4) == "gravada"
+        assert len(commands(uncertain_id)) == 2
     engine.dispose()
 
 

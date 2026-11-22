@@ -160,6 +160,7 @@ class PumpControl(Base):
     paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     delete_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reconcile_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     confirmed_state: Mapped[str] = mapped_column(String(16), nullable=False)
     desired_state: Mapped[str] = mapped_column(String(16), nullable=False)
     last_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

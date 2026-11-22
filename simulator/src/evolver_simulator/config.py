@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Self
 
 from pydantic import Field, PositiveFloat, PositiveInt, field_validator, model_validator
@@ -37,6 +38,10 @@ class SimulatorSettings(BaseSettings):
         default=10.0, validation_alias="MQTT_PUBLISH_TIMEOUT_SECONDS"
     )
     mqtt_simulator_password: str = Field(min_length=1, validation_alias="MQTT_SIMULATOR_PASSWORD")
+    pump_state_path: Path = Field(
+        default=Path.home() / ".evolver-simulator" / "pump-state.sqlite3",
+        validation_alias="SIMULATOR_PUMP_STATE_PATH",
+    )
 
     # Identidade, frascos e ritmo das medições.
     equipment_id: str = Field(

@@ -77,11 +77,15 @@ O único comando de temperatura do piloto é `target_type: temperature_setpoint`
 `turn_on` ou `turn_off`. Não há unidade, vazão, duração nem volume implícitos nesta
 versão.
 
+O controle automático de OD deste piloto usa **uma bomba lógica por vial** e envia
+somente `pump_id: 1`. O intervalo `1` a `3` permanece no contrato MQTT genérico
+para compatibilidade com outros fluxos; ele não cria bombas adicionais neste piloto.
+
 A ingestão registra `command_id`, autor, alvo, ação, criação e validade antes de publicar.
 O simulador valida a identidade e o prazo e pode enviar uma atualização de resultado
 com `status: received`, seguida de `executed`, ou encerrar em `rejected`/`failed`.
 `executed` significa somente que a alteração ocorreu no estado simulado. Se não
-houver resultado no prazo definido pela implementação, a API registra **resultado
+houver resultado no prazo definido pela implementação, a ingestão registra **resultado
 desconhecido**; não reenvia automaticamente comando de bomba.
 
 `expires_at` deve ser posterior a `created_at`; o modelo Pydantic rejeita o comando

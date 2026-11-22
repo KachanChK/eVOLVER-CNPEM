@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -224,9 +225,13 @@ def test_empty_active_vials_is_valid() -> None:
 )
 def test_pump_command_requires_current_experiment(
     experiment_id: str | None, allocations: list[dict[str, int]], expected: str,
+    tmp_path: Path,
 ) -> None:
     fake = FakeClient(allocation_response=allocations)
-    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher = MqttPublisher(
+        make_settings(pump_state_path=tmp_path / "pump.sqlite3"),
+        client_factory=lambda **_kwargs: fake,
+    )
     publisher.connect()
     now = datetime.now(UTC)
     command = PumpCommand(
@@ -245,15 +250,18 @@ def test_pump_command_requires_current_experiment(
     assert result_payloads[-1]["status"] == expected
     assert result_payloads[-1]["command_id"] == str(command.command_id)
     if expected == "executed":
-        assert publisher._pump_states[41]
+        assert publisher._pump_states[41, 1]
     else:
-        assert 41 not in publisher._pump_states
+        assert (41, 1) not in publisher._pump_states
     publisher.close()
 
 
-def test_duplicate_pump_command_does_not_query_or_apply_again() -> None:
+def test_duplicate_pump_command_does_not_query_or_apply_again(tmp_path: Path) -> None:
     fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
-    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher = MqttPublisher(
+        make_settings(pump_state_path=tmp_path / "pump.sqlite3"),
+        client_factory=lambda **_kwargs: fake,
+    )
     publisher.connect()
     now = datetime.now(UTC)
     command = PumpCommand(
@@ -266,13 +274,16 @@ def test_duplicate_pump_command_does_not_query_or_apply_again() -> None:
     publisher._handle_command(payload)
     publisher._handle_command(payload)
     assert len([call for call in fake.publish_calls if call[0][0] == ACTIVE_VIALS_REQUEST]) == 1
-    assert publisher._pump_states == {41: True}
+    assert publisher._pump_states == {(41, 1): True}
     publisher.close()
 
 
-def test_disconnected_simulator_does_not_apply_a_pump_command() -> None:
+def test_disconnected_simulator_does_not_apply_a_pump_command(tmp_path: Path) -> None:
     fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
-    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher = MqttPublisher(
+        make_settings(pump_state_path=tmp_path / "pump.sqlite3"),
+        client_factory=lambda **_kwargs: fake,
+    )
     publisher.connect()
     publisher._on_disconnect(fake, None, object(), FakeReasonCode(), None)
     now = datetime.now(UTC)
@@ -284,6 +295,69 @@ def test_disconnected_simulator_does_not_apply_a_pump_command() -> None:
     )
     publisher._handle_command(command.model_dump_json().encode())
     assert publisher._pump_states == {}
+    publisher.close()
+
+
+def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(pump_state_path=tmp_path / "pump.sqlite3")
+    now = datetime.now(UTC)
+
+    def command(experiment_id: str, action: str) -> PumpCommand:
+        return PumpCommand(
+            schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
+            experiment_run_id=experiment_id, author_id="evolver-od-control",
+            created_at=now, expires_at=now + timedelta(seconds=10),
+            target_type="pump", pump_id=1, action=action,
+        )
+
+    fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
+    first = MqttPublisher(settings, client_factory=lambda **_kwargs: fake)
+    first.connect()
+    turn_on = command("41", "turn_on")
+    first._handle_command(turn_on.model_dump_json().encode())
+    assert first._pump_states == {(41, 1): True}
+    first.close()
+
+    restarted_fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
+    restarted = MqttPublisher(settings, client_factory=lambda **_kwargs: restarted_fake)
+    restarted.connect()
+    restarted._handle_command(turn_on.model_dump_json().encode())
+    assert restarted._pump_states == {(41, 1): True}
+    assert not any(call[0][0] == ACTIVE_VIALS_REQUEST for call in restarted_fake.publish_calls)
+    restarted._handle_command(command("41", "turn_off").model_dump_json().encode())
+    assert restarted._pump_states == {(41, 1): False}
+    restarted.close()
+
+    next_fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 42}])
+    next_run = MqttPublisher(settings, client_factory=lambda **_kwargs: next_fake)
+    next_run.connect()
+    next_run._handle_command(command("42", "turn_on").model_dump_json().encode())
+    assert next_run._pump_states == {(41, 1): False, (42, 1): True}
+    next_run.close()
+
+
+def test_pump_command_is_not_executed_when_state_cannot_be_saved(tmp_path: Path) -> None:
+    fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
+    publisher = MqttPublisher(
+        make_settings(pump_state_path=tmp_path),  # A directory cannot be opened as SQLite.
+        client_factory=lambda **_kwargs: fake,
+    )
+    publisher.connect()
+    now = datetime.now(UTC)
+    command = PumpCommand(
+        schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
+        experiment_run_id="41", author_id="evolver-od-control",
+        created_at=now, expires_at=now + timedelta(seconds=10),
+        target_type="pump", pump_id=1, action="turn_on",
+    )
+    publisher._handle_command(command.model_dump_json().encode())
+    assert publisher._pump_states == {}
+    assert not any(
+        args[0] == "evolver/v1/evolver-sim-01/command-results"
+        for args, _kwargs in fake.publish_calls
+    )
     publisher.close()
 
 

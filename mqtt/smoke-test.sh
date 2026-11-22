@@ -8,6 +8,7 @@ other=evolver-sim-02
 sim_pw=$MQTT_SIMULATOR_PASSWORD
 ing_pw=$MQTT_INGESTION_PASSWORD
 api_pw=$MQTT_API_PASSWORD
+health_pw=$MQTT_HEALTH_PASSWORD
 failures=0
 
 sub() {
@@ -79,9 +80,9 @@ check "simulador não lê ACK de outro equipamento" "" \
 check "simulador não publica comandos" "" \
   "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/commands" \
     "$eq" "$sim_pw" "evolver/v1/$eq/commands" x)"
-check "ingestão não publica comandos" "" \
+check "identidade de saúde não publica comandos" "" \
   "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/commands" \
-    evolver-ingestion "$ing_pw" "evolver/v1/$eq/commands" x)"
+    evolver-health "$health_pw" "evolver/v1/$eq/commands" x)"
 
 if mosquitto_pub -V mqttv5 -h "$host" -t evolver/health -m x -q 1 2>/dev/null; then
   anonymous=aceito

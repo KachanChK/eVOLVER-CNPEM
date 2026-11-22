@@ -36,7 +36,7 @@ def consider_od(connection: Connection, reading: dict, now: datetime) -> None:
             SELECT e.id, e.vial_id, e.od_min, e.od_max, e.ended_at,
                    c.paused, c.confirmed_state, c.last_generated_at,
                    c.last_producer_id, c.last_sequence,
-                   c.pending_command_id
+                   c.pending_command_id, c.reconcile_required
             FROM experiments e JOIN pump_control c ON c.experiment_id = e.id
             WHERE e.id = :experiment_id FOR UPDATE OF e, c
         """),
@@ -55,6 +55,15 @@ def consider_od(connection: Connection, reading: dict, now: datetime) -> None:
         ))
     ):
         return
+    restarted = row.last_generated_at is not None and (
+        reading["producer_id"] != row.last_producer_id
+        or reading["sequence"] <= row.last_sequence
+    )
+    if restarted:
+        connection.execute(text("""
+            UPDATE pump_control SET confirmed_state = 'unknown', reconcile_required = true
+            WHERE experiment_id = :experiment_id
+        """), reading)
     connection.execute(
         text("""
             UPDATE pump_control SET last_generated_at = :generated_at,
@@ -63,12 +72,19 @@ def consider_od(connection: Connection, reading: dict, now: datetime) -> None:
         """),
         reading,
     )
+    if not is_fresh_od(reading["generated_at"], now) or row.pending_command_id is not None:
+        return
+    if row.reconcile_required or restarted:
+        connection.execute(text("""
+            UPDATE pump_control SET reconcile_required = false
+            WHERE experiment_id = :experiment_id
+        """), reading)
+        queue_command(connection, row.id, row.vial_id, "turn_off", reading, now, "reconcile")
+        return
     if (
-        row.paused or row.pending_command_id is not None
-        or row.confirmed_state not in ("on", "off")
+        row.paused or row.confirmed_state not in ("on", "off")
         or row.od_min is None or row.od_max is None
         or not row.od_min < row.od_max
-        or not is_fresh_od(reading["generated_at"], now)
     ):
         return
     action = action_for_od(row.confirmed_state, value, row.od_min, row.od_max)
@@ -77,6 +93,14 @@ def consider_od(connection: Connection, reading: dict, now: datetime) -> None:
             connection, row.id, row.vial_id, action, reading, now,
             "od_max" if action == "turn_on" else "od_min",
         )
+
+
+def invalidate_controls(connection: Connection) -> None:
+    """Require a fresh safe-off result after the ingestion MQTT session changes."""
+    connection.execute(text("""
+        UPDATE pump_control c SET confirmed_state = 'unknown', reconcile_required = true
+        FROM experiments e WHERE e.id = c.experiment_id AND e.ended_at IS NULL
+    """))
 
 
 def queue_command(
@@ -133,6 +157,7 @@ def pending_commands(connection: Connection, now: datetime) -> list[PumpCommand]
             FROM pump_commands p JOIN pump_control c
               ON c.pending_command_id = p.command_id
             WHERE p.sent_at IS NULL AND p.result_status = 'pending'
+              AND NOT c.reconcile_required
               AND p.expires_at > :now ORDER BY p.created_at
         """),
         {"now": now},
@@ -156,16 +181,16 @@ def expire_commands(connection: Connection, now: datetime) -> None:
         """), {"now": now},
     ).mappings().all()
     for row in rows:
-        connection.execute(text("""
+        cleared = connection.execute(text("""
             UPDATE pump_control SET confirmed_state = 'unknown', pending_command_id = NULL
             WHERE experiment_id = :experiment_id AND pending_command_id = :command_id
         """), row)
-        if row.desired_state == "on":
+        if cleared.rowcount and row.desired_state == "on":
             control = connection.execute(text("""
-                SELECT vial_id, ending, paused FROM pump_control
+                SELECT vial_id, ending, paused, reconcile_required FROM pump_control
                 WHERE experiment_id = :experiment_id FOR UPDATE
             """), row).mappings().one()
-            if control.ending or control.paused:
+            if not control.reconcile_required and (control.ending or control.paused):
                 queue_command(connection, row.experiment_id, control.vial_id,
                               "turn_off", None, now,
                               "ending" if control.ending else "pause")
@@ -186,14 +211,23 @@ def record_result(connection: Connection, result) -> None:
     """), {"status": result.status, "at": result.reported_at,
            "detail": result.detail, "command_id": result.command_id})
     if result.status != "received":
-        connection.execute(text("""
+        updated = connection.execute(text("""
             UPDATE pump_control SET
-                confirmed_state = CASE WHEN :status = 'executed'
+                confirmed_state = CASE WHEN reconcile_required THEN 'unknown'
+                    WHEN :status = 'executed'
                     THEN :desired_state ELSE 'unknown' END,
                 pending_command_id = NULL
             WHERE experiment_id = :experiment_id AND pending_command_id = :command_id
         """), {"status": result.status, "desired_state": row.desired_state,
                "experiment_id": row.experiment_id, "command_id": result.command_id})
+        if not updated.rowcount:
+            return
+        control = connection.execute(text("""
+            SELECT vial_id, ending, paused, reconcile_required FROM pump_control
+            WHERE experiment_id = :experiment_id FOR UPDATE
+        """), {"experiment_id": row.experiment_id}).mappings().one()
+        if control.reconcile_required:
+            return
         if row.desired_state == "off" and result.status == "executed":
             connection.execute(text("""
                 UPDATE experiments e SET ended_at = :at,
@@ -202,11 +236,7 @@ def record_result(connection: Connection, result) -> None:
                   AND e.id = :experiment_id AND c.ending
             """), {"at": result.reported_at, "experiment_id": row.experiment_id})
         elif row.desired_state == "on":
-            ending = connection.execute(text("""
-                SELECT c.vial_id, c.ending, c.paused FROM pump_control c
-                WHERE c.experiment_id = :experiment_id FOR UPDATE
-            """), {"experiment_id": row.experiment_id}).mappings().one()
-            if ending.ending or ending.paused:
-                queue_command(connection, row.experiment_id, ending.vial_id,
+            if control.ending or control.paused:
+                queue_command(connection, row.experiment_id, control.vial_id,
                               "turn_off", None, datetime.now(UTC),
-                              "ending" if ending.ending else "pause")
+                              "ending" if control.ending else "pause")

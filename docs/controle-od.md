@@ -24,6 +24,19 @@ não entram no controle automático.
 - A ingestão publica comandos com QoS 1 e `retain=false` usando `pump_id: 1` e
   `experiment_run_id`. O simulador consulta a alocação ativa antes de executar
   e rejeita vínculo ausente, encerrado ou incompatível.
+- O simulador grava estado e identidade dos comandos concluídos em SQLite antes
+  de publicar `executed`. O arquivo padrão é
+  `~/.evolver-simulator/pump-state.sqlite3` e pode ser definido por
+  `SIMULATOR_PUMP_STATE_PATH`. Preserve esse arquivo entre reinícios do simulador.
+  A chave do estado inclui experimento e vial, para não herdar o estado de outro
+  experimento no mesmo vial.
+- A ingestão marca o estado como desconhecido ao iniciar ou reconectar ao MQTT.
+  Após concluir ou expirar qualquer comando pendente, a próxima OD nova e
+  recente solicita um `turn_off` de reconciliação; somente
+  o resultado `executed` confirma o estado desligado e libera decisões futuras.
+  A repetição automática fica bloqueada se essa confirmação faltar. Uma queda
+  na sequência do produtor também inicia essa reconciliação após reinício do
+  simulador. Uma leitura antiga não a inicia.
 - Pausa e decisão de OD usam o mesmo bloqueio transacional do experimento. A
   pausa interna persiste, bloqueia novos acionamentos e solicita desligamento
   quando necessário. A API e a interface de pausar/despausar pertencem à Spec 4.
