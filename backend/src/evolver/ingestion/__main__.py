@@ -92,7 +92,7 @@ def store_v1_message(engine: Engine, topic: str, payload: bytes) -> str:
                    OR e.id = :expected_experiment_id)
               AND e.started_at <= :generated_at
               AND (e.ended_at IS NULL OR :generated_at < e.ended_at)
-              AND :generated_at <= clock_timestamp()
+              AND :generated_at <= :received_at
             FOR UPDATE OF e
         """),
             params,
@@ -186,7 +186,7 @@ def main() -> None:
             for command in commands:
                 try:
                     with engine.begin() as connection:
-                        if not command_is_current(connection, command, datetime.now(UTC)):
+                        if not command_is_current(connection, command):
                             continue
                         claimed = connection.execute(text("""
                             UPDATE pump_commands SET sent_at = clock_timestamp()
@@ -196,7 +196,7 @@ def main() -> None:
                         continue
                     # Recheck after committing the claim, under the same lock as the pause.
                     with engine.begin() as connection:
-                        if not command_is_current(connection, command, datetime.now(UTC)):
+                        if not command_is_current(connection, command, claimed_here=True):
                             continue
                         info = client.publish(
                             f"evolver/v1/{EQUIPMENT_ID}/commands",

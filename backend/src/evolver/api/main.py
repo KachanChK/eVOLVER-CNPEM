@@ -164,7 +164,9 @@ class VialView(BaseModel):
 
 
 class PumpView(BaseModel):
-    state: Literal["automatic", "pausing", "paused", "off_unconfirmed"]
+    state: Literal[
+        "automatic", "pausing", "paused", "off_unconfirmed", "resuming", "resume_off_unconfirmed"
+    ]
     ending: bool
 
 
@@ -277,7 +279,9 @@ app.include_router(experiment_creation)
 
 
 def pump_view(control: PumpControl) -> PumpView:
-    if not control.paused:
+    if control.resume_pending:
+        state = "resuming" if control.pending_command_id is not None else "resume_off_unconfirmed"
+    elif not control.paused:
         state = "automatic"
     elif control.pending_command_id is not None:
         state = "pausing"
@@ -371,6 +375,7 @@ def request_end(db: Session, experiment: Experiment, *, delete: bool) -> None:
     control = db.get(PumpControl, experiment.id, with_for_update=True)
     now = db.scalar(select(func.clock_timestamp()))
     control.paused = True
+    control.resume_pending = False
     control.ending = True
     control.delete_requested = control.delete_requested or delete
     if control.confirmed_state == "off" and control.pending_command_id is None:

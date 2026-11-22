@@ -28,13 +28,11 @@ from evolver_contracts.models import (
 )
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Engine, make_url
 
 
-@pytest.mark.integration
-def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.fixture
+def control_database(monkeypatch: pytest.MonkeyPatch):
     database_url = os.getenv("EVOLVER_CONTROL_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("set EVOLVER_CONTROL_TEST_DATABASE_URL to a disposable TimescaleDB database")
@@ -48,6 +46,17 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
             TRUNCATE od_readings, pump_commands, pump_control, experiments
             RESTART IDENTITY CASCADE
         """))
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.integration
+def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
+    control_database: Engine,
+) -> None:
+    engine = control_database
     topic = "evolver/v1/evolver-sim-01/telemetry"
 
     def db_now() -> datetime:
@@ -471,4 +480,177 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         assert client.get(f"{new_base}/pump").json()["state"] == "off_unconfirmed"
     with TestClient(app) as restarted:
         assert restarted.get(f"{new_base}/pump").json()["state"] == "off_unconfirmed"
-    engine.dispose()
+
+
+class PumpRun:
+    def __init__(self, engine: Engine, client: TestClient) -> None:
+        self.engine = engine
+        self.client = client
+        response = client.post("/api/experiments", json={
+            "name": "Retomada", "culture_type": "Simulada", "vial_id": 1,
+            "od_min": 0.2, "od_max": 0.7,
+        })
+        assert response.status_code == 201
+        self.id = response.json()["id"]
+        self.url = f"/api/experiments/{self.id}/pump"
+
+    def now(self) -> datetime:
+        with self.engine.connect() as connection:
+            return connection.scalar(text("SELECT clock_timestamp()"))
+
+    def mode(self, action: str, state: str) -> None:
+        response = self.client.post(f"{self.url}/{action}")
+        assert response.status_code == 200
+        assert response.json()["state"] == state
+
+    def od(self, value: float, sequence: int, generated_at: datetime) -> UUID:
+        event = TelemetryEvent(
+            schema_version="1.0", event_id=uuid4(), producer_id="simulator-local-01",
+            equipment_id="evolver-sim-01", vial_id="1", experiment_run_id=str(self.id),
+            measurement_type="od", value=value, generated_at=generated_at, sequence=sequence,
+        )
+        assert store_v1_message(
+            self.engine, "evolver/v1/evolver-sim-01/telemetry", event.model_dump_json().encode(),
+        ) == "gravada"
+        return event.event_id
+
+    def queued(self):
+        with self.engine.connect() as connection:
+            return pending_commands(connection, self.now())
+
+    def result(self, command_id: UUID, *, rejected: bool = False) -> None:
+        fields = dict(schema_version="1.0", command_id=command_id,
+                      equipment_id="evolver-sim-01", simulated=True, reported_at=self.now())
+        result = (
+            RejectedCommandResult(status="rejected", reason_code="invalid_payload", **fields)
+            if rejected else ExecutedCommandResult(status="executed", **fields)
+        )
+        with self.engine.begin() as connection:
+            record_result(connection, result)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("scenario", [
+    "lower_before_claim", "lower_after_claim", "stale_after_claim",
+    "expired_unsent", "stale_previous_claim",
+])
+def test_resume_on_revalidates_od_before_publication(
+    control_database: Engine, scenario: str,
+) -> None:
+    with TestClient(app) as client:
+        run = PumpRun(control_database, client)
+        run.mode("pause", "paused")
+        generated_at = run.now() - timedelta(seconds=2)
+        with run.engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE experiments SET started_at = :at WHERE id = :id
+            """), {"at": generated_at, "id": run.id})
+        run.od(0.7, 1, generated_at)
+        run.mode("resume", "automatic")
+        turn_on, = run.queued()
+        assert turn_on.action == "turn_on"
+        if scenario not in ("lower_before_claim", "expired_unsent"):
+            with run.engine.begin() as connection:
+                assert command_is_current(connection, turn_on)
+                connection.execute(text("""
+                    UPDATE pump_commands SET sent_at = clock_timestamp() WHERE command_id = :id
+                """), {"id": turn_on.command_id})
+        if scenario.startswith("lower"):
+            run.od(0.2, 2, run.now())
+        with run.engine.begin() as connection:
+            if scenario != "expired_unsent":
+                checked_at = run.now()
+                if scenario.startswith("stale"):
+                    checked_at = generated_at + timedelta(seconds=10, microseconds=1)
+                    assert checked_at < turn_on.expires_at
+                assert not command_is_current(
+                    connection, turn_on, checked_at,
+                    claimed_here=scenario in ("lower_after_claim", "stale_after_claim"),
+                )
+            expire_commands(connection, turn_on.expires_at + timedelta(microseconds=1))
+            actual = connection.execute(text("""
+                SELECT p.result_status, p.sent_at IS NOT NULL, c.confirmed_state,
+                       c.pending_command_id, c.reconcile_required
+                FROM pump_commands p JOIN pump_control c ON c.experiment_id = p.experiment_id
+                WHERE p.command_id = :id
+            """), {"id": turn_on.command_id}).one()
+        expected = ("superseded", False, "off", None, False)
+        if scenario == "stale_previous_claim":
+            expected = ("unknown", True, "unknown", None, True)
+        assert actual == expected
+        assert run.queued() == []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("od, failure", [(0.6, "none"), (0.7, "none"), (0.7, "before"),
+                                         (0.7, "after")])
+def test_resumption_persists_and_evaluates_od_when_off_executes(
+    control_database: Engine, od: float, failure: str,
+) -> None:
+    with TestClient(app) as client:
+        run = PumpRun(control_database, client)
+        run.od(0.7, 1, run.now())
+        turn_on, = run.queued()
+        run.result(turn_on.command_id)
+        with run.engine.begin() as connection:
+            pause_control(connection, run.id, turn_on.created_at - timedelta(seconds=1))
+        turn_off, = run.queued()
+        assert turn_off.action == "turn_off" and turn_off.created_at > turn_on.created_at
+        with run.engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE pump_commands SET sent_at = clock_timestamp() WHERE command_id = :id
+            """), {"id": turn_off.command_id})
+        if failure == "before":
+            run.result(turn_off.command_id, rejected=True)
+            assert client.get(run.url).json()["state"] == "off_unconfirmed"
+        run.mode("resume", "resuming")
+        run.mode("resume", "resuming")
+        if failure == "after":
+            run.result(turn_off.command_id, rejected=True)
+        if failure != "none":
+            replacement, = run.queued()
+            assert replacement.action == "turn_off"
+            assert replacement.command_id != turn_off.command_id
+            turn_off = replacement
+        else:
+            assert run.queued() == []
+        run.od(od, 2, run.now())
+    with TestClient(app) as restarted:
+        assert restarted.get(run.url).json()["state"] == "resuming"
+        run.result(turn_off.command_id)
+        assert restarted.get(run.url).json()["state"] == "automatic"
+        assert [item.action for item in run.queued()] == (["turn_on"] if od >= 0.7 else [])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("case", [
+    "older_sequence", "same_identity", "invalid_newer", "future", "reused_vial",
+])
+def test_resume_uses_exact_accepted_od_cursor(control_database: Engine, case: str) -> None:
+    with TestClient(app) as client:
+        run = PumpRun(control_database, client)
+        run.mode("pause", "paused")
+        timestamp = run.now()
+        accepted_id = run.od(0.7, 2, timestamp)
+        if case == "older_sequence":
+            run.od(0.2, 1, timestamp)
+        elif case == "same_identity":
+            run.od(0.2, 2, timestamp)
+        elif case == "invalid_newer":
+            run.od(0.81, 3, timestamp)
+        elif case == "future":
+            with pytest.raises(ValueError, match="experimento ativo"):
+                run.od(0.2, 3, timestamp + timedelta(seconds=5))
+        else:
+            previous = run
+            inactive = client.post(previous.url.removesuffix("/pump") + "/inactivate")
+            assert inactive.json()["status"] == "inactive"
+            run = PumpRun(control_database, client)
+            run.mode("pause", "paused")
+            previous.od(0.8, 3, timestamp)
+        run.mode("resume", "automatic")
+        with run.engine.connect() as connection:
+            actual = connection.execute(text("""
+                SELECT reading_event_id FROM pump_commands WHERE experiment_id = :id
+            """), {"id": run.id}).scalars().all()
+        assert actual == ([] if case in ("invalid_newer", "reused_vial") else [accepted_id])

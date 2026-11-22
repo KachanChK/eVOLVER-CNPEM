@@ -143,27 +143,37 @@ class MqttPublisher:
                         )
                         if active is None:
                             reason = "invalid_payload"
-                    if reason:
-                        with database:
-                            database.execute(
-                                "INSERT INTO completed_commands VALUES (?, ?, ?)",
-                                (str(command.command_id), "rejected", reason),
-                            )
-                        self._send_command_result(command, "rejected", reason)
-                        return
-                    self._send_command_result(command, "received")
-                    experiment_id = int(command.experiment_run_id)
-                    state = command.action == "turn_on"
                     with database:
-                        database.execute(
-                            "INSERT OR REPLACE INTO pump_states VALUES (?, ?, ?)",
-                            (experiment_id, active.vial_id, state),
-                        )
+                        if reason is None and command.is_expired_at(datetime.now(UTC)):
+                            reason = "expired"
+                        if reason is None:
+                            experiment_id = active.experiment_id
+                            issued_at = command.created_at.astimezone(UTC).isoformat(
+                                timespec="microseconds",
+                            )
+                            advanced = database.execute("""
+                                INSERT INTO pump_command_order VALUES (?, ?)
+                                ON CONFLICT (experiment_id) DO UPDATE
+                                SET issued_at = excluded.issued_at
+                                WHERE excluded.issued_at > pump_command_order.issued_at
+                            """, (experiment_id, issued_at)).rowcount
+                            if not advanced:
+                                reason = "invalid_payload"
+                            else:
+                                state = command.action == "turn_on"
+                                database.execute(
+                                    "INSERT OR REPLACE INTO pump_states VALUES (?, ?, ?)",
+                                    (experiment_id, active.vial_id, state),
+                                )
                         database.execute(
                             "INSERT INTO completed_commands VALUES (?, ?, ?)",
-                            (str(command.command_id), "executed", None),
+                            (str(command.command_id), "rejected" if reason else "executed", reason),
                         )
+                    if reason:
+                        self._send_command_result(command, "rejected", reason)
+                        return
                     self._pump_states[experiment_id, active.vial_id] = state
+                    self._send_command_result(command, "received")
                     self._send_command_result(command, "executed")
             except (OSError, sqlite3.Error) as exc:
                 LOGGER.error("Estado da bomba não persistido: %s", exc)
@@ -183,6 +193,11 @@ class MqttPublisher:
             database.execute("""
                 CREATE TABLE IF NOT EXISTS completed_commands (
                     command_id TEXT PRIMARY KEY, status TEXT NOT NULL, reason TEXT
+                )
+            """)
+            database.execute("""
+                CREATE TABLE IF NOT EXISTS pump_command_order (
+                    experiment_id INTEGER PRIMARY KEY, issued_at TEXT NOT NULL
                 )
             """)
             self._pump_states = {

@@ -158,6 +158,7 @@ class PumpControl(Base):
     experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id"), primary_key=True)
     vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id"), nullable=False)
     paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    resume_pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     delete_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reconcile_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -166,6 +167,7 @@ class PumpControl(Base):
     last_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_producer_id: Mapped[str | None] = mapped_column(String(64))
     last_sequence: Mapped[int | None] = mapped_column(BigInteger)
+    last_event_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     pending_command_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
 
 
