@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -143,7 +144,45 @@ class OdReading(Base):
     vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id", ondelete="RESTRICT"))
     experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id", ondelete="RESTRICT"))
     od_value: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
+    producer_id: Mapped[str | None] = mapped_column(String(64))
+    sequence: Mapped[int | None] = mapped_column(BigInteger)
 
     @property
     def value(self) -> float:
         return self.od_value
+
+
+class PumpControl(Base):
+    __tablename__ = "pump_control"
+
+    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id"), primary_key=True)
+    vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id"), nullable=False)
+    paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    delete_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reconcile_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    confirmed_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    desired_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    last_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_producer_id: Mapped[str | None] = mapped_column(String(64))
+    last_sequence: Mapped[int | None] = mapped_column(BigInteger)
+    pending_command_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+
+
+class PumpCommandRecord(Base):
+    __tablename__ = "pump_commands"
+
+    command_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id"), nullable=False)
+    vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id"), nullable=False)
+    reading_event_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    reading_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    desired_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    puback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    result_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_detail: Mapped[str | None] = mapped_column(Text)

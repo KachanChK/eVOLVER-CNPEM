@@ -11,6 +11,11 @@ representam calibração ou precisão científica.
 - `runner.py` controla o intervalo e a parada do programa.
 - `mqtt.py` envia as mensagens e verifica a confirmação do broker.
 
+O estado da bomba simulada e os comandos concluídos ficam em um arquivo SQLite
+durável (`~/.evolver-simulator/pump-state.sqlite3`). Configure
+`SIMULATOR_PUMP_STATE_PATH` para outro caminho persistente se necessário. O
+simulador grava o estado antes de confirmar a execução de um comando.
+
 Cada valor parte de uma base e recebe uma variação e um ruído simulado. OD, pH e
 temperatura têm geradores independentes e ondas com fases e períodos diferentes.
 Esses padrões servem para testar o sistema, sem representar medições reais.

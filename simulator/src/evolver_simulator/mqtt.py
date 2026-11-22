@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
 from collections.abc import Callable
+from contextlib import closing
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
 import paho.mqtt.client as mqtt
-from evolver_contracts.models import TelemetryEvent
+from evolver_contracts.models import (
+    ExecutedCommandResult,
+    PumpCommand,
+    ReceivedCommandResult,
+    RejectedCommandResult,
+    TelemetryEvent,
+)
 from evolver_contracts.pilot import (
     ACTIVE_VIALS_REQUEST,
     ACTIVE_VIALS_RESPONSE,
@@ -54,6 +63,9 @@ class MqttPublisher:
         self._allocation_received = threading.Event()
         self._allocation_request_id: UUID | None = None
         self._allocations: list[ActiveVial] | None = None
+        self._allocation_lock = threading.Lock()
+        self._command_lock = threading.Lock()
+        self._pump_states: dict[tuple[int, int], bool] = {}
         self._client = client_factory(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=settings.mqtt_client_id,
@@ -80,6 +92,12 @@ class MqttPublisher:
         self._subscription_finished.set()
 
     def _on_message(self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
+        command_topic = f"evolver/v1/{self._settings.equipment_id}/commands"
+        if message.topic == command_topic and not message.retain:
+            threading.Thread(
+                target=self._handle_command, args=(message.payload,), daemon=True,
+            ).start()
+            return
         if message.topic != ACTIVE_VIALS_RESPONSE or message.retain:
             return
         try:
@@ -89,6 +107,113 @@ class MqttPublisher:
         if response.request_id == self._allocation_request_id:
             self._allocations = response.vials
             self._allocation_received.set()
+
+    def _handle_command(self, payload: bytes) -> None:
+        with self._command_lock:
+            try:
+                command = PumpCommand.model_validate_json(payload)
+            except ValidationError:
+                LOGGER.warning("Comando de bomba inválido")
+                return
+            if command.equipment_id != self._settings.equipment_id:
+                return
+            try:
+                with closing(self._state_database()) as database:
+                    previous = database.execute(
+                        "SELECT status, reason FROM completed_commands WHERE command_id = ?",
+                        (str(command.command_id),),
+                    ).fetchone()
+                    if previous:
+                        self._send_command_result(command, *previous)
+                        return
+                    reason = None
+                    if command.is_expired_at(datetime.now(UTC)):
+                        reason = "expired"
+                    elif command.pump_id != 1 or command.experiment_run_id is None:
+                        reason = "invalid_payload"
+                    else:
+                        try:
+                            allocations = self.active_vials()
+                        except (MqttConnectionError, MqttPublishError):
+                            LOGGER.warning("Não foi possível verificar o experimento do comando")
+                            return
+                        active = next(
+                            (v for v in allocations
+                             if str(v.experiment_id) == command.experiment_run_id), None,
+                        )
+                        if active is None:
+                            reason = "invalid_payload"
+                    if reason:
+                        with database:
+                            database.execute(
+                                "INSERT INTO completed_commands VALUES (?, ?, ?)",
+                                (str(command.command_id), "rejected", reason),
+                            )
+                        self._send_command_result(command, "rejected", reason)
+                        return
+                    self._send_command_result(command, "received")
+                    experiment_id = int(command.experiment_run_id)
+                    state = command.action == "turn_on"
+                    with database:
+                        database.execute(
+                            "INSERT OR REPLACE INTO pump_states VALUES (?, ?, ?)",
+                            (experiment_id, active.vial_id, state),
+                        )
+                        database.execute(
+                            "INSERT INTO completed_commands VALUES (?, ?, ?)",
+                            (str(command.command_id), "executed", None),
+                        )
+                    self._pump_states[experiment_id, active.vial_id] = state
+                    self._send_command_result(command, "executed")
+            except (OSError, sqlite3.Error) as exc:
+                LOGGER.error("Estado da bomba não persistido: %s", exc)
+
+    def _state_database(self) -> sqlite3.Connection:
+        path = self._settings.pump_state_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        database = sqlite3.connect(path)
+        try:
+            database.execute("""
+                CREATE TABLE IF NOT EXISTS pump_states (
+                    experiment_id INTEGER NOT NULL, vial_id INTEGER NOT NULL,
+                    is_on INTEGER NOT NULL,
+                    PRIMARY KEY (experiment_id, vial_id)
+                )
+            """)
+            database.execute("""
+                CREATE TABLE IF NOT EXISTS completed_commands (
+                    command_id TEXT PRIMARY KEY, status TEXT NOT NULL, reason TEXT
+                )
+            """)
+            self._pump_states = {
+                (experiment_id, vial_id): bool(is_on)
+                for experiment_id, vial_id, is_on in database.execute(
+                    "SELECT experiment_id, vial_id, is_on FROM pump_states"
+                )
+            }
+        except Exception:
+            database.close()
+            raise
+        return database
+
+    def _send_command_result(
+        self, command: PumpCommand, status: str, reason: str | None = None,
+    ) -> None:
+        fields = dict(
+            schema_version="1.0", command_id=command.command_id,
+            equipment_id=command.equipment_id, simulated=True,
+            reported_at=datetime.now(UTC),
+        )
+        if status == "received":
+            result = ReceivedCommandResult(status="received", **fields)
+        elif status == "executed":
+            result = ExecutedCommandResult(status="executed", **fields)
+        else:
+            result = RejectedCommandResult(status="rejected", reason_code=reason, **fields)
+        self._publish_payload(
+            f"evolver/v1/{self._settings.equipment_id}/command-results",
+            result.model_dump_json(),
+        )
 
     def _on_connect(
         self,
@@ -101,7 +226,13 @@ class MqttPublisher:
         if reason_code.is_failure:
             self._connect_error = str(reason_code)
         else:
-            self._connected.set()
+            result, _mid = self._client.subscribe(
+                f"evolver/v1/{self._settings.equipment_id}/commands", qos=1,
+            )
+            if result == mqtt.MQTT_ERR_SUCCESS:
+                self._connected.set()
+            else:
+                self._connect_error = f"MQTT command subscription failed: {result}"
         self._connect_finished.set()
 
     def _on_disconnect(
@@ -176,6 +307,10 @@ class MqttPublisher:
         )
 
     def active_vials(self) -> list[ActiveVial]:
+        with self._allocation_lock:
+            return self._active_vials_locked()
+
+    def _active_vials_locked(self) -> list[ActiveVial]:
         if not self._connected.is_set():
             raise MqttConnectionError("MQTT client is not connected")
         self._subscription_finished.clear()

@@ -6,5 +6,12 @@ experimento que o ocupava no horário da medição. Registra `gravada`, `duplica
 da rejeição. Precisa de `DATABASE_URL` e `MQTT_INGESTION_PASSWORD`; aceita `MQTT_HOST`
 e `MQTT_PORT`.
 
+Para OD recente, a ingestão decide a bomba simulada conforme os limites do
+experimento e publica comandos não retidos. Também recebe os resultados do
+simulador e persiste o estado confirmado ou desconhecido. O prazo de frescor,
+as transições e o teste de integração estão em `docs/controle-od.md`.
+A perda da sessão MQTT exige reconciliação com desligamento confirmado antes de
+novas decisões automáticas.
+
 Nesta prova inicial, o PUBACK confirma somente o transporte até o broker. O simulador
 não recebe confirmação de gravação nem reenvia mensagens após falha da ingestão.
