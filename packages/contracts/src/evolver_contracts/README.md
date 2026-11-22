@@ -4,20 +4,19 @@
 - **Escopo:** comunicação local entre o simulador externo e os serviços do piloto.
 - **Fora do escopo:** firmware, hardware real, unidades/calibrações científicas e garantia de efeito físico.
 
-Os modelos Pydantic em `models.py` são a fonte de verdade para as mensagens MQTT
-do piloto. Simulador, ingestão e API importam esses mesmos modelos; os schemas
-JSON em `schemas/` são gerados por `export_schemas.py` para consumidores que não
-usam Python. Isso evita regras paralelas para o mesmo payload. Uma alteração
-incompatível exige nova versão do contrato e novos tópicos `v{N}`.
+Os modelos Pydantic em `models.py` e `pilot.py` definem os payloads MQTT do
+piloto. O script `export_schemas.py` gera os schemas JSON de `models.py` em
+`schemas/`, no dialeto JSON Schema Draft 2020-12. Os testes verificam que os
+schemas versionados correspondem aos modelos. Uma alteração incompatível
+exige nova versão do contrato e novos tópicos `v{N}`.
 
-Todo payload deve informar explicitamente `schema_version`; a versão não é inferida
-nem preenchida pelo consumidor. Os arquivos declaram o dialeto JSON Schema Draft
-2020-12 e os testes garantem que os schemas versionados correspondam aos modelos.
+Os payloads de `models.py` exigem o campo explícito `schema_version`.
 
 ## Tópicos e política de entrega
 
-`{equipment_id}` é o mesmo identificador presente no payload e deve obedecer ao
-formato dos schemas. Todos os tópicos usam JSON UTF-8 sobre MQTT 5.
+Nos tópicos parametrizados, `{equipment_id}` é o mesmo identificador presente no
+payload e segue o formato dos schemas. A consulta de vials ativos usa o
+identificador fixo no tópico. Todos os tópicos usam JSON UTF-8 sobre MQTT 5.
 
 | Direção | Tópico | QoS | Retain | Payload |
 | --- | --- | --- | --- | --- |
@@ -26,11 +25,22 @@ formato dos schemas. Todos os tópicos usam JSON UTF-8 sobre MQTT 5.
 | Ingestão → simulador | `evolver/v1/{equipment_id}/telemetry/rejection` | 1 | não | `schemas/telemetry-rejection.schema.json` |
 | API → simulador | `evolver/v1/{equipment_id}/commands` | 1 | **não** | `schemas/command.schema.json` |
 | Simulador → ingestão | `evolver/v1/{equipment_id}/command-results` | 1 | não | `schemas/command-result.schema.json` |
+| Simulador → ingestão | `evolver/v1/evolver-sim-01/active-vials/request` | 1 | não | `AllocationRequest` em `pilot.py` |
+| Ingestão → simulador | `evolver/v1/evolver-sim-01/active-vials/response` | 1 | não | `AllocationResponse` em `pilot.py` |
 
 QoS 1 cobre somente o transporte MQTT e permite reentregas. Ele não substitui a
 confirmação de aplicação em `telemetry/ack`, que é emitida **apenas depois do commit
 da transação central**. Nenhum comando pode ser publicado como retido: um comando
 antigo não pode ser executado por um simulador que acabou de se reconectar.
+
+## Consulta de vials ativos
+
+O simulador assina a resposta antes de publicar o pedido. O pedido contém apenas
+`request_id` (UUID). A ingestão devolve o mesmo `request_id` e `vials`, uma lista
+de até 12 alocações ativas ordenadas por `vial_id`. Cada item contém `vial_id`
+(inteiro entre 1 e 12) e `experiment_id` (inteiro positivo de até 64 bits com sinal).
+Quando não há alocações ativas, `vials` é uma lista vazia. Os modelos de
+`pilot.py` aceitam somente os campos descritos aqui.
 
 ## Telemetria, ACK e rejeição
 

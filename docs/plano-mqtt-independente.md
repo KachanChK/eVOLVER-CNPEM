@@ -1,7 +1,7 @@
 # MQTT independente e produtor de telemetria
 
 O Mosquitto roda em `mqtt/`, separado do banco e dos processos Python. O simulador
-consulta a ingestão pelos tópicos `evolver/dev/evolver-sim-01/active-vials/request`
+consulta a ingestão pelos tópicos `evolver/v1/evolver-sim-01/active-vials/request`
 e `.../response`, depois publica OD, pH e temperatura no tópico
 `evolver/v1/evolver-sim-01/telemetry`. Usa MQTT 5, QoS 1 e mensagens não retidas.
 O PUBACK confirma entrega ao broker, não a gravação no banco.

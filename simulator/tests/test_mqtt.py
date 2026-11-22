@@ -193,8 +193,12 @@ def test_active_vials_request_returns_correlated_allocations() -> None:
     publisher.connect()
     found = publisher.active_vials()
     assert [(v.vial_id, v.experiment_id) for v in found] == [(1, 41), (3, 43)]
-    assert fake.subscriptions == [ACTIVE_VIALS_RESPONSE]
-    assert fake.publish_calls[0][0] == (ACTIVE_VIALS_REQUEST,)
+    assert fake.subscriptions == ["evolver/v1/evolver-sim-01/active-vials/response"]
+    args, kwargs = fake.publish_calls[0]
+    assert args == ("evolver/v1/evolver-sim-01/active-vials/request",)
+    assert kwargs["qos"] == 1
+    assert kwargs["retain"] is False
+    assert set(json.loads(kwargs["payload"])) == {"request_id"}
     publisher.close()
 
 

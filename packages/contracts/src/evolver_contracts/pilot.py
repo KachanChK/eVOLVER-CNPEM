@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 EQUIPMENT_ID = "evolver-sim-01"
-TOPIC_PREFIX = f"evolver/dev/{EQUIPMENT_ID}"
+TOPIC_PREFIX = f"evolver/v1/{EQUIPMENT_ID}"
 ACTIVE_VIALS_REQUEST = f"{TOPIC_PREFIX}/active-vials/request"
 ACTIVE_VIALS_RESPONSE = f"{TOPIC_PREFIX}/active-vials/response"
 DatabaseID = Annotated[int, Field(strict=True, gt=0, le=2**63 - 1)]
