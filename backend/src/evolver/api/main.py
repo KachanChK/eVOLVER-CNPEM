@@ -15,10 +15,12 @@ from evolver.db.models import (
     Experiment,
     OdReading,
     PhReading,
+    PumpControl,
     TemperatureReading,
     Vial,
 )
 from evolver.db.queries import get_temperature_history
+from evolver.ingestion.control import queue_command
 from evolver_contracts.pilot import EQUIPMENT_ID, VialID
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response
 from fastapi.encoders import jsonable_encoder
@@ -247,6 +249,12 @@ def create_experiment(data: CreateExperiment, db: Database) -> Experiment:
     )
     db.add(experiment)
     try:
+        db.flush()
+        db.add(PumpControl(
+            experiment_id=experiment.id, vial_id=experiment.vial_id,
+            paused=False, ending=False, delete_requested=False,
+            confirmed_state="off", desired_state="off",
+        ))
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -295,7 +303,7 @@ def other_history(
 def inactivate_experiment(experiment_id: ExperimentID, db: Database) -> Experiment:
     experiment = visible_experiment(db, experiment_id, lock=True)
     if experiment.ended_at is None:
-        experiment.ended_at = db.scalar(select(func.clock_timestamp()))
+        request_end(db, experiment, delete=False)
     db.commit()
     return experiment
 
@@ -303,8 +311,25 @@ def inactivate_experiment(experiment_id: ExperimentID, db: Database) -> Experime
 @app.delete("/api/experiments/{experiment_id}", status_code=204)
 def delete_experiment(experiment_id: ExperimentID, db: Database) -> Response:
     experiment = visible_experiment(db, experiment_id, lock=True)
-    deleted_at = db.scalar(select(func.clock_timestamp()))
-    experiment.ended_at = experiment.ended_at or deleted_at
-    experiment.deleted_at = deleted_at
+    if experiment.ended_at is None:
+        request_end(db, experiment, delete=True)
+    else:
+        experiment.deleted_at = db.scalar(select(func.clock_timestamp()))
     db.commit()
     return Response(status_code=204)
+
+
+def request_end(db: Session, experiment: Experiment, *, delete: bool) -> None:
+    control = db.get(PumpControl, experiment.id, with_for_update=True)
+    now = db.scalar(select(func.clock_timestamp()))
+    control.paused = True
+    control.ending = True
+    control.delete_requested = control.delete_requested or delete
+    if control.confirmed_state == "off" and control.pending_command_id is None:
+        experiment.ended_at = now
+        if control.delete_requested:
+            experiment.deleted_at = now
+    elif control.pending_command_id is None:
+        db.flush()
+        queue_command(db.connection(), experiment.id, experiment.vial_id,
+                      "turn_off", None, now, "ending")

@@ -23,7 +23,7 @@ identificador fixo no tópico. Todos os tópicos usam JSON UTF-8 sobre MQTT 5.
 | Simulador → ingestão | `evolver/v1/{equipment_id}/telemetry` | 1 | não | `schemas/telemetry.schema.json` |
 | Ingestão → simulador | `evolver/v1/{equipment_id}/telemetry/ack` | 1 | não | `schemas/telemetry-ack.schema.json` |
 | Ingestão → simulador | `evolver/v1/{equipment_id}/telemetry/rejection` | 1 | não | `schemas/telemetry-rejection.schema.json` |
-| API → simulador | `evolver/v1/{equipment_id}/commands` | 1 | **não** | `schemas/command.schema.json` |
+| Ingestão → simulador | `evolver/v1/{equipment_id}/commands` | 1 | **não** | `schemas/command.schema.json` |
 | Simulador → ingestão | `evolver/v1/{equipment_id}/command-results` | 1 | não | `schemas/command-result.schema.json` |
 | Simulador → ingestão | `evolver/v1/evolver-sim-01/active-vials/request` | 1 | não | `AllocationRequest` em `pilot.py` |
 | Ingestão → simulador | `evolver/v1/evolver-sim-01/active-vials/response` | 1 | não | `AllocationResponse` em `pilot.py` |
@@ -77,7 +77,7 @@ O único comando de temperatura do piloto é `target_type: temperature_setpoint`
 `turn_on` ou `turn_off`. Não há unidade, vazão, duração nem volume implícitos nesta
 versão.
 
-A API registra `command_id`, autor, alvo, ação, criação e validade antes de publicar.
+A ingestão registra `command_id`, autor, alvo, ação, criação e validade antes de publicar.
 O simulador valida a identidade e o prazo e pode enviar uma atualização de resultado
 com `status: received`, seguida de `executed`, ou encerrar em `rejected`/`failed`.
 `executed` significa somente que a alteração ocorreu no estado simulado. Se não

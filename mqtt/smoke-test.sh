@@ -62,6 +62,9 @@ check "ingestão -> simulador: telemetry/rejection" "j1" \
 check "API -> simulador: commands" "c1" \
   "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/commands" \
     evolver-api "$api_pw" "evolver/v1/$eq/commands" c1)"
+check "ingestão -> simulador: commands" "c2" \
+  "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/commands" \
+    evolver-ingestion "$ing_pw" "evolver/v1/$eq/commands" c2)"
 check "simulador -> ingestão: command-results" "r1" \
   "$(exchange evolver-ingestion "$ing_pw" "evolver/v1/+/command-results" \
     "$eq" "$sim_pw" "evolver/v1/$eq/command-results" r1)"

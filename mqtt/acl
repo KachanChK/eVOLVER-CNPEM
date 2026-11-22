@@ -2,12 +2,13 @@
 user evolver-health
 topic write evolver/health
 
-# Ingestão: consulta alocações e recebe telemetria v1.
+# Ingestão: consulta alocações, recebe telemetria/resultados e publica comandos de OD.
 user evolver-ingestion
 topic read evolver/v1/evolver-sim-01/active-vials/request
 topic write evolver/v1/evolver-sim-01/active-vials/response
 topic read evolver/v1/+/telemetry
 topic read evolver/v1/+/command-results
+topic write evolver/v1/evolver-sim-01/commands
 topic write evolver/v1/+/telemetry/ack
 topic write evolver/v1/+/telemetry/rejection
 
