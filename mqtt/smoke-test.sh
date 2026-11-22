@@ -43,11 +43,11 @@ check() {
 
 echo "Consulta de alocações do simulador"
 check "simulador -> ingestão: consulta de vials ativos" "request" \
-  "$(exchange evolver-ingestion "$ing_pw" "evolver/dev/$eq/active-vials/request" \
-    "$eq" "$sim_pw" "evolver/dev/$eq/active-vials/request" request)"
+  "$(exchange evolver-ingestion "$ing_pw" "evolver/v1/$eq/active-vials/request" \
+    "$eq" "$sim_pw" "evolver/v1/$eq/active-vials/request" request)"
 check "ingestão -> simulador: vials ativos" "response" \
-  "$(exchange "$eq" "$sim_pw" "evolver/dev/$eq/active-vials/response" \
-    evolver-ingestion "$ing_pw" "evolver/dev/$eq/active-vials/response" response)"
+  "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/active-vials/response" \
+    evolver-ingestion "$ing_pw" "evolver/v1/$eq/active-vials/response" response)"
 
 echo "Fluxos previstos no contrato"
 check "simulador -> ingestão: telemetry" "t1" \

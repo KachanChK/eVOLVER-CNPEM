@@ -91,6 +91,9 @@ def test_independent_broker_examples_match_versioned_publisher(
     assert f"MQTT_SIMULATOR_PASSWORD={settings.mqtt_simulator_password}" in broker_env
     simulator_acl = acl.split(f"user {settings.mqtt_username}\n", 1)[1].split("\nuser ", 1)[0]
     assert f"topic write {settings.telemetry_topic}" in simulator_acl
-    assert "topic write evolver/dev/evolver-sim-01/active-vials/request" in simulator_acl
-    assert "topic read evolver/dev/evolver-sim-01/active-vials/response" in simulator_acl
-    assert "topic read evolver/v1/+/telemetry" in acl
+    assert "topic write evolver/v1/evolver-sim-01/active-vials/request" in simulator_acl
+    assert "topic read evolver/v1/evolver-sim-01/active-vials/response" in simulator_acl
+    ingestion_acl = acl.split("user evolver-ingestion\n", 1)[1].split("\nuser ", 1)[0]
+    assert "topic read evolver/v1/evolver-sim-01/active-vials/request" in ingestion_acl
+    assert "topic write evolver/v1/evolver-sim-01/active-vials/response" in ingestion_acl
+    assert "topic read evolver/v1/+/telemetry" in ingestion_acl
