@@ -68,7 +68,7 @@ class MqttPublisher:
         self._command_executor = ThreadPoolExecutor(max_workers=1)
         self._command_lock = threading.Lock()
         self._pump_state_lock = threading.Lock()
-        self._pump_states: dict[tuple[int, int], bool] = {}
+        self._pump_states: dict[tuple[str, int], bool] = {}
         self._client = client_factory(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=settings.mqtt_client_id,
@@ -119,62 +119,63 @@ class MqttPublisher:
             if command.equipment_id != self._settings.equipment_id:
                 return
             try:
+                allocation_id = str(UUID(command.experiment_run_id or ""))
+            except ValueError:
+                self._send_command_result(command, "rejected", "invalid_payload")
+                return
+            if command.pump_id != 1:
+                self._send_command_result(command, "rejected", "invalid_payload")
+                return
+            try:
+                allocations = self.active_vials()
+            except (MqttConnectionError, MqttPublishError):
+                LOGGER.warning("Não foi possível verificar o experimento do comando")
+                return
+            active = next((v for v in allocations if str(v.allocation_id) == allocation_id), None)
+            if active is None:
+                self._send_command_result(command, "rejected", "invalid_payload")
+                return
+            try:
                 with closing(self._state_database()) as database:
                     previous = database.execute(
-                        "SELECT status, reason FROM completed_commands WHERE command_id = ?",
-                        (str(command.command_id),),
+                        """SELECT status, reason FROM completed_allocation_commands
+                        WHERE allocation_id = ? AND command_id = ?""",
+                        (allocation_id, str(command.command_id)),
                     ).fetchone()
                     if previous:
                         self._send_command_result(command, *previous)
                         return
-                    reason = None
-                    if command.is_expired_at(datetime.now(UTC)):
-                        reason = "expired"
-                    elif command.pump_id != 1 or command.experiment_run_id is None:
-                        reason = "invalid_payload"
-                    else:
-                        try:
-                            allocations = self.active_vials()
-                        except (MqttConnectionError, MqttPublishError):
-                            LOGGER.warning("Não foi possível verificar o experimento do comando")
-                            return
-                        active = next(
-                            (v for v in allocations
-                             if str(v.experiment_id) == command.experiment_run_id), None,
-                        )
-                        if active is None:
-                            reason = "invalid_payload"
                     with database:
-                        if reason is None and command.is_expired_at(datetime.now(UTC)):
-                            reason = "expired"
+                        reason = "expired" if command.is_expired_at(datetime.now(UTC)) else None
                         if reason is None:
-                            experiment_id = active.experiment_id
                             issued_at = command.created_at.astimezone(UTC).isoformat(
                                 timespec="microseconds",
                             )
                             advanced = database.execute("""
-                                INSERT INTO pump_command_order VALUES (?, ?)
-                                ON CONFLICT (experiment_id) DO UPDATE
+                                INSERT INTO allocation_pump_order VALUES (?, ?)
+                                ON CONFLICT (allocation_id) DO UPDATE
                                 SET issued_at = excluded.issued_at
-                                WHERE excluded.issued_at > pump_command_order.issued_at
-                            """, (experiment_id, issued_at)).rowcount
+                                WHERE excluded.issued_at > allocation_pump_order.issued_at
+                            """, (allocation_id, issued_at)).rowcount
                             if not advanced:
                                 reason = "invalid_payload"
                             else:
                                 state = command.action == "turn_on"
                                 database.execute(
-                                    "INSERT OR REPLACE INTO pump_states VALUES (?, ?, ?)",
-                                    (experiment_id, active.vial_id, state),
+                                    "INSERT OR REPLACE INTO allocation_pump_states "
+                                    "VALUES (?, ?, ?)",
+                                    (allocation_id, active.vial_id, state),
                                 )
                         database.execute(
-                            "INSERT INTO completed_commands VALUES (?, ?, ?)",
-                            (str(command.command_id), "rejected" if reason else "executed", reason),
+                            "INSERT INTO completed_allocation_commands VALUES (?, ?, ?, ?)",
+                            (allocation_id, str(command.command_id),
+                             "rejected" if reason else "executed", reason),
                         )
                     if reason:
                         self._send_command_result(command, "rejected", reason)
                         return
                     with self._pump_state_lock:
-                        self._pump_states[experiment_id, active.vial_id] = state
+                        self._pump_states[allocation_id, active.vial_id] = state
                     self._send_command_result(command, "received")
                     self._send_command_result(command, "executed")
             except (OSError, sqlite3.Error) as exc:
@@ -186,20 +187,22 @@ class MqttPublisher:
         database = sqlite3.connect(path)
         try:
             database.execute("""
-                CREATE TABLE IF NOT EXISTS pump_states (
-                    experiment_id INTEGER NOT NULL, vial_id INTEGER NOT NULL,
+                CREATE TABLE IF NOT EXISTS allocation_pump_states (
+                    allocation_id TEXT NOT NULL, vial_id INTEGER NOT NULL,
                     is_on INTEGER NOT NULL,
-                    PRIMARY KEY (experiment_id, vial_id)
+                    PRIMARY KEY (allocation_id, vial_id)
                 )
             """)
             database.execute("""
-                CREATE TABLE IF NOT EXISTS completed_commands (
-                    command_id TEXT PRIMARY KEY, status TEXT NOT NULL, reason TEXT
+                CREATE TABLE IF NOT EXISTS completed_allocation_commands (
+                    allocation_id TEXT NOT NULL, command_id TEXT NOT NULL,
+                    status TEXT NOT NULL, reason TEXT,
+                    PRIMARY KEY (allocation_id, command_id)
                 )
             """)
             database.execute("""
-                CREATE TABLE IF NOT EXISTS pump_command_order (
-                    experiment_id INTEGER PRIMARY KEY, issued_at TEXT NOT NULL
+                CREATE TABLE IF NOT EXISTS allocation_pump_order (
+                    allocation_id TEXT PRIMARY KEY, issued_at TEXT NOT NULL
                 )
             """)
         except Exception:
@@ -274,9 +277,9 @@ class MqttPublisher:
         try:
             with self._pump_state_lock, closing(self._state_database()) as database:
                 self._pump_states = {
-                    (experiment_id, vial_id): bool(is_on)
-                    for experiment_id, vial_id, is_on in database.execute(
-                        "SELECT experiment_id, vial_id, is_on FROM pump_states"
+                    (allocation_id, vial_id): bool(is_on)
+                    for allocation_id, vial_id, is_on in database.execute(
+                        "SELECT allocation_id, vial_id, is_on FROM allocation_pump_states"
                     )
                 }
         except (OSError, sqlite3.Error) as exc:
@@ -329,7 +332,7 @@ class MqttPublisher:
 
     def pump_is_on(self, allocation: ActiveVial) -> bool:
         with self._pump_state_lock:
-            return self._pump_states.get((allocation.experiment_id, allocation.vial_id), False)
+            return self._pump_states.get((str(allocation.allocation_id), allocation.vial_id), False)
 
     def active_vials(self) -> list[ActiveVial]:
         with self._allocation_lock:

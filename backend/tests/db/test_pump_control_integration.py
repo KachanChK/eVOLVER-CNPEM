@@ -10,7 +10,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from evolver.api.main import app
-from evolver.ingestion.__main__ import store_v1_message
+from evolver.ingestion.__main__ import active_vials, store_v1_message
 from evolver.ingestion.control import (
     command_is_current,
     expire_commands,
@@ -26,6 +26,7 @@ from evolver_contracts.models import (
     RejectedCommandResult,
     TelemetryEvent,
 )
+from evolver_contracts.pilot import AllocationRequest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
@@ -62,6 +63,14 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
     def db_now() -> datetime:
         with engine.connect() as connection:
             return connection.scalar(text("SELECT clock_timestamp()"))
+
+    def allocation_id(experiment_id: int) -> str:
+        request = AllocationRequest(request_id=uuid4())
+        return str(next(
+            vial.allocation_id
+            for vial in active_vials(engine, request.model_dump_json().encode()).vials
+            if vial.experiment_id == experiment_id
+        ))
 
     def reading(
         experiment_id: int, value: float, sequence: int, generated_at: datetime,
@@ -119,7 +128,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         with engine.connect() as connection:
             queued = pending_commands(connection, datetime.now(UTC))
         assert len(queued) == 1
-        assert queued[0].experiment_run_id == str(experiment_id)
+        assert queued[0].experiment_run_id == allocation_id(experiment_id)
         assert queued[0].pump_id == 1
         assert queued[0].action == "turn_on"
         assert first[0]["sent_at"] is None and first[0]["puback_at"] is None
@@ -272,7 +281,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         with engine.begin() as connection:
             invalidate_controls(connection)
             assert all(
-                command.experiment_run_id != str(uncertain_id)
+                command.experiment_run_id != allocation_id(uncertain_id)
                 for command in pending_commands(connection, datetime.now(UTC))
             )
         assert reading(uncertain_id, 0.8, 2, db_now(), vial_id=4) == "gravada"
@@ -297,7 +306,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         def ready_off(experiment_id: int) -> None:
             with engine.connect() as connection:
                 assert any(
-                    command.experiment_run_id == str(experiment_id)
+                    command.experiment_run_id == allocation_id(experiment_id)
                     and command.action == "turn_off"
                     for command in pending_commands(connection, datetime.now(UTC))
                 )
@@ -355,7 +364,8 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
             invalidate_controls(connection)
             pause_control(connection, pending_pause_id, datetime.now(UTC))
             assert all(
-                command.experiment_run_id != str(pending_pause_id) or command.action == "turn_off"
+                command.experiment_run_id != allocation_id(pending_pause_id)
+                or command.action == "turn_off"
                 for command in pending_commands(connection, datetime.now(UTC))
             )
         executed(pending_on)
@@ -527,6 +537,41 @@ class PumpRun:
         )
         with self.engine.begin() as connection:
             record_result(connection, result)
+
+
+@pytest.mark.integration
+def test_pump_commands_target_the_allocation_after_database_identity_reset(
+    control_database: Engine,
+) -> None:
+    request = AllocationRequest(request_id=uuid4()).model_dump_json().encode()
+    with TestClient(app) as client:
+        old = PumpRun(control_database, client)
+        old_allocation = active_vials(control_database, request).vials[0]
+        old.od(0.7, 1, old.now())
+        previous, = old.queued()
+        assert previous.experiment_run_id == str(old_allocation.allocation_id)
+        assert old_allocation.allocation_id is not None
+        with control_database.begin() as connection:
+            assert command_is_current(connection, previous, old.now())
+        old.result(previous.command_id)
+        with control_database.begin() as connection:
+            connection.execute(text("TRUNCATE experiments RESTART IDENTITY CASCADE"))
+
+        new = PumpRun(control_database, client)
+        new_allocation = active_vials(control_database, request).vials[0]
+        assert (old_allocation.experiment_id, old_allocation.vial_id) == (new.id, 1)
+        assert new_allocation.allocation_id != old_allocation.allocation_id
+        with control_database.connect() as connection:
+            assert connection.scalar(
+                text("SELECT confirmed_state FROM pump_control WHERE experiment_id = :id"),
+                {"id": new.id},
+            ) == "off"
+        new.od(0.7, 1, new.now())
+        current, = new.queued()
+        assert current.experiment_run_id == str(new_allocation.allocation_id)
+        with control_database.begin() as connection:
+            assert not command_is_current(connection, previous, new.now())
+            assert command_is_current(connection, current, new.now())
 
 
 @pytest.mark.integration

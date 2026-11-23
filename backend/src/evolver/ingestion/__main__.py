@@ -37,7 +37,7 @@ def active_vials(engine: Engine, payload: bytes) -> AllocationResponse:
         rows = (
             connection.execute(
                 text("""
-                SELECT e.vial_id, e.id AS experiment_id
+                SELECT e.vial_id, e.id AS experiment_id, e.allocation_id
                 FROM experiments e JOIN vials v ON v.vial_id = e.vial_id
                 WHERE v.equipment_id = :equipment_id AND e.ended_at IS NULL
                 ORDER BY e.vial_id

@@ -42,7 +42,7 @@ class SimulatedTelemetryGenerator:
         self._settings = settings
         self._allocations = allocations
         self._pump_is_on = pump_is_on
-        self._od_states: dict[tuple[int, int], tuple[float, random.Random]] = {}
+        self._od_states: dict[tuple[int, int, UUID | None], tuple[float, random.Random]] = {}
         seed_source = rng if rng is not None else random.Random(settings.seed)
         seeds = {kind: seed_source.getrandbits(128) for kind in MEASUREMENT_TYPES}
         self._od_seed = seeds["od"]
@@ -61,7 +61,7 @@ class SimulatedTelemetryGenerator:
     def update_allocations(self, allocations: list[ActiveVial]) -> None:
         """Atualiza os frascos entre rodadas, preservando a sequência e os geradores."""
         self._allocations = list(allocations)
-        active = {(vial.vial_id, vial.experiment_id) for vial in allocations}
+        active = {(vial.vial_id, vial.experiment_id, vial.allocation_id) for vial in allocations}
         self._od_states = {key: state for key, state in self._od_states.items() if key in active}
         self._position = 0
 
@@ -101,7 +101,7 @@ class SimulatedTelemetryGenerator:
         return event
 
     def _next_od(self, allocation: ActiveVial) -> float:
-        key = (allocation.vial_id, allocation.experiment_id)
+        key = (allocation.vial_id, allocation.experiment_id, allocation.allocation_id)
         previous = self._od_states.get(key)
         if previous is None:
             value = round(self._settings.od_baseline, 6)

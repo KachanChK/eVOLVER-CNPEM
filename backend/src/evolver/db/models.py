@@ -19,6 +19,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -44,6 +45,7 @@ class Vial(Base):
 class Experiment(Base):
     __tablename__ = "experiments"
     __table_args__ = (
+        UniqueConstraint("allocation_id", name="uq_experiments_allocation_id"),
         CheckConstraint("ended_at >= started_at", name="ck_experiment_interval"),
         CheckConstraint(
             "deleted_at IS NULL OR (ended_at IS NOT NULL AND deleted_at >= ended_at)",
@@ -64,6 +66,9 @@ class Experiment(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    allocation_id: Mapped[UUID] = mapped_column(
+        Uuid, server_default=text("gen_random_uuid()"), nullable=False,
+    )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     culture_type: Mapped[str | None] = mapped_column(Text)
     od_min: Mapped[Decimal | None] = mapped_column(Numeric)

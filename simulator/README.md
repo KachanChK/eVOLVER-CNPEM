@@ -16,6 +16,33 @@ durável (`~/.evolver-simulator/pump-state.sqlite3`). Configure
 `SIMULATOR_PUMP_STATE_PATH` para outro caminho persistente se necessário. O
 simulador grava o estado antes de confirmar a execução de um comando.
 
+### Atualizar uma instalação existente
+
+Aplique a migração Alembic `20261122_03` e atualize a ingestão e o simulador
+juntos. A descoberta MQTT inclui o UUID da alocação, que os comandos de bomba
+carregam no campo existente `experiment_run_id`. Os tópicos, o schema dos
+comandos e resultados, e os IDs numéricos na API e na telemetria são preservados.
+O simulador novo consegue ler alocações antigas sem UUID para publicar
+telemetria, mas rejeita comandos numéricos e usa a bomba desligada nesses vials.
+O simulador antigo não reconhece a resposta nova de descoberta.
+
+Mantenha o SQLite. As tabelas antigas continuam no arquivo. Como seus registros
+numéricos podem pertencer a outro banco, o simulador não os restaura nem
+reaproveita sua ordem ou seus resultados. Na atualização, reinicie a ingestão
+para reconciliar a bomba com `turn_off`. Depois disso, alocações com o mesmo
+UUID preservam o estado entre reinícios. Um banco recriado emite UUIDs novos,
+mesmo se repetir IDs numéricos.
+
+Revise estas variáveis no ambiente ou no arquivo `.env`:
+
+- `SIMULATOR_OD_BASELINE` agora exige um valor entre 0,10 e 0,80, inclusive.
+- `SIMULATOR_OD_NOISE` aceitava até 0,10. Reduza valores acima de 0,01 antes
+  de iniciar o simulador. O valor 0 continua desabilitando o ruído.
+- Remova `SIMULATOR_OD_VARIATION`. A antiga onda de OD foi substituída pelos
+  passos da bomba e a variável é ignorada.
+
+### Dinâmica de OD
+
 A primeira leitura de OD de cada par vial/experimento usa `SIMULATOR_OD_BASELINE`
 (padrão 0,35). Nas próximas leituras a OD sobe **0,02 por amostra** com a bomba
 desligada e desce **0,05 por amostra** com a bomba ligada. Na cadência de 0,5 s,
@@ -96,9 +123,8 @@ consulte a tabela para verificar o salvamento.
 - Para experimentar uma pausa, configure `SIMULATOR_PAUSE_AFTER_MESSAGES` e
   `SIMULATOR_PAUSE_SECONDS`. Para simular uma falha, use `SIMULATOR_FAIL_AFTER_MESSAGES`.
 
-As opções avançadas de pH e temperatura estão em `SimulatorSettings`. A antiga
-opção `SIMULATOR_OD_VARIATION` era usada pela onda de OD e pode ser removida do
-ambiente. MQTT usa versão 5, QoS 1 e mensagens não retidas. Não há fila
+As opções avançadas de pH e temperatura estão em `SimulatorSettings`.
+MQTT usa versão 5, QoS 1 e mensagens não retidas. Não há fila
 local nem confirmação de gravação no banco; se a ingestão ou o banco estiverem fora
 do ar, a temperatura pode não ser salva.
 

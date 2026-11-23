@@ -24,6 +24,7 @@ class ActiveVial(BaseModel):
 
     vial_id: VialID
     experiment_id: DatabaseID
+    allocation_id: UUID | None = None
 
 
 class AllocationResponse(AllocationRequest):

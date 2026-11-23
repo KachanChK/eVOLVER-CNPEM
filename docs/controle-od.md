@@ -22,14 +22,17 @@ não entram no controle automático.
   `executed` confirma o novo estado simulado. Sem resultado conclusivo em 10 s,
   o estado fica `unknown` e o controlador não repete o comando.
 - A ingestão publica comandos com QoS 1 e `retain=false` usando `pump_id: 1` e
-  `experiment_run_id`. O simulador consulta a alocação ativa antes de executar
-  e rejeita vínculo ausente, encerrado ou incompatível.
+  o UUID persistido da alocação em `experiment_run_id`. O simulador consulta a
+  alocação ativa antes de executar ou repetir um resultado e rejeita vínculo
+  ausente, encerrado ou incompatível. A telemetria continua usando o ID numérico.
 - O simulador grava estado e identidade dos comandos concluídos em SQLite antes
   de publicar `executed`. O arquivo padrão é
   `~/.evolver-simulator/pump-state.sqlite3` e pode ser definido por
   `SIMULATOR_PUMP_STATE_PATH`. Preserve esse arquivo entre reinícios do simulador.
-  A chave do estado inclui experimento e vial, para não herdar o estado de outro
-  experimento no mesmo vial.
+  O estado usa o UUID da alocação e o vial. A ordenação e os resultados também
+  são separados por UUID, inclusive quando o banco recriado reutiliza IDs
+  numéricos. A atualização deixa registros antigos do SQLite no arquivo e
+  inicia a reconciliação com a ingestão após reiniciar os serviços.
 - A ingestão marca o estado como desconhecido ao iniciar ou reconectar ao MQTT.
   Após concluir ou expirar qualquer comando pendente, a próxima OD nova e
   recente solicita um `turn_off` de reconciliação; somente
