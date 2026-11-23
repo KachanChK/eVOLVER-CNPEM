@@ -82,12 +82,26 @@ const settle = async () => {
   await nextTick()
 }
 
-test('pump 503 and an outdated GET do not block charts or overwrite a successful pause', async (t) => {
+test('pump snapshots recover from 503 and discard an outdated GET after a pause', async (t) => {
   const root = node('root')
   const start = new Date().toISOString()
   const experiment = { id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start }
-  const automatic = { state: 'automatic', ending: false }
-  const pausing = { state: 'pausing', ending: false, pending_command_id: 'command-1' }
+  const automatic = {
+    pump: { state: 'automatic', ending: false, confirmed_state: 'on' },
+    latest_od: { value: 0.4, generated_at: start },
+    history: { transitions: [], commands: [] },
+  }
+  const pausedSnapshot = {
+    pump: { state: 'paused', ending: false, confirmed_state: 'off', pending_command_id: null },
+    latest_od: { value: 0.35, generated_at: start },
+    od_readings: [{ value: 0.4, generated_at: start }, { value: 0.35, generated_at: start }],
+    history: {
+      transitions: [{ reason: 'pause', observed_at: start }],
+      commands: [{
+        command_id: 'command-1', desired_state: 'off', result_status: 'executed', result_at: start,
+      }],
+    },
+  }
   const response = (body, status = 200) => Response.json(body, { status })
   const unavailable = () => response({ detail: 'Banco de dados indisponível.' }, 503)
   let getPump = unavailable
@@ -101,16 +115,11 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
     const base = '/api/experiments/1'
     if (url === base) return response(experiment)
     if (url === base + '/closure') return response({ state: 'none' })
-    if (url === `${base}/pump`) return getPump()
-    if (url === `${base}/pump/history`) {
-      return response({
-        transitions: [],
-        commands: [{
-          command_id: 'command-1', desired_state: 'off', result_status: 'executed', result_at: start,
-        }],
-      })
+    if (url === `${base}/pump/snapshot`) return getPump(options.signal)
+    if (url === `${base}/pump/pause` && options?.method === 'POST') {
+      getPump = () => response(pausedSnapshot)
+      return response({ state: 'pausing', ending: false, pending_command_id: 'command-1' })
     }
-    if (url === `${base}/pump/pause` && options?.method === 'POST') return response(pausing)
     if (url.startsWith(`${base}/readings/`) || url === `${base}/temperature-readings`) {
       return response(readings)
     }
@@ -147,20 +156,32 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
   assert.ok(pausePump)
 
   let finishOldGet
-  getPump = () => new Promise((resolve) => {
+  let outdatedSignal
+  getPump = (signal) => new Promise((resolve) => {
+    outdatedSignal = signal
     finishOldGet = () => resolve(response(automatic))
   })
   poll()
   pausePump.props.onClick()
   await settle()
   assert.ok(button('Despausar bomba'))
+  assert.ok(outdatedSignal.aborted)
+  assert.deepEqual(chartCounts(), [1, 1, 1])
+  assert.ok(button('Retomar visualização'))
+  button('Retomar visualização').props.onClick()
+  await settle()
+  assert.deepEqual(chartCounts(), [1, 1, 2])
+  const coherent = text()
+  assert.match(coherent, /Última OD0,35/)
+  assert.match(coherent, /Bomba pausada/)
+  assert.match(coherent, /Desligada \(simulada\)/)
+  assert.match(coherent, /Comando pendenteNenhum/)
+  assert.match(coherent, /Última mudançaPausa solicitada/)
+  assert.match(coherent, /Último resultado registradoDesligar · Executado no simulador/)
   finishOldGet()
   await settle()
-  assert.ok(button('Despausar bomba'))
-  assert.match(text(), /Pausando…/)
-  assert.match(text(), /Comando pendenteAtualizando estado…/)
-  assert.match(text(), /Último resultado registradoDesligar · Executado no simulador/)
-  assert.ok(button('Retomar visualização'))
+  assert.equal(text(), coherent)
+  assert.deepEqual(chartCounts(), [1, 1, 2])
 })
 
 
@@ -208,7 +229,7 @@ for (const deleting of [false, true]) {
         if (url === base + '/closure') {
           return unavailable ? Response.json({}, { status: 503 }) : Response.json(closure)
         }
-        if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+        if (url === base + '/pump/snapshot') return Response.json({ pump: { state: 'automatic', ending: false } })
         if (url === base) {
           if (deleting && closure.state === 'completed') return Response.json({}, { status: 404 })
           return Response.json(details)
@@ -304,7 +325,10 @@ test('an unconfirmed closure is actionable while initial readings time out', asy
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (url === base) return Response.json(details)
     if (url === base + '/closure') return Response.json({ state: 'unconfirmed', action: 'delete' })
-    if (url === base + '/pump') return Response.json({ state: 'automatic', ending: true })
+    if (url === base + '/pump/snapshot') return Response.json({
+      pump: { state: 'automatic', ending: true },
+      od_readings: [{ generated_at: start, value: 0.7 }],
+    })
     if (url === base + '/temperature-readings' && slow) {
       temperatureSignal = options?.signal
       return new Promise((_resolve, reject) => {
@@ -368,7 +392,7 @@ for (const closureFirst of [false, true]) {
       if (url === base + '/closure') {
         return new Promise((resolve) => { finishClosure = () => resolve(Response.json(closure)) })
       }
-      if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+      if (url === base + '/pump/snapshot') return Response.json({ pump: { state: 'automatic', ending: false } })
       return Response.json([])
     })
     const app = renderer.createApp(ExperimentDetails, { id: '1' })
@@ -430,7 +454,7 @@ for (const action of ['delete', 'inactivate']) {
       }
       if (url === base) return Response.json(details)
       if (url === base + '/closure') return Response.json(closure)
-      if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+      if (url === base + '/pump/snapshot') return Response.json({ pump: { state: 'automatic', ending: false } })
       return Response.json([])
     })
     const app = renderer.createApp(ExperimentDetails, { id: '1', onChanged: (message) => notices.push(message) })
@@ -506,7 +530,7 @@ for (const action of ['pause', 'resume']) {
       }
       if (url === base) return Response.json(details)
       if (url === base + '/closure') return Response.json({ state: 'none' })
-      if (url === base + '/pump') return Response.json({ state, ending: false })
+      if (url === base + '/pump/snapshot') return Response.json({ pump: { state, ending: false } })
       return Response.json([])
     })
     const app = renderer.createApp(ExperimentDetails, { id: '1' })

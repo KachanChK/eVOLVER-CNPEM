@@ -2,10 +2,10 @@
   "network": true,
   "broker_from_simulator": "broker:1883",
   "unreachable_monitor": [
-    50183,
-    32780
+    62235,
+    32788
   ],
-  "api_port": 50183,
-  "db_port": 32780,
-  "broker_host_port": 50182
+  "api_port": 62235,
+  "db_port": 32788,
+  "broker_host_port": 62234
 }

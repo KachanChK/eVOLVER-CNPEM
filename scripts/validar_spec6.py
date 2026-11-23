@@ -64,7 +64,6 @@ def run(args):
     from playwright.sync_api import expect, sync_playwright
     from sqlalchemy import create_engine, text
 
-    expect.set_options(timeout=15_000)
     root = Path(__file__).resolve().parents[1]
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -238,7 +237,8 @@ COPY driver.py .
         stack.callback(browser.close)
         page = browser.new_page(viewport={"width": 1440, "height": 1000},
                                 locale="pt-BR", timezone_id="America/Sao_Paulo")
-        page.set_default_timeout(12_000)
+        page.set_default_timeout(15_000)
+        expect.set_options(timeout=15_000)
         page.on("dialog", lambda dialog: dialog.accept())
         page.goto(str(client.base_url))
         page.get_by_role("button", name="Criar experimento").click()
@@ -265,11 +265,14 @@ COPY driver.py .
         summary = page.locator(".pump-summary")
         scenarios = {}
 
+        def snapshot():
+            return api(base + "/pump/snapshot")
+
         def state():
-            return api(base + "/pump")
+            return snapshot()["pump"]
 
         def history():
-            return api(base + "/pump/history")
+            return snapshot()["history"]
 
         def at_pump(mode, confirmed):
             return wait_for(
@@ -278,13 +281,105 @@ COPY driver.py .
                 f"{mode}/{confirmed}",
             )
 
+        def matching_panel(current):
+            fields = {}
+
+            def check(label, description, date=None, command_id=None, *, od=False):
+                term = summary.get_by_text(label, exact=True)
+                value = term.locator("xpath=following-sibling::dd")
+                if od:
+                    expect(value.locator("strong")).to_have_text(description)
+                else:
+                    expect(value).to_contain_text(description)
+                details = {}
+                if date:
+                    time_element = value.locator("time")
+                    expect(time_element).to_have_attribute("datetime", date)
+                    rendered_time = page.evaluate("""value =>
+                        new Intl.DateTimeFormat('pt-BR', {
+                            dateStyle: 'short', timeStyle: 'medium'
+                        }).format(new Date(value))
+                    """, date)
+                    expect(time_element).to_have_text(rendered_time)
+                    details["datetime"] = time_element.get_attribute("datetime")
+                if command_id:
+                    if label == "Comando pendente":
+                        expect(value.locator("code")).to_have_text(command_id)
+                    else:
+                        expect(value).to_have_attribute("data-command-id", command_id)
+                    details["command_id"] = command_id
+                details["text"] = value.inner_text()
+                fields[label] = details
+
+            latest = current["latest_od"]
+            if latest:
+                formatted = f'{latest["value"]:.6f}'.rstrip("0").rstrip(".").replace(".", ",")
+                check("Última OD", formatted, latest["generated_at"], od=True)
+                chart = page.get_by_role("region", name="Densidade óptica (OD)", exact=True)
+                expect(chart.locator(".latest strong")).to_have_text(formatted)
+                chart_latest = chart.locator(".latest span")
+                expect(chart_latest).to_contain_text(fields["Última OD"]["text"].splitlines()[1])
+                fields["Último valor no gráfico de OD"] = {
+                    "text": chart.locator(".latest strong").inner_text() + "\n"
+                    + chart_latest.inner_text(),
+                    "datetime": latest["generated_at"],
+                }
+            else:
+                check("Última OD", "Sem medições")
+            pump = current["pump"]
+            check("Estado da bomba", {
+                "on": "Ligada (simulada)", "off": "Desligada (simulada)", "unknown": "Desconhecida",
+            }[pump["confirmed_state"]])
+            mode = "Encerrado" if current["ended_at"] else (
+                "Pausado para encerrar" if pump["ending"] else {
+                    "automatic": "Bomba em modo automático", "paused": "Bomba pausada",
+                    "pausing": "Pausando…",
+                }[pump["state"]]
+            )
+            check("Modo de controle", mode)
+            commands = current["history"]["commands"]
+            status = {"pending": "Aguardando resultado", "received": "Recebido pelo simulador",
+                      "executed": "Executado no simulador"}
+
+            def command_label(command):
+                action = "Ligar" if command["desired_state"] == "on" else "Desligar"
+                return f'{action} · {status[command["result_status"]]}'
+
+            if pending_id := pump["pending_command_id"]:
+                pending = next(c for c in commands if c["command_id"] == pending_id)
+                check("Comando pendente", command_label(pending), command_id=pending_id)
+            else:
+                check("Comando pendente", "Nenhum")
+            transition = current["history"]["transitions"][-1]
+            check("Última mudança", {
+                "initial": "Início da alocação",
+                "od_min": "OD atingiu ou ficou abaixo do limite mínimo",
+                "od_max": "OD atingiu ou superou o limite máximo", "pause": "Pausa solicitada",
+                "resume": "Retomada solicitada", "ending": "Encerramento solicitado",
+                "reconcile": "Reconciliação do estado da bomba",
+                "confirmation_lost": "Confirmação perdida ou indisponível",
+            }[transition["reason"]], transition["observed_at"])
+            results = [c for c in commands if c["result_status"] not in ("pending", "received")]
+            if results:
+                latest_result = max(
+                    reversed(results), key=lambda c: datetime.fromisoformat(c["result_at"]),
+                )
+                check("Último resultado registrado", command_label(latest_result),
+                      latest_result["result_at"], latest_result["command_id"])
+            else:
+                check("Último resultado registrado", "Sem resultado registrado")
+            return fields
+
         def capture(label, *, input_event=None, extra=None):
+            current = snapshot()
+            rendered = matching_panel(current)
             with engine.connect() as connection:
+                connection.execution_options(isolation_level="REPEATABLE READ")
                 readings = connection.execute(text("""
                     SELECT event_id, od_value, generated_at, received_at, sequence,
                            allocation_verified
                     FROM od_readings WHERE experiment_id = :id
-                    ORDER BY generated_at DESC, sequence DESC LIMIT 4
+                    ORDER BY generated_at DESC, event_id DESC LIMIT 4
                 """), {"id": experiment_id}).mappings()
                 control = connection.execute(text("""
                     SELECT e.id, e.allocation_id, e.ended_at, c.paused, c.resume_pending,
@@ -301,8 +396,12 @@ COPY driver.py .
                       ON od.event_id = p.reading_event_id AND od.experiment_id = p.experiment_id
                     WHERE p.experiment_id = :id ORDER BY p.created_at
                 """), {"id": experiment_id}).mappings()
+                transition = connection.execute(text("""
+                    SELECT observed_at, paused, confirmed_state, reason, command_id
+                    FROM pump_transitions WHERE experiment_id = :id ORDER BY id DESC LIMIT 1
+                """), {"id": experiment_id}).mappings().one()
                 data = {"control": dict(control), "od": [dict(row) for row in readings],
-                        "commands": [dict(row) for row in commands]}
+                        "commands": [dict(row) for row in commands], "transition": dict(transition)}
                 if input_event:
                     params = {"id": experiment_id, "event_id": input_event["event_id"]}
                     row = connection.execute(text("""
@@ -310,9 +409,32 @@ COPY driver.py .
                         FROM od_readings WHERE experiment_id = :id AND event_id = :event_id
                     """), params).mappings().one()
                     data["input_od"] = dict(row)
+            pump = current["pump"]
+            assert data["control"]["confirmed_state"] == pump["confirmed_state"]
+            assert data["control"]["ending"] == pump["ending"]
+            pending_id = data["control"]["pending_command_id"]
+            assert (str(pending_id) if pending_id else None) == pump["pending_command_id"]
+            observed = current["history"]["transitions"][-1]
+            assert transition["reason"] == observed["reason"]
+            assert transition["observed_at"] == datetime.fromisoformat(observed["observed_at"])
+            assert transition["paused"] == observed["paused"]
+            assert [(str(c["command_id"]), c["result_status"]) for c in data["commands"]] == [
+                (c["command_id"], c["result_status"]) for c in current["history"]["commands"]
+            ]
+            latest = current["latest_od"]
+            if latest:
+                assert str(data["od"][0]["event_id"]) == latest["event_id"]
+                assert data["od"][0]["od_value"] == latest["value"]
+                generated_at = datetime.fromisoformat(latest["generated_at"])
+                assert data["od"][0]["generated_at"] == generated_at
+            else:
+                assert not data["od"]
             scenarios[label] = {
-                "input": input_event, "extra": extra, "database": data, "api_pump": state(),
-                "api_history": history(), "rendered_summary": summary.inner_text(),
+                "input": input_event, "extra": extra, "database": data,
+                "api_pump": current["pump"], "api_history": current["history"],
+                "api_latest_od": latest, "api_ended_at": current["ended_at"],
+                "rendered_fields": rendered,
+                "rendered_summary": summary.inner_text(),
             }
             save_json(output / "cenarios.json", scenarios)
             page.screenshot(path=output / f"{label}.jpg", quality=82, full_page=True)

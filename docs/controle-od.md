@@ -80,8 +80,11 @@ campo de estado da bomba como **Desconhecida**.
 
 `GET /api/experiments/{id}/pump` expõe o modo, o estado confirmado mais recente e
 o identificador do comando pendente. `GET /api/experiments/{id}/pump/history`
-expõe solicitações e resultados por `command_id` e as mudanças de modo e de
-estado, observadas pelo banco na mesma transação do controlador. O gráfico de
+expõe solicitações, resultados e transições da bomba em uma fotografia do banco.
+A interface consulta `GET /api/experiments/{id}/pump/snapshot`, que lê modo,
+estado, histórico, leituras de OD e encerramento na mesma fotografia transacional.
+Após uma ação, o painel aguarda a nova fotografia completa e descarta
+consultas anteriores à ação. O gráfico de
 OD usa os limites cadastrados, marca intenções e resultados separadamente e
 mostra faixas independentes para bomba ligada com confirmação e automação
 pausada. Uma pausa pode se sobrepor ao trecho ligado enquanto o desligamento

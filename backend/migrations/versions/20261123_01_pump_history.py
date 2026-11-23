@@ -9,6 +9,9 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Controller mutations lock experiments before changing pump control or commands.
+    op.execute("LOCK TABLE experiments IN EXCLUSIVE MODE")
+    op.execute("LOCK TABLE pump_control IN SHARE ROW EXCLUSIVE MODE")
     op.execute("""
         CREATE TABLE pump_transitions (
             id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

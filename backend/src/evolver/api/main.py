@@ -225,6 +225,14 @@ class OtherReadingView(BaseModel):
     received_at: datetime
 
 
+class PumpSnapshotView(BaseModel):
+    pump: PumpView
+    history: PumpHistoryView
+    latest_od: OtherReadingView | None
+    od_readings: list[OtherReadingView]
+    ended_at: datetime | None
+
+
 @app.exception_handler(RequestValidationError)
 async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
     # Keep Decimal values in validation errors serializable, including NaN and infinity.
@@ -339,13 +347,38 @@ def experiment_details(experiment_id: ExperimentID, db: Database) -> Experiment:
 
 @app.get("/api/experiments/{experiment_id}/pump", response_model=PumpView)
 def get_pump(experiment_id: ExperimentID, db: Database) -> PumpView:
+    db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
     visible_experiment(db, experiment_id)
     return pump_view(db.get(PumpControl, experiment_id))
 
 
 @app.get("/api/experiments/{experiment_id}/pump/history", response_model=PumpHistoryView)
 def get_pump_history(experiment_id: ExperimentID, db: Database) -> PumpHistoryView:
+    db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
     visible_experiment(db, experiment_id)
+    return pump_history(db, experiment_id)
+
+
+@app.get("/api/experiments/{experiment_id}/pump/snapshot", response_model=PumpSnapshotView)
+def get_pump_snapshot(experiment_id: ExperimentID, db: Database) -> PumpSnapshotView:
+    db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+    experiment = visible_experiment(db, experiment_id)
+    pump = pump_view(db.get(PumpControl, experiment_id))
+    history = pump_history(db, experiment_id)
+    od_readings = [
+        OtherReadingView.model_validate(reading)
+        for reading in db.scalars(
+            select(OdReading).where(OdReading.experiment_id == experiment_id)
+            .order_by(OdReading.generated_at, OdReading.event_id)
+        )
+    ]
+    return PumpSnapshotView(
+        pump=pump, history=history, ended_at=experiment.ended_at,
+        latest_od=od_readings[-1] if od_readings else None, od_readings=od_readings,
+    )
+
+
+def pump_history(db: Session, experiment_id: int) -> PumpHistoryView:
     transitions = db.execute(text("""
         SELECT observed_at, paused, confirmed_state, reason, command_id
         FROM pump_transitions WHERE experiment_id = :id ORDER BY id

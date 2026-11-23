@@ -17,7 +17,9 @@ Ensaio com OD simulada, vial 1 e limites de 0,30 e 0,40. O cadastro e as ações
 | Reinício do simulador | O mesmo volume do SQLite conserva o estado ligado no início do processo reiniciado. A próxima leitura fresca solicita desligamento de reconciliação e o simulador confirma. | [Reinício](10-reinicio.jpg) |
 | Encerramento com bomba ligada | O desligamento executado é persistido antes de o experimento ficar inativo e o vial voltar a ser elegível. | [Encerramento](11-encerramento.jpg) |
 
-[cenarios.json](cenarios.json) relaciona leitura, timestamps, estado do banco, `command_id`, valor da OD que disparou cada comando, resposta da API, transições e texto do painel. [resultados-mqtt.json](resultados-mqtt.json) guarda as mensagens de recebimento e execução observadas no broker, correlacionadas pelo mesmo `command_id`.
+[cenarios.json](cenarios.json) relaciona leitura, timestamps, estado do banco, `command_id`, valor da OD que disparou cada comando, resposta da API, transições e os campos exibidos pelo painel. O roteiro compara a OD e seu horário, modo,
+estado da bomba, motivo da última mudança, comando pendente e último resultado
+com a mesma fotografia da API antes de cada captura e confere a última OD no gráfico. [resultados-mqtt.json](resultados-mqtt.json) guarda as mensagens de recebimento e execução observadas no broker, correlacionadas pelo mesmo `command_id`.
 
 ## Topologia testada
 
@@ -50,4 +52,4 @@ O [roteiro](../../../scripts/validar_spec6.py) cria recursos temporários com no
 | S6-T03 | Matriz acima, arquivo de estados, mensagens MQTT, dados de topologia e roteiro reproduzível. |
 | S6-T04 | [Arquitetura e configuração remota](../../arquitetura-e-fluxos.md) · [Ampliação do aceite](../../escopo-e-aceite.md) · [Comportamento do controle](../../controle-od.md) |
 
-A entrega passou em 26 testes do frontend, 143 testes Python com TimescaleDB descartável, no build Vite, no smoke test MQTT e de ACLs com Mosquitto descartável, no Ruff e em `git diff --check`.
+A entrega passou em 26 testes do frontend, 146 testes Python com TimescaleDB descartável, no build Vite, no smoke test MQTT e de ACLs com Mosquitto descartável, no Ruff e em `git diff --check`.
