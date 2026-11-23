@@ -59,6 +59,19 @@ dialog .actions { justify-content: flex-end; margin-top: .75rem; }
 .latest strong { font-size: 1.75rem; font-variant-numeric: tabular-nums; color: #18212c; }
 .chart { position: relative; height: clamp(15rem, 30vw, 19rem); margin: 1rem 0; }
 .pump-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1rem; }
+.pump-panel { margin-bottom: 1rem; }
+.pump-controls { justify-content: space-between; }
+.pump-controls h2 { margin: 0; }
+.pump-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 1rem; margin: 0; }
+.pump-summary dt { color: var(--muted); font-size: .875rem; margin-bottom: .25rem; }
+.pump-summary dd { margin: 0; overflow-wrap: anywhere; }
+.pump-summary dd time, .pump-summary dd code { display: block; font-size: .875rem; }
+.pump-summary .freshness { display: inline-block; margin-top: .25rem; }
+.pump-history { margin-bottom: 1rem; }
+.legend-on, .legend-paused { width: 1.25rem; height: .35rem; background: #275b96; }
+.legend-paused { background: #99702c; }
+.legend-intent { height: .9rem; border-left: 2px dashed #7546b6; }
+.legend-result { height: .65rem; border-left: 4px solid #25465d; }
 .history-controls { margin-bottom: 1.5rem; }
 .history-toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; }
 .control-label { display: block; font-weight: 650; margin-bottom: .5rem; }

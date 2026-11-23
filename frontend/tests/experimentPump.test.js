@@ -12,9 +12,13 @@ const compiled = compileScript(descriptor, { id: 'experiment-details', inlineTem
 const asModule = (code) => `data:text/javascript,${encodeURIComponent(code)}`
 const chart = asModule(`
   import { h } from '${import.meta.resolve('vue')}'
+  import { readingPoints } from '${new URL('../src/history.js', import.meta.url).href}'
   export default {
-    props: ['readings'],
-    render() { return h('chart', { count: this.readings.length }) },
+    props: ['readings', 'valueKey'],
+    render() {
+      const latest = readingPoints(this.readings, this.valueKey).at(-1)?.reading
+      return h('chart', { count: this.readings.length, latest })
+    },
   }
 `)
 const router = asModule(`
@@ -82,16 +86,33 @@ const settle = async () => {
   await nextTick()
 }
 
-test('pump 503 and an outdated GET do not block charts or overwrite a successful pause', async (t) => {
+test('OD fallback matches the chart until recovery and stale polling cannot restore it', async (t) => {
   const root = node('root')
   const start = new Date().toISOString()
   const experiment = { id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start }
-  const automatic = { state: 'automatic', ending: false }
-  const pausing = { state: 'pausing', ending: false }
+  const automatic = {
+    pump: { state: 'automatic', ending: false, confirmed_state: 'on' },
+    latest_od: { value: 0.4, generated_at: start },
+    od_readings: [{ value: 0.4, generated_at: start }],
+    history: { transitions: [], commands: [] },
+  }
+  const pausedSnapshot = {
+    pump: { state: 'paused', ending: false, confirmed_state: 'off', pending_command_id: null },
+    latest_od: { value: 0.35, generated_at: start },
+    od_readings: [{ value: 0.4, generated_at: start }, { value: 0.35, generated_at: start }],
+    history: {
+      transitions: [{ reason: 'pause', observed_at: start }],
+      commands: [{
+        command_id: 'command-1', desired_state: 'off', result_status: 'executed', result_at: start,
+      }],
+    },
+  }
   const response = (body, status = 200) => Response.json(body, { status })
   const unavailable = () => response({ detail: 'Banco de dados indisponível.' }, 503)
   let getPump = unavailable
   let readings = []
+  let getOd = () => response(readings)
+  let fallbackRequests = 0
   let poll
   t.mock.method(globalThis, 'setInterval', (callback, ms) => {
     if (ms === 5000) poll = callback
@@ -101,8 +122,15 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
     const base = '/api/experiments/1'
     if (url === base) return response(experiment)
     if (url === base + '/closure') return response({ state: 'none' })
-    if (url === `${base}/pump`) return getPump()
-    if (url === `${base}/pump/pause` && options?.method === 'POST') return response(pausing)
+    if (url === `${base}/pump/snapshot`) return getPump(options.signal)
+    if (url === `${base}/pump/pause` && options?.method === 'POST') {
+      getPump = () => response(pausedSnapshot)
+      return response({ state: 'pausing', ending: false, pending_command_id: 'command-1' })
+    }
+    if (url === `${base}/readings/od`) {
+      fallbackRequests++
+      return getOd()
+    }
     if (url.startsWith(`${base}/readings/`) || url === `${base}/temperature-readings`) {
       return response(readings)
     }
@@ -115,8 +143,27 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
   const button = (label) => descendants(root).find(
     (el) => el.type === 'button' && visibleText(el).trim() === label,
   )
-  const chartCounts = () => descendants(root).filter((el) => el.type === 'chart')
-    .map((el) => el.props.count)
+  const charts = () => descendants(root).filter((el) => el.type === 'chart')
+  const chartCounts = () => charts().map((el) => el.props.count)
+  const panelOd = () => descendants(root)
+    .find(el => el.type === 'dt' && visibleText(el) === 'Última OD')
+    .parent.children.find(el => el.type === 'dd')
+  const assertOd = (value, timestamp) => {
+    const chartReading = charts()[2].props.latest
+    assert.equal(chartReading?.value, value)
+    assert.equal(chartReading?.generated_at, timestamp)
+    const time = descendants(panelOd()).find(el => el.type === 'time')
+    if (timestamp) {
+      assert.equal(time.props.datetime, timestamp)
+      assert.match(visibleText(panelOd()), new RegExp('^' + String(value).replace('.', ',')))
+      assert.equal(visibleText(time), new Intl.DateTimeFormat('pt-BR', {
+        dateStyle: 'short', timeStyle: 'medium',
+      }).format(new Date(chartReading.generated_at)))
+    } else {
+      assert.equal(time, undefined)
+      assert.equal(visibleText(panelOd()), 'Sem medições')
+    }
+  }
 
   await settle()
   assert.match(text(), /Experimento de teste/)
@@ -127,30 +174,72 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
   poll()
   await settle()
   assert.deepEqual(chartCounts(), [1, 1, 1])
+  assertOd(0.7, start)
+  assert.match(text(), /Estado da bombaDesconhecida/)
+  assert.match(text(), /Comando pendenteAguardando consulta/)
+  assert.equal(button('Pausar bomba'), undefined)
   assert.doesNotMatch(text(), /Não foi possível atualizar as leituras/)
-  button('Pausar visualização').props.onClick()
-  await settle()
-  assert.ok(button('Retomar visualização'))
 
+  let finishFallback
+  getOd = () => new Promise(resolve => { finishFallback = resolve })
   getPump = () => response(automatic)
   poll()
   await settle()
+  assertOd(0.4, start)
+  finishFallback(response([{ value: 0.8, generated_at: start }]))
+  await settle()
+  assertOd(0.4, start)
+  const requestsAtRecovery = fallbackRequests
+  button('Pausar visualização').props.onClick()
+  await settle()
+  assert.ok(button('Retomar visualização'))
   const pausePump = button('Pausar bomba')
   assert.ok(pausePump)
 
   let finishOldGet
-  getPump = () => new Promise((resolve) => {
+  let outdatedSignal
+  getPump = (signal) => new Promise((resolve) => {
+    outdatedSignal = signal
     finishOldGet = () => resolve(response(automatic))
   })
   poll()
   pausePump.props.onClick()
   await settle()
   assert.ok(button('Despausar bomba'))
+  assert.ok(outdatedSignal.aborted)
+  assert.deepEqual(chartCounts(), [1, 1, 1])
+  assert.ok(button('Retomar visualização'))
+  button('Retomar visualização').props.onClick()
+  await settle()
+  assert.deepEqual(chartCounts(), [1, 1, 2])
+  const coherent = text()
+  assert.match(coherent, /Última OD0,35/)
+  assert.match(coherent, /Bomba pausada/)
+  assert.match(coherent, /Desligada \(simulada\)/)
+  assert.match(coherent, /Comando pendenteNenhum/)
+  assert.match(coherent, /Última mudançaPausa solicitada/)
+  assert.match(coherent, /Último resultado registradoDesligar · Executado no simulador/)
   finishOldGet()
   await settle()
-  assert.ok(button('Despausar bomba'))
-  assert.match(text(), /Pausando…/)
-  assert.ok(button('Retomar visualização'))
+  assert.equal(text(), coherent)
+  assert.deepEqual(chartCounts(), [1, 1, 2])
+
+  getPump = unavailable
+  poll()
+  await settle()
+  assertOd(0.35, start)
+  assert.match(text(), /Bomba pausada/)
+
+  getPump = () => response({ ...pausedSnapshot, latest_od: null, od_readings: [] })
+  poll()
+  await settle()
+  assertOd(undefined, undefined)
+
+  getPump = unavailable
+  poll()
+  await settle()
+  assertOd(undefined, undefined)
+  assert.equal(fallbackRequests, requestsAtRecovery)
 })
 
 
@@ -198,7 +287,7 @@ for (const deleting of [false, true]) {
         if (url === base + '/closure') {
           return unavailable ? Response.json({}, { status: 503 }) : Response.json(closure)
         }
-        if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+        if (url === base + '/pump/snapshot') return Response.json({ pump: { state: 'automatic', ending: false } })
         if (url === base) {
           if (deleting && closure.state === 'completed') return Response.json({}, { status: 404 })
           return Response.json(details)
@@ -294,7 +383,10 @@ test('an unconfirmed closure is actionable while initial readings time out', asy
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (url === base) return Response.json(details)
     if (url === base + '/closure') return Response.json({ state: 'unconfirmed', action: 'delete' })
-    if (url === base + '/pump') return Response.json({ state: 'automatic', ending: true })
+    if (url === base + '/pump/snapshot') return Response.json({
+      pump: { state: 'automatic', ending: true },
+      od_readings: [{ generated_at: start, value: 0.7 }],
+    })
     if (url === base + '/temperature-readings' && slow) {
       temperatureSignal = options?.signal
       return new Promise((_resolve, reject) => {
@@ -358,7 +450,7 @@ for (const closureFirst of [false, true]) {
       if (url === base + '/closure') {
         return new Promise((resolve) => { finishClosure = () => resolve(Response.json(closure)) })
       }
-      if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+      if (url === base + '/pump/snapshot') return Response.json({ pump: { state: 'automatic', ending: false } })
       return Response.json([])
     })
     const app = renderer.createApp(ExperimentDetails, { id: '1' })
@@ -420,7 +512,7 @@ for (const action of ['delete', 'inactivate']) {
       }
       if (url === base) return Response.json(details)
       if (url === base + '/closure') return Response.json(closure)
-      if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+      if (url === base + '/pump/snapshot') return Response.json({ pump: { state: 'automatic', ending: false } })
       return Response.json([])
     })
     const app = renderer.createApp(ExperimentDetails, { id: '1', onChanged: (message) => notices.push(message) })
@@ -496,7 +588,7 @@ for (const action of ['pause', 'resume']) {
       }
       if (url === base) return Response.json(details)
       if (url === base + '/closure') return Response.json({ state: 'none' })
-      if (url === base + '/pump') return Response.json({ state, ending: false })
+      if (url === base + '/pump/snapshot') return Response.json({ pump: { state, ending: false } })
       return Response.json([])
     })
     const app = renderer.createApp(ExperimentDetails, { id: '1' })

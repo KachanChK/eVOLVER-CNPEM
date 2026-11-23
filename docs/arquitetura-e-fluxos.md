@@ -14,28 +14,59 @@ Registrar o desenho exigido pela [issue #2](https://github.com/KachanChK/eVOLVER
 
 ## Diagrama de contexto
 
-Todos os componentes abaixo rodam na mesma máquina no piloto. O simulador Python representa a origem e o destino dos dados/comandos nesta fase; não representa o firmware nem um serviço executado dentro do eVOLVER.
+A topologia prevista para a Spec 6 usa máquinas separadas para o simulador e
+a stack de monitoramento. O simulador Python consulta os vials ativos, publica telemetria, recebe
+comandos e publica resultados pelo broker MQTT, único intermediário. A stack de
+monitoramento contém ingestão, PostgreSQL/TimescaleDB, API e interface. A API,
+o PostgreSQL e os arquivos do monitoramento ficam restritos ao lado do
+monitoramento. O arquivo SQLite da bomba lógica pertence ao simulador.
+
+Na máquina do simulador, configure `MQTT_HOST` com o nome DNS ou IP do broker
+acessível na rede, `MQTT_PORT` com a porta publicada (por exemplo, 1883) e
+`MQTT_SIMULATOR_PASSWORD` com a credencial do usuário `evolver-sim-01`.
+Execute `python -m evolver_simulator --env-file <arquivo>`. No exemplo local,
+o Compose publica o broker em `127.0.0.1`. Para acesso remoto, defina
+`MQTT_BIND_HOST` no ambiente do Compose como o IP da interface privada da
+máquina do broker. Permita a porta TCP do broker no firewall apenas a partir dos
+clientes autorizados. O listener interno do contêiner já escuta em `0.0.0.0`.
+Mantenha autenticação, ACLs e credenciais exclusivas para a rede de teste.
+O exemplo de desenvolvimento usa MQTT sem TLS e pressupõe rede privada.
+Se o broker também estiver fora do host do monitoramento, a ingestão aponta
+`MQTT_HOST` e `MQTT_PORT` para esse endereço com as credenciais de ingestão.
+O PostgreSQL e a API não precisam ser publicados para o simulador.
+Sincronize os relógios das máquinas para que a idade da OD e a validade
+dos comandos usem a mesma referência de tempo.
+
+O exemplo local continua útil para desenvolvimento. O simulador representa o
+produtor e o executor lógico de comandos nesta fase.
 
 ```mermaid
 flowchart LR
-    user["Pessoa usuária"] --> web["Interface web"]
-    web -->|"HTTP: consultas e comandos"| api["API Python"]
-    api -->|"SSE: atualizações"| web
-    api <-->|"consultas e registros"| db[("PostgreSQL + TimescaleDB")]
-    sim["Simulador Python + fila SQLite"] <-->|"mensagens MQTT"| mqtt["Mosquitto"]
-    api -->|"comandos"| mqtt
-    mqtt -->|"telemetria e respostas"| ingestion["Ingestão Python"]
-    ingestion -->|"medições e eventos"| db
-    ingestion -->|"ACK de aplicação"| mqtt
+    user["Pessoa usuária"] --> web
+    subgraph monitor["Monitoramento"]
+        web["Interface web"] -->|"HTTP: ações e consultas a cada 5 s"| api["API Python"]
+        api <-->|"consultas e registros"| db[("PostgreSQL + TimescaleDB")]
+        ingestion["Ingestão Python"] <-->|"alocações, medições e controle"| db
+    end
+    subgraph producer["Máquina do simulador"]
+        sim["Simulador Python + estado SQLite da bomba"]
+    end
+    sim <-->|"descoberta de vials, telemetria, comandos e resultados"| mqtt["Mosquitto"]
+    mqtt <-->|"mensagens MQTT"| ingestion
 ```
 
-**Leitura do diagrama:** MQTT (*Message Queuing Telemetry Transport*) é o protocolo de mensagens; Mosquitto é o *broker* (servidor que as encaminha). SQLite guarda a fila em arquivo local; TimescaleDB acrescenta suporte a séries temporais ao PostgreSQL. ACK é a confirmação da aplicação de uma leitura. O banco é a fonte do estado persistido. O navegador não acessa o banco nem o broker diretamente. As setas mostram o caminho previsto, não execução comprovada.
+**Leitura do diagrama:** MQTT (*Message Queuing Telemetry Transport*) é o protocolo de mensagens; Mosquitto é o *broker* (servidor que as encaminha). SQLite guarda o estado simulado da bomba em arquivo local; TimescaleDB acrescenta suporte a séries temporais ao PostgreSQL. ACK é a confirmação da aplicação de uma leitura. O banco é a fonte do estado persistido. O navegador não acessa o banco nem o broker diretamente. As setas mostram o caminho previsto, não execução comprovada.
 
-A atualização ao vivo usa SSE (*Server-Sent Events*, envio da API ao navegador), conforme o [T03](E1-T03-stack-e-desenvolvimento-local.md). A ingestão emite `NOTIFY` na transação de gravação; o PostgreSQL só entrega o aviso após o *commit* (confirmação da transação). A API recebe o aviso por `LISTEN`, lê o dado no banco e o envia por SSE. Como avisos perdidos não são recuperados por `LISTEN/NOTIFY`, a API relê o banco ao reconectar, e o navegador recarrega o estado pela API ao restabelecer o SSE.
+Na implementação da Spec 6, o navegador atualiza os dados persistidos por
+consultas HTTP a cada 5 s. O [T03](stack-e-desenvolvimento.md) descreve a
+proposta anterior de SSE.
 
 ## Diagrama de componentes e fronteiras
 
-Os caminhos abaixo separam leitura de comando. A fila durável protege **leituras** ainda não confirmadas; comandos têm validade própria e não são reenviados automaticamente após desconexão.
+O fluxo de telemetria abaixo preserva o desenho original do piloto para
+a fila durável de leituras. Na jornada da Spec 6, o SQLite guarda o estado da
+bomba no simulador e a ingestão persiste a telemetria no TimescaleDB.
+O diagrama de comandos já mostra o fluxo de controle de OD da Spec 6.
 
 **Telemetria, gravação e confirmação**
 
@@ -68,22 +99,27 @@ sequenceDiagram
     participant MQTT as Mosquitto
     participant Sim as Simulador
     participant Ing as Ingestão
-    Web->>API: Solicita ação
-    API->>BD: Registra command_id e autor
-    API->>MQTT: Publica comando aceito
-    API->>BD: Registra envio
+    Web->>API: Solicita alteração de modo ou encerramento
+    API->>BD: Persiste a solicitação e a intenção, quando há comando
+    Ing->>BD: Registra intenção automática ou reserva envio da ação persistida
+    Ing->>MQTT: Publica comando com command_id
+    Ing->>BD: Registra envio e PUBACK
     MQTT->>Sim: Entrega comando com validade
     Sim->>MQTT: Confirma recebimento
     Sim->>MQTT: Responde com command_id
     MQTT->>Ing: Entrega confirmação e resposta
     Ing->>BD: Grava recebimento e resultado
     API->>BD: Consulta estado persistido
-    API-->>Web: Exibe estado via consulta ou SSE
+    API-->>Web: Retorna estado persistido na consulta HTTP
 ```
 
-**Fronteiras de falha:** a fila SQLite mantém leituras pendentes se o broker ou o serviço central ficar indisponível. O broker transporta mensagens, mas sua confirmação MQTT não prova gravação no banco. O banco guarda histórico e auditoria; a API controla o acesso do navegador. Rodar tudo em uma máquina não oferece alta disponibilidade nem protege contra perda física do host. Backup e restauração são requisitos do piloto definidos no T01, com procedimento ainda pendente.
+O PUBACK do broker comprova a entrega ao transporte. A ingestão confirma
+a persistência da leitura após o commit. O banco guarda o histórico e a
+auditoria e a API atende o navegador. O estado simulado da bomba sobrevive
+ao reinício do produtor pelo SQLite. Backup e restauração continuam como
+requisitos do desenho original do piloto.
 
-## Responsabilidades dos componentes
+## Responsabilidades previstas no desenho original
 
 | Componente | Responsabilidade no piloto | Não significa |
 | --- | --- | --- |
@@ -119,6 +155,9 @@ Temperatura **medida** é telemetria; temperatura **desejada** é setpoint. Valo
 
 ## Fluxos principais
 
+Os itens 1 a 5 preservam a descrição histórica do planejamento do piloto.
+O item 6 descreve o controle de OD implementado na Spec 6.
+
 ### 1. Telemetria normal e confirmação pós-commit
 
 1. O simulador cria a leitura com `event_id`, sequência e `generated_at`.
@@ -141,7 +180,7 @@ ACK de QoS (nível de qualidade de serviço) do MQTT confirma uma etapa do trans
 6. Depois do ACK pós-commit, o produtor conclui o item da fila.
 7. Se a máquina reiniciar, o produtor recupera a fila durável; ingestão e API recuperam estado do banco.
 
-**Verificar e registrar:** anotar os IDs e a contagem da fila antes da falha, durante a falha e após reconexão/reinício; guardar logs de reenvio e ACK, consulta de unicidade no banco e captura do aviso de dado antigo. Espera-se preservar todos os eventos válidos, sem duplicatas lógicas (A3–A5 do T01). Capacidade da fila, política quando cheia e intervalo de repetição ainda serão definidos. Se a fila atingir o limite, o sistema deve sinalizar o problema sem apagar eventos antigos silenciosamente. A atualização da interface por SSE já foi decidida no T03.
+**Verificar e registrar:** anotar os IDs e a contagem da fila antes da falha, durante a falha e após reconexão/reinício; guardar logs de reenvio e ACK, consulta de unicidade no banco e captura do aviso de dado antigo. Espera-se preservar todos os eventos válidos, sem duplicatas lógicas (A3–A5 do T01). Capacidade da fila, política quando cheia e intervalo de repetição ainda serão definidos. Se a fila atingir o limite, o sistema deve sinalizar o problema sem apagar eventos antigos silenciosamente. Na Spec 6, a atualização da interface ocorre por consultas HTTP periódicas.
 
 ### 3. Mensagens inválidas e quarentena
 
@@ -151,7 +190,7 @@ Evento malformado ou incompatível com `schema_version` recebe rejeição explí
 
 A ingestão conserva `generated_at`, `received_at`, sequência e identidade do produtor. Armazena eventos atrasados no histórico pelo horário de geração, sem regredir a última leitura da mesma fonte e tipo. Para investigar atraso, comparar também horário de recebimento e sequência. **Verificar e registrar:** enviar dois eventos da mesma fonte e tipo em ordem inversa de geração; guardar consultas do histórico e da última leitura. Espera-se que ambos apareçam uma vez e que o mais recente por geração continue como último (A6 do T01).
 
-### 5. Comandos e respostas simuladas
+### 5. Comandos e respostas simuladas no desenho original
 
 1. Usuário solicita ação pela interface.
 2. API registra `command_id`, autor e estado **solicitado**; valida autorização, alvo/ação e prazo, e registra **aceito** ou **rejeitado**, com motivo.
@@ -162,6 +201,20 @@ A ingestão conserva `generated_at`, `received_at`, sequência e identidade do p
 7. Se a resposta não chegar, mostrar **resultado desconhecido**. Não repetir automaticamente comando antigo de bomba após reconexão. Uma nova tentativa exige política explícita e não deve esconder a incerteza do resultado anterior.
 
 Comandos expirados durante desconexão são recusados pelo simulador e permanecem auditáveis como expirados/rejeitados. O piloto não usa comandos MQTT retidos para atuadores. **Verificar e registrar:** guardar pedido, `command_id`, autor disponível no piloto, validação, publicação, confirmação de recebimento, resposta, consulta de auditoria e captura dos estados. Testar setpoint e ligar/desligar de cada bomba separadamente, além de comando expirado durante desconexão. Espera-se correlação pelo mesmo ID e nenhuma execução do expirado (A7 do T01). Semântica de retentativa e timeouts continuam pendentes.
+
+### 6. Controle de OD da Spec 6
+
+A API registra limites e mudanças de modo no banco. A ingestão encontra as
+alocações ativas em resposta a pedidos via MQTT e decide se deve solicitar
+ligar ou desligar a bomba lógica. Na subida, OD no máximo ou acima dele
+solicita ligar. Na descida, OD no mínimo ou abaixo dele solicita desligar.
+Entre os limites, conserva o estado confirmado. A mesma ingestão publica o
+comando persistido, com validade e identificador da alocação. O simulador
+consulta a alocação via MQTT, executa a ação no seu estado local e publica o
+resultado. A ingestão registra o resultado e o estado na mesma transação. A
+interface consulta a API para mostrar a intenção, o resultado e as mudanças
+observadas pelo banco. O fluxo de pausa, recuperação e encerramento está
+descrito em [Controle de OD](controle-od.md).
 
 ## Decisões registradas e decisões pendentes
 

@@ -37,7 +37,7 @@ from pydantic import (
     WithJsonSchema,
     field_validator,
 )
-from sqlalchemy import create_engine, func, select, update
+from sqlalchemy import create_engine, func, select, text, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -169,6 +169,36 @@ class PumpView(BaseModel):
         "automatic", "pausing", "paused", "off_unconfirmed", "resuming", "resume_off_unconfirmed"
     ]
     ending: bool
+    confirmed_state: Literal["on", "off", "unknown"]
+    pending_command_id: UUID | None
+
+
+class PumpTransitionView(BaseModel):
+    observed_at: datetime
+    paused: bool
+    confirmed_state: Literal["on", "off", "unknown"]
+    reason: str
+    command_id: UUID | None
+
+
+class PumpCommandView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    command_id: UUID
+    reason: str
+    desired_state: Literal["on", "off"]
+    reading_event_id: UUID | None
+    created_at: datetime
+    sent_at: datetime | None
+    puback_at: datetime | None
+    result_status: str
+    result_at: datetime | None
+    result_detail: str | None
+
+
+class PumpHistoryView(BaseModel):
+    transitions: list[PumpTransitionView]
+    commands: list[PumpCommandView]
 
 
 class ClosureView(BaseModel):
@@ -193,6 +223,14 @@ class OtherReadingView(BaseModel):
     value: float
     generated_at: datetime
     received_at: datetime
+
+
+class PumpSnapshotView(BaseModel):
+    pump: PumpView
+    history: PumpHistoryView
+    latest_od: OtherReadingView | None
+    od_readings: list[OtherReadingView]
+    ended_at: datetime | None
 
 
 @app.exception_handler(RequestValidationError)
@@ -296,7 +334,10 @@ def pump_view(control: PumpControl) -> PumpView:
         state = "paused"
     else:
         state = "off_unconfirmed"
-    return PumpView(state=state, ending=control.ending)
+    return PumpView(
+        state=state, ending=control.ending, confirmed_state=control.confirmed_state,
+        pending_command_id=control.pending_command_id,
+    )
 
 
 @app.get("/api/experiments/{experiment_id}", response_model=ExperimentView)
@@ -306,8 +347,50 @@ def experiment_details(experiment_id: ExperimentID, db: Database) -> Experiment:
 
 @app.get("/api/experiments/{experiment_id}/pump", response_model=PumpView)
 def get_pump(experiment_id: ExperimentID, db: Database) -> PumpView:
+    db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
     visible_experiment(db, experiment_id)
     return pump_view(db.get(PumpControl, experiment_id))
+
+
+@app.get("/api/experiments/{experiment_id}/pump/history", response_model=PumpHistoryView)
+def get_pump_history(experiment_id: ExperimentID, db: Database) -> PumpHistoryView:
+    db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+    visible_experiment(db, experiment_id)
+    return pump_history(db, experiment_id)
+
+
+@app.get("/api/experiments/{experiment_id}/pump/snapshot", response_model=PumpSnapshotView)
+def get_pump_snapshot(experiment_id: ExperimentID, db: Database) -> PumpSnapshotView:
+    db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+    experiment = visible_experiment(db, experiment_id)
+    pump = pump_view(db.get(PumpControl, experiment_id))
+    history = pump_history(db, experiment_id)
+    od_readings = [
+        OtherReadingView.model_validate(reading)
+        for reading in db.scalars(
+            select(OdReading).where(OdReading.experiment_id == experiment_id)
+            .order_by(OdReading.generated_at, OdReading.event_id)
+        )
+    ]
+    return PumpSnapshotView(
+        pump=pump, history=history, ended_at=experiment.ended_at,
+        latest_od=od_readings[-1] if od_readings else None, od_readings=od_readings,
+    )
+
+
+def pump_history(db: Session, experiment_id: int) -> PumpHistoryView:
+    transitions = db.execute(text("""
+        SELECT observed_at, paused, confirmed_state, reason, command_id
+        FROM pump_transitions WHERE experiment_id = :id ORDER BY id
+    """), {"id": experiment_id}).mappings()
+    commands = db.scalars(
+        select(PumpCommandRecord).where(PumpCommandRecord.experiment_id == experiment_id)
+        .order_by(PumpCommandRecord.created_at)
+    )
+    return PumpHistoryView(
+        transitions=[PumpTransitionView(**row) for row in transitions],
+        commands=[PumpCommandView.model_validate(command) for command in commands],
+    )
 
 
 @app.post("/api/experiments/{experiment_id}/pump/pause", response_model=PumpView)

@@ -4,6 +4,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from time import monotonic, sleep
 from uuid import UUID, uuid4
 
 import pytest
@@ -30,7 +31,7 @@ from evolver_contracts.pilot import AllocationRequest
 from evolver_simulator.config import SimulatorSettings
 from evolver_simulator.telemetry import SimulatedTelemetryGenerator
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine, make_url
 
 
@@ -123,6 +124,13 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         first_event = uuid4()
         assert reading(experiment_id, 0.7, 1, now, first_event) == "gravada"
         assert reading(experiment_id, 0.7, 1, now, first_event) == "duplicada"
+        pump_url = f"/api/experiments/{experiment_id}/pump"
+        state = client.get(pump_url).json()
+        assert state["confirmed_state"] == "off"
+        history = client.get(f"{pump_url}/history").json()
+        assert [item["confirmed_state"] for item in history["transitions"]] == ["off"]
+        assert history["commands"][0]["command_id"] == state["pending_command_id"]
+        assert history["commands"][0]["result_status"] == "pending"
         first = commands(experiment_id)
         assert len(first) == 1 and first[0]["desired_state"] == "on"
         assert first[0]["reading_event_id"] is not None
@@ -939,3 +947,107 @@ def test_closure_supersedes_unreserved_resume_on(control_database: Engine, actio
                 SELECT desired_state, sent_at, result_status, result_at IS NOT NULL
                 FROM pump_commands WHERE experiment_id = :id
             """), {"id": run.id}).all() == [("on", None, "superseded", True)]
+
+
+@pytest.mark.integration
+def test_history_migration_waits_before_backfill(control_database: Engine) -> None:
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    command.downgrade(config, "20261122_04")
+    with TestClient(app) as client:
+        created = client.post("/api/experiments", json={
+            "name": "Migração", "culture_type": "Simulada", "vial_id": 1,
+            "od_min": 0.3, "od_max": 0.4,
+        })
+        created.raise_for_status()
+        experiment_id = created.json()["id"]
+        with ThreadPoolExecutor(max_workers=1) as executor, control_database.begin() as writer:
+            pid = writer.scalar(text("SELECT pg_backend_pid()"))
+            writer.execute(text("UPDATE pump_control SET paused = true WHERE experiment_id = :id"),
+                           {"id": experiment_id})
+            migration = executor.submit(command.upgrade, config, "head")
+            deadline = monotonic() + 15
+            with control_database.connect() as observer:
+                observer.execution_options(isolation_level="AUTOCOMMIT")
+                while True:
+                    blocked = observer.scalar(text("""
+                        SELECT activity.query FROM pg_locks locks
+                        JOIN pg_stat_activity activity ON activity.pid = locks.pid
+                        WHERE locks.relation = 'pump_control'::regclass AND NOT locks.granted
+                          AND :pid = ANY(pg_blocking_pids(activity.pid))
+                    """), {"pid": pid})
+                    if blocked:
+                        break
+                    assert not migration.done() and monotonic() < deadline
+                    sleep(0.05)
+            assert "LOCK TABLE pump_control" in blocked
+            writer.commit()
+            migration.result(timeout=15)
+
+        base = f"/api/experiments/{experiment_id}/pump"
+        assert client.get(base).json()["state"] == "paused"
+        [transition] = client.get(f"{base}/history").json()["transitions"]
+        assert transition["paused"] is True and transition["reason"] == "history_started"
+        client.post(f"{base}/resume").raise_for_status()
+        snapshot = client.get(f"{base}/snapshot").json()
+        assert snapshot["pump"]["state"] == "automatic"
+        assert snapshot["history"]["transitions"][-1]["reason"] == "resume"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("endpoint", ["history", "snapshot"])
+def test_pump_read_keeps_snapshot_when_result_commits_between_selects(
+    control_database: Engine, endpoint: str,
+) -> None:
+    with TestClient(app) as client:
+        created = client.post("/api/experiments", json={
+            "name": "Fotografia", "culture_type": "Simulada", "vial_id": 1,
+            "od_min": 0.3, "od_max": 0.4,
+        })
+        created.raise_for_status()
+        experiment_id = created.json()["id"]
+        command_id = uuid4()
+        with control_database.begin() as writer:
+            writer.execute(text("""
+                INSERT INTO pump_commands
+                    (command_id, experiment_id, vial_id, reason, desired_state,
+                     created_at, expires_at, result_status)
+                VALUES (:command_id, :experiment_id, 1, 'od_max', 'on',
+                        now(), now() + interval '10 seconds', 'pending')
+            """), {"command_id": command_id, "experiment_id": experiment_id})
+            writer.execute(text("""
+                UPDATE pump_control SET pending_command_id = :command_id, desired_state = 'on'
+                WHERE experiment_id = :experiment_id
+            """), {"command_id": command_id, "experiment_id": experiment_id})
+        interleaved = False
+
+        def commit_result(_conn, _cursor, statement, _parameters, _context, _executemany):
+            nonlocal interleaved
+            if "FROM pump_transitions WHERE experiment_id" in statement and not interleaved:
+                interleaved = True
+                with control_database.begin() as writer:
+                    record_result(writer, ExecutedCommandResult(
+                        schema_version="1.0", command_id=command_id,
+                        equipment_id="evolver-sim-01", simulated=True,
+                        status="executed", reported_at=datetime.now(UTC),
+                    ))
+
+        base = f"/api/experiments/{experiment_id}/pump/{endpoint}"
+        event.listen(Engine, "after_cursor_execute", commit_result)
+        try:
+            before = client.get(base).json()
+        finally:
+            event.remove(Engine, "after_cursor_execute", commit_result)
+        assert interleaved
+        after = client.get(base).json()
+        old_history = before.get("history", before)
+        new_history = after.get("history", after)
+        assert old_history["commands"][0]["result_status"] == "pending"
+        assert old_history["transitions"][-1]["confirmed_state"] == "off"
+        assert new_history["commands"][0]["result_status"] == "executed"
+        assert new_history["transitions"][-1]["confirmed_state"] == "on"
+        assert new_history["transitions"][-1]["command_id"] == str(command_id)
+        if endpoint == "snapshot":
+            assert before["pump"]["confirmed_state"] == "off"
+            assert before["pump"]["pending_command_id"] == str(command_id)
+            assert after["pump"]["confirmed_state"] == "on"
+            assert after["pump"]["pending_command_id"] is None

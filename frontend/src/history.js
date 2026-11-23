@@ -13,9 +13,10 @@ export function timeStep(duration) {
   return steps.find(step => step >= duration / 5) ?? Math.ceil(duration / 5 / 86_400_000) * 86_400_000
 }
 
-export function historyWindow(series, duration, now, endedAt) {
+export function historyWindow(series, duration, now, endedAt, startedAt) {
   const end = Number.isFinite(Date.parse(endedAt)) ? Date.parse(endedAt) : now
-  let first = end
+  const start = Date.parse(startedAt)
+  let first = Number.isFinite(start) ? Math.min(start, end) : end
   for (const readings of series) {
     for (const reading of readings) {
       const time = Date.parse(reading.generated_at)
