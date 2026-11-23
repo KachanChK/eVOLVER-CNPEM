@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +14,8 @@ from alembic.config import Config
 from evolver.api.main import app
 from evolver.db.models import Experiment
 from evolver.ingestion.__main__ import active_vials, store_v1_message
+from evolver.ingestion.control import pending_commands, record_result
+from evolver_contracts.models import ExecutedCommandResult
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -40,6 +42,10 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
                 VALUES ('Anterior', 1, now(), now()) RETURNING id
             """)
         )
+        legacy_active = connection.scalar(text("""
+            INSERT INTO experiments (name, vial_id, started_at)
+            VALUES ('Legado ativo', 12, now()) RETURNING id
+        """))
         for kind, value in (("ph", 7.25), ("od", 0.47)):
             connection.execute(
                 text("""
@@ -102,6 +108,20 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     request = json.dumps({"request_id": str(uuid4())}).encode()
 
     with TestClient(app) as client:
+        legacy_url = f"/api/experiments/{legacy_active}"
+        assert client.get(legacy_url).json()["od_min"] is None
+        assert client.post(f"{legacy_url}/inactivate").status_code == 202
+        assert [vial.vial_id for vial in active_vials(engine, request).vials] == [12]
+        with engine.begin() as connection:
+            off, = pending_commands(connection, datetime.now(UTC))
+            assert off.action == "turn_off"
+            record_result(connection, ExecutedCommandResult(
+                schema_version="1.0", command_id=off.command_id,
+                equipment_id="evolver-sim-01", simulated=True, status="executed",
+                reported_at=historical_time - timedelta(seconds=1),
+            ))
+        assert client.get(legacy_url).json()["status"] == "inactive"
+        assert client.delete(legacy_url).status_code == 204
 
         def create(vial: int, od_min: float = 0.10, od_max: float = 0.80):
             return client.post(

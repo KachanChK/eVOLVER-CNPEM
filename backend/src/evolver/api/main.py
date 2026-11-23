@@ -15,12 +15,13 @@ from evolver.db.models import (
     Experiment,
     OdReading,
     PhReading,
+    PumpCommandRecord,
     PumpControl,
     TemperatureReading,
     Vial,
 )
 from evolver.db.queries import get_temperature_history
-from evolver.ingestion.control import pause_control, queue_command, resume_control
+from evolver.ingestion.control import expire_commands, pause_control, queue_command, resume_control
 from evolver_contracts.pilot import EQUIPMENT_ID, VialID
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response
 from fastapi.encoders import jsonable_encoder
@@ -36,7 +37,7 @@ from pydantic import (
     WithJsonSchema,
     field_validator,
 )
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -168,6 +169,12 @@ class PumpView(BaseModel):
         "automatic", "pausing", "paused", "off_unconfirmed", "resuming", "resume_off_unconfirmed"
     ]
     ending: bool
+
+
+class ClosureView(BaseModel):
+    state: Literal["none", "pending", "unconfirmed", "completed"]
+    action: Literal["inactivate", "delete"] | None = None
+    ended_at: datetime | None = None
 
 
 class ReadingView(BaseModel):
@@ -351,38 +358,103 @@ def other_history(
     )
 
 
-@app.post("/api/experiments/{experiment_id}/inactivate", response_model=ExperimentView)
-def inactivate_experiment(experiment_id: ExperimentID, db: Database) -> Experiment:
+@app.get("/api/experiments/{experiment_id}/closure", response_model=ClosureView)
+def experiment_closure(experiment_id: ExperimentID, db: Database) -> ClosureView:
+    row = db.execute(
+        select(
+            Experiment.ended_at, Experiment.deleted_at, PumpControl.ending,
+            PumpControl.delete_requested,
+            (PumpCommandRecord.expires_at > func.clock_timestamp()).label("waiting"),
+        )
+        .select_from(Experiment)
+        .outerjoin(PumpControl, PumpControl.experiment_id == Experiment.id)
+        .outerjoin(
+            PumpCommandRecord, PumpCommandRecord.command_id == PumpControl.pending_command_id
+        )
+        .where(Experiment.id == experiment_id)
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(404, "Experimento não encontrado.")
+    if row.ended_at is not None:
+        action = "delete" if row.deleted_at is not None else "inactivate"
+        return ClosureView(state="completed", action=action, ended_at=row.ended_at)
+    if not row.ending:
+        return ClosureView(state="none")
+    action = "delete" if row.delete_requested else "inactivate"
+    return ClosureView(state="pending" if row.waiting else "unconfirmed", action=action)
+
+
+@app.post(
+    "/api/experiments/{experiment_id}/inactivate", response_model=ExperimentView,
+    responses={202: {"model": ClosureView}},
+)
+def inactivate_experiment(
+    experiment_id: ExperimentID, db: Database,
+) -> Experiment | Response:
     experiment = visible_experiment(db, experiment_id, lock=True)
-    if experiment.ended_at is None:
-        request_end(db, experiment, delete=False)
+    pending = request_end(db, experiment, delete=False) if experiment.ended_at is None else None
     db.commit()
-    return experiment
+    return pending or experiment
 
 
-@app.delete("/api/experiments/{experiment_id}", status_code=204)
+@app.delete(
+    "/api/experiments/{experiment_id}", status_code=204, responses={202: {"model": ClosureView}},
+)
 def delete_experiment(experiment_id: ExperimentID, db: Database) -> Response:
-    experiment = visible_experiment(db, experiment_id, lock=True)
+    experiment = db.get(Experiment, experiment_id, with_for_update=True)
+    if experiment is None:
+        raise HTTPException(404, "Experimento não encontrado.")
+    pending = None
     if experiment.ended_at is None:
-        request_end(db, experiment, delete=True)
-    else:
-        experiment.deleted_at = db.scalar(select(func.clock_timestamp()))
+        pending = request_end(db, experiment, delete=True)
+    elif experiment.deleted_at is None:
+        experiment.deleted_at = db.scalar(select(
+            func.greatest(func.clock_timestamp(), experiment.ended_at)
+        ))
     db.commit()
-    return Response(status_code=204)
+    return pending or Response(status_code=204)
 
 
-def request_end(db: Session, experiment: Experiment, *, delete: bool) -> None:
+def request_end(db: Session, experiment: Experiment, *, delete: bool) -> Response | None:
     control = db.get(PumpControl, experiment.id, with_for_update=True)
     now = db.scalar(select(func.clock_timestamp()))
     control.paused = True
     control.resume_pending = False
     control.ending = True
     control.delete_requested = control.delete_requested or delete
-    if control.confirmed_state == "off" and control.pending_command_id is None:
-        experiment.ended_at = now
+    if control.pending_command_id is not None:
+        # The experiment lock also guards the publisher's reservation.
+        cancelled = db.execute(
+            update(PumpCommandRecord)
+            .where(
+                PumpCommandRecord.command_id == control.pending_command_id,
+                PumpCommandRecord.experiment_id == experiment.id,
+                PumpCommandRecord.desired_state == "on",
+                PumpCommandRecord.result_status == "pending",
+                PumpCommandRecord.sent_at.is_(None),
+            )
+            .values(result_status="superseded", result_at=now)
+        ).rowcount
+        if cancelled:
+            control.pending_command_id = None
+            control.desired_state = "off"
+        else:
+            db.flush()
+            expire_commands(db.connection(), now, experiment_id=experiment.id)
+            db.refresh(control)
+    if (
+        control.confirmed_state == "off"
+        and not control.reconcile_required
+        and control.pending_command_id is None
+    ):
+        experiment.ended_at = max(now, experiment.started_at)
         if control.delete_requested:
-            experiment.deleted_at = now
-    elif control.pending_command_id is None:
+            experiment.deleted_at = experiment.ended_at
+        return None
+    if control.pending_command_id is None:
         db.flush()
         queue_command(db.connection(), experiment.id, experiment.vial_id,
                       "turn_off", None, now, "ending")
+    action = "delete" if control.delete_requested else "inactivate"
+    body = ClosureView(state="pending", action=action)
+    return JSONResponse(status_code=202, content=body.model_dump(mode="json"))

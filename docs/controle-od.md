@@ -35,9 +35,11 @@ não entram no controle automático.
   recente solicita um `turn_off` de reconciliação; somente
   o resultado `executed` confirma o estado desligado e libera decisões futuras.
   Para experimento pausado ou em encerramento, o desligamento seguro é enviado
-  sem aguardar OD nova. Um `turn_on` pendente continua bloqueado; após seu
-  resultado ou expiração, solicita-se `turn_off`. Um `turn_off` já pendente pode
-  ser enviado e sua execução confirma o desligamento e conclui o encerramento.
+  sem aguardar OD nova. No encerramento, um `turn_on` que a ingestão ainda não
+  reservou para envio é cancelado e fica no histórico. Se já houve reserva,
+  aguarda-se seu resultado ou expiração antes de solicitar `turn_off`.
+  Um `turn_off` já pendente pode ser enviado. Sua execução confirma o
+  desligamento e conclui o encerramento.
   A repetição automática fica bloqueada se essa confirmação faltar. Uma queda
   na sequência do produtor também inicia essa reconciliação após reinício do
   simulador. Uma leitura antiga não a inicia.
@@ -46,8 +48,16 @@ não entram no controle automático.
   quando necessário. A API e a interface de pausar/despausar pertencem à Spec 4.
   Inativação/exclusão também bloqueia a automação e, se a bomba não estiver
   comprovadamente desligada, conclui o encerramento após resultado `executed`
-  do comando de desligar. Resultado ausente deixa o encerramento pendente para
-  inspeção, sem presumir que a bomba desligou.
+  do comando de desligar. O vial continua ocupado enquanto a solicitação
+  aguarda confirmação. Se o comando falhar ou expirar, a interface permite
+  repetir apenas o desligamento, sem criar outro comando enquanto houver um
+  pendente. A reconexão da ingestão também pode reconciliar o desligamento.
+
+As rotas POST de inativação e DELETE retornam HTTP 202 enquanto a solicitação
+aguarda execução, com a ação registrada. Quando encerram na mesma transação,
+retornam respectivamente HTTP 200 com o experimento e HTTP 204. A consulta
+GET /api/experiments/{id}/closure informa se o encerramento está pendente,
+sem confirmação ou concluído, inclusive após uma exclusão lógica.
 
 O teste com TimescaleDB descartável é
 `backend/tests/db/test_pump_control_integration.py`. Ele não valida bomba física.

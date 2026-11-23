@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from './api'
 import { encodeExperiment, parseOdLimits } from './odLimits.js'
@@ -22,21 +22,34 @@ const formError = ref('')
 const notice = ref('')
 const noVials = 'Todos os vials estão em uso. Inative ou exclua um experimento para liberar um vial.'
 
-async function refresh() {
-  loading.value = true
-  loadError.value = ''
+let refreshRevision = 0
+let backgroundRequest = false
+let refreshTimer
+
+async function refresh(background = false) {
+  if (background && (loading.value || backgroundRequest)) return
+  if (background) backgroundRequest = true
+  const revision = ++refreshRevision
+  if (!background) {
+    loading.value = true
+    loadError.value = ''
+  }
   try {
+    const options = { signal: AbortSignal.timeout(10000) }
     const [nextExperiments, nextVials] = await Promise.all([
-      request('/experiments'),
-      request('/vials/available'),
+      request('/experiments', options),
+      request('/vials/available', options),
     ])
+    if (revision !== refreshRevision) return
+    loadError.value = ''
     experiments.value = nextExperiments
     vials.value = nextVials
     if (!nextVials.some((vial) => vial.vial_id === vialId.value)) vialId.value = ''
   } catch (error) {
-    loadError.value = error.message
+    if (!background && revision === refreshRevision) loadError.value = error.message
   } finally {
-    loading.value = false
+    if (background) backgroundRequest = false
+    if (revision === refreshRevision) loading.value = false
   }
 }
 
@@ -101,7 +114,11 @@ async function changed(message) {
   await refresh()
 }
 
-onMounted(refresh)
+onMounted(() => {
+  refresh()
+  refreshTimer = setInterval(() => refresh(true), 5000)
+})
+onUnmounted(() => clearInterval(refreshTimer))
 </script>
 
 <template>
@@ -117,7 +134,7 @@ onMounted(refresh)
       <p v-if="loading" class="muted" role="status">Carregando experimentos…</p>
       <div v-else-if="loadError" class="message" role="alert">
         <p>{{ loadError }}</p>
-        <button @click="refresh">Tentar novamente</button>
+        <button @click="refresh()">Tentar novamente</button>
       </div>
       <p v-else-if="!vials.length" class="message" role="status">
         {{ noVials }}

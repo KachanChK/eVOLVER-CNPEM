@@ -34,7 +34,7 @@ def consider_od(connection: Connection, reading: dict, now: datetime) -> None:
     row = connection.execute(
         text("""
             SELECT e.id, e.vial_id, e.od_min, e.od_max, e.ended_at,
-                   c.paused, c.confirmed_state, c.last_generated_at,
+                   c.paused, c.ending, c.confirmed_state, c.last_generated_at,
                    c.last_producer_id, c.last_sequence,
                    c.pending_command_id, c.reconcile_required, c.resume_pending
             FROM experiments e JOIN pump_control c ON c.experiment_id = e.id
@@ -42,7 +42,7 @@ def consider_od(connection: Connection, reading: dict, now: datetime) -> None:
         """),
         {"experiment_id": reading["experiment_id"]},
     ).mappings().one_or_none()
-    if row is None or row.ended_at is not None:
+    if row is None or row.ended_at is not None or row.ending:
         return
     value = Decimal(str(reading["value"]))
     if not value.is_finite() or not OD_MIN <= value <= OD_MAX:
@@ -260,8 +260,11 @@ def command_is_current(
     now = now if now is not None else connection.scalar(text("SELECT clock_timestamp()"))
     if command.action == "turn_off":
         return command.expires_at > now
+    # Leave a blocked ON for result/expiry so the ending path always queues OFF.
+    if row.ending:
+        return False
     allowed = command.expires_at > now and not (
-        row.reconcile_required or row.paused or row.ending or row.resume_pending
+        row.reconcile_required or row.paused or row.resume_pending
     )
     reason = connection.scalar(text("""
         SELECT reason FROM pump_commands WHERE command_id = :id
@@ -314,11 +317,14 @@ def pending_commands(connection: Connection, now: datetime) -> list[PumpCommand]
     ) for row in rows]
 
 
-def expire_commands(connection: Connection, now: datetime) -> None:
+def expire_commands(
+    connection: Connection, now: datetime, *, experiment_id: int | None = None,
+) -> None:
     rows = connection.execute(
         text("""
             WITH affected AS MATERIALIZED (
-                SELECT e.id FROM experiments e WHERE EXISTS (
+                SELECT e.id FROM experiments e
+                WHERE (CAST(:id AS bigint) IS NULL OR e.id = :id) AND EXISTS (
                     SELECT 1 FROM pump_commands p WHERE p.experiment_id = e.id
                       AND p.result_status IN ('pending', 'received') AND p.expires_at <= :now
                 ) ORDER BY e.id FOR UPDATE
@@ -330,7 +336,7 @@ def expire_commands(connection: Connection, now: datetime) -> None:
               AND expires_at <= :now
               AND experiment_id IN (SELECT id FROM affected)
             RETURNING command_id, experiment_id, desired_state, reason, result_status
-        """), {"now": now},
+        """), {"now": now, "id": experiment_id},
     ).mappings().all()
     for row in rows:
         cleared = connection.execute(text("""
@@ -354,7 +360,8 @@ def expire_commands(connection: Connection, now: datetime) -> None:
                                   "turn_off", None, now, "resume_reconcile")
             elif (control.ending or control.paused) and (
                 row.desired_state == "on"
-                or (control.ending and control.reconcile_required and row.reason != "reconcile")
+                or (control.ending and control.reconcile_required
+                    and row.reason not in ("ending", "reconcile"))
             ):
                 queue_command(connection, row.experiment_id, control.vial_id,
                               "turn_off", None, now,
@@ -406,11 +413,11 @@ def record_result(connection: Connection, result) -> None:
         if row.desired_state == "off" and result.status == "executed":
             if control.ending:
                 connection.execute(text("""
-                    UPDATE experiments SET ended_at = :at,
-                        deleted_at = CASE WHEN :delete THEN :at ELSE NULL END
-                    WHERE id = :id
-                """), {"at": result.reported_at, "id": row.experiment_id,
-                       "delete": control.delete_requested})
+                    WITH closure AS (SELECT clock_timestamp() AS at)
+                    UPDATE experiments SET ended_at = greatest(started_at, closure.at),
+                        deleted_at = CASE WHEN :delete THEN greatest(started_at, closure.at) END
+                    FROM closure WHERE id = :id
+                """), {"id": row.experiment_id, "delete": control.delete_requested})
             elif control.resume_pending and not control.paused:
                 connection.execute(text("""
                     UPDATE pump_control SET resume_pending = false WHERE experiment_id = :id
