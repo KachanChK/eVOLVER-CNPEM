@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from evolver.db.models import OD_MAX, OD_MIN
 from evolver_contracts.models import PumpCommand
@@ -226,9 +226,10 @@ def resume_reading(connection: Connection, row, now: datetime):
         FROM od_readings od
         WHERE od.experiment_id = :id AND od.vial_id = :vial_id
           AND od.generated_at >= :started_at AND od.generated_at = :generated_at
-          AND od.event_id = :event_id AND NOT EXISTS (
+          AND od.event_id = :event_id AND od.allocation_verified AND NOT EXISTS (
             SELECT 1 FROM od_readings newer
             WHERE newer.experiment_id = od.experiment_id AND newer.vial_id = od.vial_id
+              AND newer.allocation_verified
               AND newer.generated_at BETWEEN od.generated_at AND :now
               AND (newer.generated_at > od.generated_at OR
                    (newer.producer_id = od.producer_id AND newer.sequence > od.sequence))
@@ -254,7 +255,17 @@ def command_is_current(
     connection: Connection, command: PumpCommand, now: datetime | None = None,
     *, claimed_here: bool = False,
 ) -> bool:
-    row = lock_control(connection, int(command.experiment_run_id))
+    try:
+        allocation_id = UUID(command.experiment_run_id or "")
+    except ValueError:
+        return False
+    experiment_id = connection.scalar(
+        text("SELECT id FROM experiments WHERE allocation_id = :allocation_id"),
+        {"allocation_id": allocation_id},
+    )
+    if experiment_id is None:
+        return False
+    row = lock_control(connection, experiment_id)
     if row.ended_at is not None or row.pending_command_id != command.command_id:
         return False
     now = now if now is not None else connection.scalar(text("SELECT clock_timestamp()"))
@@ -297,9 +308,10 @@ def command_is_current(
 def pending_commands(connection: Connection, now: datetime) -> list[PumpCommand]:
     rows = connection.execute(
         text("""
-            SELECT p.command_id, p.experiment_id, p.desired_state, p.created_at, p.expires_at
+            SELECT p.command_id, e.allocation_id, p.desired_state, p.created_at, p.expires_at
             FROM pump_commands p JOIN pump_control c
               ON c.pending_command_id = p.command_id
+            JOIN experiments e ON e.id = p.experiment_id
             WHERE p.sent_at IS NULL AND p.result_status = 'pending'
               AND (p.desired_state = 'off' OR
                    (NOT c.reconcile_required AND NOT c.paused AND NOT c.ending
@@ -310,7 +322,7 @@ def pending_commands(connection: Connection, now: datetime) -> list[PumpCommand]
     ).mappings().all()
     return [PumpCommand(
         schema_version="1.0", command_id=row.command_id,
-        equipment_id=EQUIPMENT_ID, experiment_run_id=str(row.experiment_id),
+        equipment_id=EQUIPMENT_ID, experiment_run_id=str(row.allocation_id),
         author_id=AUTHOR_ID, created_at=row.created_at, expires_at=row.expires_at,
         target_type="pump", pump_id=1,
         action="turn_on" if row.desired_state == "on" else "turn_off",

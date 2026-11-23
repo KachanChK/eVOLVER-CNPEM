@@ -5,10 +5,13 @@ com a bomba simulada desligada; esse é o estado inicial definido pelo simulador
 Experimentos anteriores à configuração de limites mantêm estado desconhecido e
 não entram no controle automático.
 
-- A ingestão associa cada OD ao experimento válido no horário de geração. Para
-  controle, aceita OD finita em `[0,10; 0,80]` e usa somente a leitura mais recente
-  por `generated_at` e, no mesmo horário e produtor, `sequence`. Duplicatas e
-  leituras atrasadas continuam no histórico, sem comandar a bomba.
+- A ingestão associa cada leitura ao UUID da alocação e confere o vial e o
+  horário de geração. Leituras antigas sem UUID continuam no histórico pela
+  janela de tempo, sem participar do controle automático ou da retomada.
+  Para controle, a ingestão aceita OD finita em `[0,10; 0,80]` e usa somente
+  a leitura mais recente por `generated_at` e, no mesmo horário e produtor,
+  `sequence`. Leituras válidas para a alocação original podem chegar depois
+  do seu encerramento e ficar no histórico.
 - **Frescor:** uma leitura só pode iniciar comando até **10 segundos** após
   `generated_at`, inclusive, segundo o relógio da ingestão. Leitura do futuro
   não inicia comando. O prazo cobre a cadência atual de 0,5 s e pequenas filas
@@ -22,14 +25,17 @@ não entram no controle automático.
   `executed` confirma o novo estado simulado. Sem resultado conclusivo em 10 s,
   o estado fica `unknown` e o controlador não repete o comando.
 - A ingestão publica comandos com QoS 1 e `retain=false` usando `pump_id: 1` e
-  `experiment_run_id`. O simulador consulta a alocação ativa antes de executar
-  e rejeita vínculo ausente, encerrado ou incompatível.
+  o UUID persistido da alocação em `experiment_run_id`. O simulador consulta a
+  alocação ativa antes de executar ou repetir um resultado e rejeita vínculo
+  ausente, encerrado ou incompatível. A telemetria simulada carrega o mesmo UUID.
 - O simulador grava estado e identidade dos comandos concluídos em SQLite antes
   de publicar `executed`. O arquivo padrão é
   `~/.evolver-simulator/pump-state.sqlite3` e pode ser definido por
   `SIMULATOR_PUMP_STATE_PATH`. Preserve esse arquivo entre reinícios do simulador.
-  A chave do estado inclui experimento e vial, para não herdar o estado de outro
-  experimento no mesmo vial.
+  O estado usa o UUID da alocação e o vial. A ordenação e os resultados também
+  são separados por UUID, inclusive quando o banco recriado reutiliza IDs
+  numéricos. A atualização deixa registros antigos do SQLite no arquivo e
+  inicia a reconciliação com a ingestão após reiniciar os serviços.
 - A ingestão marca o estado como desconhecido ao iniciar ou reconectar ao MQTT.
   Após concluir ou expirar qualquer comando pendente, a próxima OD nova e
   recente solicita um `turn_off` de reconciliação; somente

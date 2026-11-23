@@ -56,10 +56,12 @@ class SimulatorSettings(BaseSettings):
     )
     seed: int | None = Field(default=None, validation_alias="SIMULATOR_SEED")
 
-    # Valores simulados: base, tamanho da onda e ruído de cada medição.
-    od_baseline: float = Field(default=0.35, ge=0.0, validation_alias="SIMULATOR_OD_BASELINE")
-    od_variation: float = Field(default=0.08, ge=0.0, validation_alias="SIMULATOR_OD_VARIATION")
-    od_noise: float = Field(default=0.005, ge=0.0, le=0.1, validation_alias="SIMULATOR_OD_NOISE")
+    od_baseline: float = Field(
+        default=0.35, ge=0.10, le=0.80, validation_alias="SIMULATOR_OD_BASELINE"
+    )
+    od_noise: float = Field(default=0.005, ge=0.0, le=0.01, validation_alias="SIMULATOR_OD_NOISE")
+
+    # Ondas e ruído independentes da bomba.
     ph_baseline: float = Field(default=7.0, validation_alias="SIMULATOR_PH_BASELINE")
     ph_variation: float = Field(default=0.15, ge=0.0, validation_alias="SIMULATOR_PH_VARIATION")
     ph_noise: float = Field(default=0.02, ge=0.0, validation_alias="SIMULATOR_PH_NOISE")

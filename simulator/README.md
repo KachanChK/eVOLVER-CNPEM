@@ -16,9 +16,55 @@ durável (`~/.evolver-simulator/pump-state.sqlite3`). Configure
 `SIMULATOR_PUMP_STATE_PATH` para outro caminho persistente se necessário. O
 simulador grava o estado antes de confirmar a execução de um comando.
 
-Cada valor parte de uma base e recebe uma variação e um ruído simulado. OD, pH e
-temperatura têm geradores independentes e ondas com fases e períodos diferentes.
-Esses padrões servem para testar o sistema, sem representar medições reais.
+### Atualizar uma instalação existente
+
+Aplique as migrações Alembic até `20261122_04` e atualize a ingestão e o
+simulador juntos. A telemetria e os comandos de bomba usam o UUID da alocação
+descoberto via MQTT no campo existente `experiment_run_id`. Os tópicos, os
+schemas MQTT e os IDs numéricos da API são preservados. Se a descoberta vier
+sem UUID, o simulador ainda envia o ID numérico e usa a bomba desligada.
+Comandos legados sem UUID são recusados.
+
+A ingestão aceita leituras com ID numérico ou sem identificador para o
+histórico, pela janela de tempo do experimento. Só a OD vinculada ao UUID
+pode participar do controle e da retomada da bomba. O UUID mantém leituras
+atrasadas na alocação original quando a janela ainda é válida. Um UUID
+desconhecido no banco recriado é recusado, mesmo com IDs numéricos repetidos.
+A ingestão antiga espera IDs numéricos na telemetria, e o simulador antigo
+espera a resposta de descoberta sem UUID.
+
+Mantenha o SQLite. As tabelas antigas continuam no arquivo. Como seus registros
+numéricos podem pertencer a outro banco, o simulador não os restaura nem
+reaproveita sua ordem ou seus resultados. Na atualização, reinicie a ingestão
+para reconciliar a bomba com `turn_off`. Depois disso, alocações com o mesmo
+UUID preservam o estado entre reinícios. Um banco recriado emite UUIDs novos,
+mesmo se repetir IDs numéricos.
+
+Revise estas variáveis no ambiente ou no arquivo `.env`:
+
+- `SIMULATOR_OD_BASELINE` agora exige um valor entre 0,10 e 0,80, inclusive.
+- `SIMULATOR_OD_NOISE` aceitava até 0,10. Reduza valores acima de 0,01 antes
+  de iniciar o simulador. O valor 0 continua desabilitando o ruído.
+- Remova `SIMULATOR_OD_VARIATION`. A antiga onda de OD foi substituída pelos
+  passos da bomba e a variável é ignorada.
+
+### Dinâmica de OD
+
+A primeira leitura de OD de cada par vial/experimento usa `SIMULATOR_OD_BASELINE`
+(padrão 0,35). Nas próximas leituras a OD sobe **0,02 por amostra** com a bomba
+desligada e desce **0,05 por amostra** com a bomba ligada. Na cadência de 0,5 s,
+as taxas nominais são 0,04 OD/s na subida e 0,10 OD/s na descida. A OD satura em
+**[0,10; 0,80]**, inclusive. O ruído de OD altera o passo em até
+`SIMULATOR_OD_NOISE` em cada sentido (padrão 0,005, máximo 0,01, zero desabilita).
+A direção permanece a mesma até a saturação, inclusive com limiares próximos.
+Se houver atraso nas rodadas, aplica-se um passo por amostra gerada.
+
+Um novo experimento no mesmo vial começa na OD inicial e com a bomba desligada.
+Ao reiniciar o processo, a primeira OD usa a base configurada e os próximos
+passos usam o estado da bomba restaurado do SQLite. Ao pausar um experimento, o
+controlador envia `turn_off` se a bomba estiver ligada. Após executar o comando,
+o simulador confirma o mesmo `command_id` e a OD volta a subir.
+As ondas e o ruído de pH e temperatura continuam independentes da bomba.
 
 ## Preparar
 
@@ -77,14 +123,29 @@ consulte a tabela para verificar o salvamento.
 ## Ajustes opcionais
 
 - `SIMULATOR_SEED`: opcional; com o mesmo número, a mesma configuração e a mesma
-  sequência de vials ativos por rodada, repete os valores para facilitar testes.
+  sequência de vials ativos e de estados da bomba por rodada, repete os valores.
   Sem esse ajuste, cada execução começa com novas sequências.
 - `SIMULATOR_MAX_MESSAGES`: limite opcional de medições; `--max-messages` tem prioridade.
   Deixe ambos sem definir para executar sem limite.
 - Para experimentar uma pausa, configure `SIMULATOR_PAUSE_AFTER_MESSAGES` e
   `SIMULATOR_PAUSE_SECONDS`. Para simular uma falha, use `SIMULATOR_FAIL_AFTER_MESSAGES`.
 
-As opções avançadas de valores, variação e ruído continuam disponíveis na classe
-`SimulatorSettings`. MQTT usa versão 5, QoS 1 e mensagens não retidas. Não há fila
+As opções avançadas de pH e temperatura estão em `SimulatorSettings`.
+MQTT usa versão 5, QoS 1 e mensagens não retidas. Não há fila
 local nem confirmação de gravação no banco; se a ingestão ou o banco estiverem fora
 do ar, a temperatura pode não ser salva.
+
+## Reproduzir dois ciclos de OD
+
+Na raiz do repositório, depois de instalar os pacotes do workspace, execute:
+
+```powershell
+$env:PYTHONPATH = 'simulator/src;backend/src;packages/contracts/src'
+uv run --frozen --all-packages pytest -q -s simulator/tests/test_mqtt.py -k two_controller_cycles
+```
+
+O teste liga a regra de histerese do backend ao simulador por um cliente MQTT de
+teste. Usa a semente 71 e ruído de 0,01. Para cada par de limiares, imprime as
+quatro leituras que acionaram `turn_on`, `turn_off`, `turn_on` e `turn_off`,
+seguidas da primeira leitura da nova subida. Verifica a correlação dos resultados
+com cada comando e a direção e faixa de todas as amostras.

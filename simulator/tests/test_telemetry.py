@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -52,13 +51,13 @@ def test_same_seed_and_configuration_repeat_values_positions_and_sequence() -> N
     ]
 
 
-@pytest.mark.parametrize("kind", ["od", "ph", "temperature"])
+@pytest.mark.parametrize("kind", ["ph", "temperature"])
 def test_one_measurement_does_not_advance_other_random_streams(kind: str) -> None:
     settings = make_settings(seed=71)
     reference = make_generator(settings)
     with_extra_measurements = make_generator(settings)
 
-    for other_kind in {"od", "ph", "temperature"} - {kind}:
+    for other_kind in {"ph", "temperature"} - {kind}:
         for cycle in range(10):
             with_extra_measurements._value_for(other_kind, 0, cycle)
 
@@ -67,21 +66,23 @@ def test_one_measurement_does_not_advance_other_random_streams(kind: str) -> Non
     assert actual == expected
 
 
-def test_measurement_trends_are_not_forced_to_move_in_lockstep() -> None:
-    generator = make_generator(make_settings(seed=71, od_noise=0, ph_noise=0, temperature_noise=0))
-    directions = {
-        kind: [
-            generator._value_for(kind, 0, cycle + 1) > generator._value_for(kind, 0, cycle)
-            for cycle in range(24)
-        ]
-        for kind in ("od", "ph", "temperature")
-    }
-    assert any(len({directions[kind][cycle] for kind in directions}) > 1 for cycle in range(24))
+def test_pump_changes_od_only() -> None:
+    settings = make_settings(seed=71)
+    running = SimulatedTelemetryGenerator(settings, allocations((1, 41)), pump_is_on=lambda _: True)
+    stopped = make_generator(settings)
+    for cycle in range(12):
+        for kind in ("od", "ph", "temperature"):
+            actual, reference = running.next_event(), stopped.next_event()
+            assert actual.measurement_type == reference.measurement_type == kind
+            if kind == "od" and cycle:
+                assert actual.value < reference.value
+            else:
+                assert actual.value == reference.value
 
 
 def test_positions_cycle_in_declared_order_and_sequence_starts_at_zero() -> None:
     generator = make_generator(
-        make_settings(od_noise=0, od_variation=0),
+        make_settings(od_noise=0),
         allocations((3, 43), (1, 41), (2, 42)),
     )
 
@@ -111,28 +112,52 @@ def test_active_experiment_id_is_included_for_each_vial() -> None:
     assert [event.experiment_run_id for event in events] == ["41"] * 3 + ["42"] * 3
 
 
-def test_noise_stays_within_configured_range() -> None:
-    settings = make_settings(
-        od_baseline=0.5,
-        od_variation=0,
-        od_noise=0.01,
-    )
+def test_od_progress_and_noise_are_independent_of_other_allocations() -> None:
+    settings = make_settings(seed=71, od_noise=0.01)
+    isolated = make_generator(settings)
+    shared = make_generator(settings, allocations((1, 41), (2, 42)))
+    for round_number in range(12):
+        shared.update_allocations(
+            allocations((1, 41), (2, 42)) if round_number % 2 else allocations((2, 42), (1, 41))
+        )
+        expected = [isolated.next_event() for _ in range(3)][0]
+        actual = next(
+            item for item in [shared.next_event() for _ in range(6)]
+            if item.measurement_type == "od" and item.experiment_run_id == "41"
+        )
+        assert actual.value == expected.value
+
+
+@pytest.mark.parametrize("noise", [0, 0.01])
+@pytest.mark.parametrize("baseline", [0.10, 0.80])
+def test_od_steps_and_saturates_at_both_limits(baseline: float, noise: float) -> None:
+    pump_on = False
     generator = SimulatedTelemetryGenerator(
-        settings,
+        make_settings(seed=71, od_baseline=baseline, od_noise=noise),
         allocations((1, 41)),
-        rng=random.Random(9),
-        clock=lambda: FIXED_TIME,
-        uuid_factory=lambda: FIXED_UUID,
+        pump_is_on=lambda _: pump_on,
     )
 
-    values = [
-        event.value
-        for event in (generator.next_event() for _ in range(300))
-        if event.measurement_type == "od"
-    ]
+    def sample() -> float:
+        od, _, _ = (generator.next_event() for _ in range(3))
+        return od.value
 
-    assert all(0.49 <= value <= 0.51 for value in values)
-    assert len(set(values)) > 1
+    initial = sample()
+    assert initial == baseline
+    for direction, step, limit in [(False, 0.02, 0.80), (True, -0.05, 0.10)]:
+        pump_on = direction
+        previous = initial
+        for _ in range(80):
+            current = sample()
+            assert 0.10 <= current <= 0.80
+            bounds = sorted(
+                min(0.80, max(0.10, previous + step + offset))
+                for offset in (-noise, noise)
+            )
+            assert round(bounds[0], 6) <= current <= round(bounds[1], 6)
+            previous = current
+        assert previous == limit
+        initial = previous
 
 
 @pytest.mark.parametrize(
@@ -149,7 +174,6 @@ def test_ph_and_temperature_noise_stay_within_configured_mock_range(
 ) -> None:
     generator = make_generator(
         make_settings(
-            od_variation=0,
             od_noise=0,
             ph_variation=0,
             ph_noise=0.02,
