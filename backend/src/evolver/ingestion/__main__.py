@@ -6,6 +6,7 @@ import math
 import os
 import time
 from datetime import UTC, datetime
+from uuid import UUID
 
 from evolver_contracts.models import CommandResultPayload, TelemetryEvent
 from evolver_contracts.pilot import (
@@ -63,13 +64,18 @@ def store_v1_message(engine: Engine, topic: str, payload: bytes) -> str:
     vial_id = int(message.vial_id)
     if not 1 <= vial_id <= 12 or not math.isfinite(message.value):
         raise ValueError("vial ou valor inválido")
-    experiment_id = message.experiment_run_id
-    if experiment_id is not None and (
-        not experiment_id.isascii()
-        or not experiment_id.isdecimal()
-        or not 1 <= int(experiment_id) <= 2**63 - 1
-    ):
-        raise ValueError("experimento inválido")
+    run_id = message.experiment_run_id
+    experiment_id = allocation_id = None
+    if run_id is not None:
+        if run_id.isascii() and run_id.isdecimal():
+            experiment_id = int(run_id)
+            if not 1 <= experiment_id <= 2**63 - 1:
+                raise ValueError("experimento inválido")
+        else:
+            try:
+                allocation_id = UUID(run_id)
+            except ValueError as exc:
+                raise ValueError("experimento inválido") from exc
     params = {
         "vial_id": vial_id,
         "equipment_id": message.equipment_id,
@@ -80,7 +86,9 @@ def store_v1_message(engine: Engine, topic: str, payload: bytes) -> str:
         "measurement_type": message.measurement_type,
         "producer_id": message.producer_id,
         "sequence": message.sequence,
-        "expected_experiment_id": int(experiment_id) if experiment_id is not None else None,
+        "expected_experiment_id": experiment_id,
+        "allocation_id": allocation_id,
+        "allocation_verified": allocation_id is not None,
     }
     with engine.begin() as connection:
         params["received_at"] = connection.scalar(text("SELECT clock_timestamp()"))
@@ -90,6 +98,7 @@ def store_v1_message(engine: Engine, topic: str, payload: bytes) -> str:
             WHERE e.vial_id = :vial_id AND v.equipment_id = :equipment_id
               AND (CAST(:expected_experiment_id AS bigint) IS NULL
                    OR e.id = :expected_experiment_id)
+              AND (CAST(:allocation_id AS uuid) IS NULL OR e.allocation_id = :allocation_id)
               AND e.started_at <= :generated_at
               AND (e.ended_at IS NULL OR :generated_at < e.ended_at)
               AND :generated_at <= :received_at
@@ -113,12 +122,12 @@ def store_v1_message(engine: Engine, topic: str, payload: bytes) -> str:
         else:
             statement = """INSERT INTO od_readings
                 (event_id, generated_at, received_at, vial_id, experiment_id,
-                 od_value, producer_id, sequence)
+                 od_value, producer_id, sequence, allocation_verified)
                 VALUES (:event_id, :generated_at, :received_at, :vial_id, :experiment_id,
-                        :value, :producer_id, :sequence)
+                        :value, :producer_id, :sequence, :allocation_verified)
                 ON CONFLICT (event_id, generated_at) DO NOTHING"""
         result = connection.execute(text(statement), params)
-        if result.rowcount and message.measurement_type == "od":
+        if result.rowcount and message.measurement_type == "od" and allocation_id is not None:
             consider_od(connection, params, params["received_at"])
     return "gravada" if result.rowcount else "duplicada"
 

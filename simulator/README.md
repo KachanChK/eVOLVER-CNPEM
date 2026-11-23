@@ -18,13 +18,20 @@ simulador grava o estado antes de confirmar a execução de um comando.
 
 ### Atualizar uma instalação existente
 
-Aplique a migração Alembic `20261122_03` e atualize a ingestão e o simulador
-juntos. A descoberta MQTT inclui o UUID da alocação, que os comandos de bomba
-carregam no campo existente `experiment_run_id`. Os tópicos, o schema dos
-comandos e resultados, e os IDs numéricos na API e na telemetria são preservados.
-O simulador novo consegue ler alocações antigas sem UUID para publicar
-telemetria, mas rejeita comandos numéricos e usa a bomba desligada nesses vials.
-O simulador antigo não reconhece a resposta nova de descoberta.
+Aplique as migrações Alembic até `20261122_04` e atualize a ingestão e o
+simulador juntos. A telemetria e os comandos de bomba usam o UUID da alocação
+descoberto via MQTT no campo existente `experiment_run_id`. Os tópicos, os
+schemas MQTT e os IDs numéricos da API são preservados. Se a descoberta vier
+sem UUID, o simulador ainda envia o ID numérico e usa a bomba desligada.
+Comandos legados sem UUID são recusados.
+
+A ingestão aceita leituras com ID numérico ou sem identificador para o
+histórico, pela janela de tempo do experimento. Só a OD vinculada ao UUID
+pode participar do controle e da retomada da bomba. O UUID mantém leituras
+atrasadas na alocação original quando a janela ainda é válida. Um UUID
+desconhecido no banco recriado é recusado, mesmo com IDs numéricos repetidos.
+A ingestão antiga espera IDs numéricos na telemetria, e o simulador antigo
+espera a resposta de descoberta sem UUID.
 
 Mantenha o SQLite. As tabelas antigas continuam no arquivo. Como seus registros
 numéricos podem pertencer a outro banco, o simulador não os restaura nem

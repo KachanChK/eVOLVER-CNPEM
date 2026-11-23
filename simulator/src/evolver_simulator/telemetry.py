@@ -87,7 +87,7 @@ class SimulatedTelemetryGenerator:
             producer_id=self._settings.producer_id,
             equipment_id=self._settings.equipment_id,
             vial_id=str(allocation.vial_id),
-            experiment_run_id=str(allocation.experiment_id),
+            experiment_run_id=str(allocation.allocation_id or allocation.experiment_id),
             measurement_type=measurement_type,
             value=value,
             generated_at=self._clock(),

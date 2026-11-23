@@ -151,6 +151,7 @@ class OdReading(Base):
     od_value: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
     producer_id: Mapped[str | None] = mapped_column(String(64))
     sequence: Mapped[int | None] = mapped_column(BigInteger)
+    allocation_verified: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
     @property
     def value(self) -> float:

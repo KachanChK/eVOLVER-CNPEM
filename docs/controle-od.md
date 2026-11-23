@@ -5,10 +5,13 @@ com a bomba simulada desligada; esse é o estado inicial definido pelo simulador
 Experimentos anteriores à configuração de limites mantêm estado desconhecido e
 não entram no controle automático.
 
-- A ingestão associa cada OD ao experimento válido no horário de geração. Para
-  controle, aceita OD finita em `[0,10; 0,80]` e usa somente a leitura mais recente
-  por `generated_at` e, no mesmo horário e produtor, `sequence`. Duplicatas e
-  leituras atrasadas continuam no histórico, sem comandar a bomba.
+- A ingestão associa cada leitura ao UUID da alocação e confere o vial e o
+  horário de geração. Leituras antigas sem UUID continuam no histórico pela
+  janela de tempo, sem participar do controle automático ou da retomada.
+  Para controle, a ingestão aceita OD finita em `[0,10; 0,80]` e usa somente
+  a leitura mais recente por `generated_at` e, no mesmo horário e produtor,
+  `sequence`. Leituras válidas para a alocação original podem chegar depois
+  do seu encerramento e ficar no histórico.
 - **Frescor:** uma leitura só pode iniciar comando até **10 segundos** após
   `generated_at`, inclusive, segundo o relógio da ingestão. Leitura do futuro
   não inicia comando. O prazo cobre a cadência atual de 0,5 s e pequenas filas
@@ -24,7 +27,7 @@ não entram no controle automático.
 - A ingestão publica comandos com QoS 1 e `retain=false` usando `pump_id: 1` e
   o UUID persistido da alocação em `experiment_run_id`. O simulador consulta a
   alocação ativa antes de executar ou repetir um resultado e rejeita vínculo
-  ausente, encerrado ou incompatível. A telemetria continua usando o ID numérico.
+  ausente, encerrado ou incompatível. A telemetria simulada carrega o mesmo UUID.
 - O simulador grava estado e identidade dos comandos concluídos em SQLite antes
   de publicar `executed`. O arquivo padrão é
   `~/.evolver-simulator/pump-state.sqlite3` e pode ser definido por

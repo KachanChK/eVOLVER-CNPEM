@@ -27,6 +27,8 @@ from evolver_contracts.models import (
     TelemetryEvent,
 )
 from evolver_contracts.pilot import AllocationRequest
+from evolver_simulator.config import SimulatorSettings
+from evolver_simulator.telemetry import SimulatedTelemetryGenerator
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
@@ -65,12 +67,11 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
             return connection.scalar(text("SELECT clock_timestamp()"))
 
     def allocation_id(experiment_id: int) -> str:
-        request = AllocationRequest(request_id=uuid4())
-        return str(next(
-            vial.allocation_id
-            for vial in active_vials(engine, request.model_dump_json().encode()).vials
-            if vial.experiment_id == experiment_id
-        ))
+        with engine.connect() as connection:
+            return str(connection.scalar(
+                text("SELECT allocation_id FROM experiments WHERE id = :id"),
+                {"id": experiment_id},
+            ))
 
     def reading(
         experiment_id: int, value: float, sequence: int, generated_at: datetime,
@@ -79,7 +80,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         event = TelemetryEvent(
             schema_version="1.0", event_id=event_id or uuid4(), producer_id="simulator-local-01",
             equipment_id="evolver-sim-01", vial_id=str(vial_id),
-            experiment_run_id=str(experiment_id), measurement_type="od", value=value,
+            experiment_run_id=allocation_id(experiment_id), measurement_type="od", value=value,
             generated_at=generated_at, sequence=sequence,
         )
         return store_v1_message(engine, topic, event.model_dump_json().encode())
@@ -503,6 +504,11 @@ class PumpRun:
         assert response.status_code == 201
         self.id = response.json()["id"]
         self.url = f"/api/experiments/{self.id}/pump"
+        request = AllocationRequest(request_id=uuid4()).model_dump_json().encode()
+        self.allocation_id = next(
+            vial.allocation_id for vial in active_vials(engine, request).vials
+            if vial.experiment_id == self.id
+        )
 
     def now(self) -> datetime:
         with self.engine.connect() as connection:
@@ -513,10 +519,13 @@ class PumpRun:
         assert response.status_code == 200
         assert response.json()["state"] == state
 
-    def od(self, value: float, sequence: int, generated_at: datetime) -> UUID:
+    def od(
+        self, value: float, sequence: int, generated_at: datetime, *, legacy: bool = False,
+    ) -> UUID:
         event = TelemetryEvent(
             schema_version="1.0", event_id=uuid4(), producer_id="simulator-local-01",
-            equipment_id="evolver-sim-01", vial_id="1", experiment_run_id=str(self.id),
+            equipment_id="evolver-sim-01", vial_id="1",
+            experiment_run_id=str(self.id if legacy else self.allocation_id),
             measurement_type="od", value=value, generated_at=generated_at, sequence=sequence,
         )
         assert store_v1_message(
@@ -540,13 +549,22 @@ class PumpRun:
 
 
 @pytest.mark.integration
-def test_pump_commands_target_the_allocation_after_database_identity_reset(
+def test_telemetry_and_commands_target_the_allocation_after_database_identity_reset(
     control_database: Engine,
 ) -> None:
     request = AllocationRequest(request_id=uuid4()).model_dump_json().encode()
     with TestClient(app) as client:
         old = PumpRun(control_database, client)
         old_allocation = active_vials(control_database, request).vials[0]
+        settings = SimulatorSettings(
+            _env_file=None, mqtt_simulator_password="test", od_baseline=0.35, od_noise=0,
+        )
+        generated_at = old.now()
+        generator = SimulatedTelemetryGenerator(
+            settings, [old_allocation], clock=lambda: generated_at,
+        )
+        for _ in range(23 * 3):
+            generator.next_event()
         old.od(0.7, 1, old.now())
         previous, = old.queued()
         assert previous.experiment_run_id == str(old_allocation.allocation_id)
@@ -561,12 +579,42 @@ def test_pump_commands_target_the_allocation_after_database_identity_reset(
         new_allocation = active_vials(control_database, request).vials[0]
         assert (old_allocation.experiment_id, old_allocation.vial_id) == (new.id, 1)
         assert new_allocation.allocation_id != old_allocation.allocation_id
+        topic = "evolver/v1/evolver-sim-01/telemetry"
+        generated_at = new.now()
+        delayed = generator.next_event()
+        assert delayed.experiment_run_id == str(old_allocation.allocation_id)
+        assert delayed.value == 0.80
+        with pytest.raises(ValueError, match="experimento ativo"):
+            store_v1_message(control_database, topic, delayed.model_dump_json().encode())
+        assert new.queued() == []
         with control_database.connect() as connection:
+            assert connection.execute(
+                text("SELECT confirmed_state, last_event_id FROM pump_control"),
+            ).one() == ("off", None)
+            assert connection.scalar(text("SELECT count(*) FROM od_readings")) == 0
             assert connection.scalar(
-                text("SELECT confirmed_state FROM pump_control WHERE experiment_id = :id"),
+                text("SELECT started_at FROM experiments WHERE id = :id"),
                 {"id": new.id},
-            ) == "off"
-        new.od(0.7, 1, new.now())
+            ) <= delayed.generated_at
+
+        generated_at = new.now()
+        generator.update_allocations([new_allocation])
+        current_sample = generator.next_event()
+        assert current_sample.value == 0.35
+        assert current_sample.experiment_run_id == str(new_allocation.allocation_id)
+        assert store_v1_message(
+            control_database, topic, current_sample.model_dump_json().encode(),
+        ) == "gravada"
+        new.od(0.8, 99, new.now(), legacy=True)
+        assert new.queued() == []
+        with control_database.connect() as connection:
+            assert connection.execute(text("""
+                SELECT od_value, allocation_verified FROM od_readings ORDER BY generated_at
+            """)).all() == [(0.35, True), (0.8, False)]
+            assert connection.scalar(text("SELECT last_event_id FROM pump_control")) == (
+                current_sample.event_id
+            )
+        new.od(0.7, current_sample.sequence + 1, new.now())
         current, = new.queued()
         assert current.experiment_run_id == str(new_allocation.allocation_id)
         with control_database.begin() as connection:
@@ -669,7 +717,7 @@ def test_resumption_persists_and_evaluates_od_when_off_executes(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("case", [
-    "older_sequence", "same_identity", "invalid_newer", "future", "reused_vial",
+    "older_sequence", "same_identity", "invalid_newer", "legacy_newer", "future", "reused_vial",
 ])
 def test_resume_uses_exact_accepted_od_cursor(control_database: Engine, case: str) -> None:
     with TestClient(app) as client:
@@ -683,6 +731,8 @@ def test_resume_uses_exact_accepted_od_cursor(control_database: Engine, case: st
             run.od(0.2, 2, timestamp)
         elif case == "invalid_newer":
             run.od(0.81, 3, timestamp)
+        elif case == "legacy_newer":
+            run.od(0.2, 3, run.now(), legacy=True)
         elif case == "future":
             with pytest.raises(ValueError, match="experimento ativo"):
                 run.od(0.2, 3, timestamp + timedelta(seconds=5))
