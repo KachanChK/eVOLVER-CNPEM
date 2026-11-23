@@ -147,6 +147,7 @@ async function applyClosure(next, announce = false) {
   const previous = closure.value
   closure.value = next
   if (next.state === 'none') return
+  pumpRevision++
   actionError.value = ''
   if (next.state !== 'completed' ||
       (previous?.state === 'completed' && previous.action === next.action && !announce)) return
@@ -181,12 +182,14 @@ async function loadClosure() {
 }
 
 async function change(action) {
-  if (pending.value || pendingPump.value || (closing.value && closure.value.state === 'pending')) return
+  const retrying = closing.value && closure.value.state === 'unconfirmed' &&
+    closure.value.action === action
+  if (pending.value || (!retrying && (pendingPump.value || closing.value))) return
   const deleting = action === 'delete'
   const confirmation = deleting
     ? 'Excluir este experimento da interface? O histórico será preservado no banco.'
     : 'Inativar este experimento e liberar o vial? O histórico continuará disponível.'
-  if (!closing.value && !globalThis.confirm(confirmation)) return
+  if (!retrying && !globalThis.confirm(confirmation)) return
   actionRevision++
   pumpRevision++
   pending.value = true
@@ -215,14 +218,21 @@ async function change(action) {
 }
 
 async function changePumpMode() {
-  pumpRevision++
+  if (pending.value || pendingPump.value || closing.value ||
+      experiment.value?.ended_at || pump.value?.ending) return
+  const revision = ++pumpRevision
+  const signal = AbortSignal.timeout(10000)
   pendingPump.value = true
   pumpError.value = ''
   try {
-    const state = await request(`${base}/pump/${pumpAction.value}`, { method: 'POST' })
-    if (!disposed) pump.value = state
+    const state = await request(`${base}/pump/${pumpAction.value}`, { method: 'POST', signal })
+    if (!disposed && revision === pumpRevision && !experiment.value?.ended_at) pump.value = state
   } catch (failure) {
-    if (!disposed) pumpError.value = failure.message
+    if (!disposed && revision === pumpRevision && !experiment.value?.ended_at) {
+      pumpError.value = signal.aborted
+        ? 'A API demorou para responder. O estado da bomba será consultado novamente.'
+        : failure.message
+    }
   } finally {
     pendingPump.value = false
   }

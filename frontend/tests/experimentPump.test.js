@@ -381,3 +381,143 @@ for (const closureFirst of [false, true]) {
     assert.deepEqual(routes, [{ name: 'home' }])
   })
 }
+
+
+for (const action of ['delete', 'inactivate']) {
+  test('an in-flight pump pause allows exactly one ' + action + ' retry', async (t) => {
+    routes.length = 0
+    const root = node('root')
+    const base = '/api/experiments/1'
+    const start = new Date().toISOString()
+    const details = { id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start }
+    const notices = []
+    let closure = { state: 'none' }
+    let finishPause
+    let finishRetry
+    let retries = 0
+    let poll
+    t.mock.method(globalThis, 'setInterval', (callback, ms) => {
+      if (ms === 5000) poll = callback
+      return 1
+    })
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      if (url === base + '/pump/pause' && options?.method === 'POST') {
+        return new Promise((resolve) => {
+          finishPause = () => resolve(Response.json({ state: 'paused', ending: false }))
+        })
+      }
+      if (options?.method) {
+        assert.deepEqual([url, options.method], action === 'delete'
+          ? [base, 'DELETE']
+          : [base + '/inactivate', 'POST'])
+        retries++
+        return new Promise((resolve) => {
+          finishRetry = () => {
+            closure = { state: 'pending', action }
+            resolve(Response.json(closure, { status: 202 }))
+          }
+        })
+      }
+      if (url === base) return Response.json(details)
+      if (url === base + '/closure') return Response.json(closure)
+      if (url === base + '/pump') return Response.json({ state: 'automatic', ending: false })
+      return Response.json([])
+    })
+    const app = renderer.createApp(ExperimentDetails, { id: '1', onChanged: (message) => notices.push(message) })
+    app.mount(root)
+    t.after(() => app.unmount())
+    const button = (label) => descendants(root).find((el) => el.type === 'button' &&
+      visibleText(el).trim() === label)
+
+    await settle()
+    button('Pausar visualização').props.onClick()
+    const pause = button('Pausar bomba').props.onClick()
+    await settle()
+    assert.ok(button('Pausar bomba').props.disabled)
+    closure = { state: 'unconfirmed', action }
+    poll()
+    await settle()
+    const retry = button('Tentar desligar novamente')
+    assert.ok(retry && !retry.props.disabled)
+    const submitted = retry.props.onClick()
+    await retry.props.onClick()
+    assert.equal(retries, 1)
+    finishRetry()
+    await submitted
+    assert.match(visibleText(root), /Aguardando a confirmação/)
+    assert.deepEqual(notices.filter(Boolean), [])
+    assert.deepEqual(routes, [])
+
+    finishPause()
+    await pause
+    await settle()
+    assert.match(visibleText(root), /Aguardando a confirmação/)
+    assert.ok(!button('Despausar bomba'))
+    assert.ok(button('Retomar visualização'))
+    closure = { state: 'completed', action, ended_at: start }
+    poll()
+    await settle()
+    if (action === 'delete') {
+      assert.deepEqual(routes, [{ name: 'home' }])
+      assert.deepEqual(notices.filter(Boolean), ['Experimento excluído da interface.'])
+    } else {
+      assert.match(visibleText(root), /Vial 1 · Inativo/)
+      assert.deepEqual(notices.filter(Boolean), ['Experimento inativado. Vial liberado.'])
+    }
+    assert.equal(retries, 1)
+  })
+}
+
+
+for (const action of ['pause', 'resume']) {
+  test('pump ' + action + ' releases its button after a timeout', async (t) => {
+    const root = node('root')
+    const base = '/api/experiments/1'
+    const details = {
+      id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active',
+      started_at: new Date().toISOString(),
+    }
+    const timeouts = new Map()
+    let postSignal
+    let posts = 0
+    const state = action === 'pause' ? 'automatic' : 'paused'
+    t.mock.method(AbortSignal, 'timeout', (delay) => {
+      const controller = new AbortController()
+      timeouts.set(controller.signal, { controller, delay })
+      return controller.signal
+    })
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      if (url === base + '/pump/' + action && options?.method === 'POST') {
+        posts++
+        postSignal = options.signal
+        return new Promise((_resolve, reject) => {
+          postSignal?.addEventListener('abort', () => reject(postSignal.reason), { once: true })
+        })
+      }
+      if (url === base) return Response.json(details)
+      if (url === base + '/closure') return Response.json({ state: 'none' })
+      if (url === base + '/pump') return Response.json({ state, ending: false })
+      return Response.json([])
+    })
+    const app = renderer.createApp(ExperimentDetails, { id: '1' })
+    app.mount(root)
+    t.after(() => app.unmount())
+    await settle()
+    const label = action === 'pause' ? 'Pausar bomba' : 'Despausar bomba'
+    const button = descendants(root).find((el) => el.type === 'button' && visibleText(el).trim() === label)
+    const request = button.props.onClick()
+    await settle()
+    assert.ok(button.props.disabled)
+    assert.ok(timeouts.has(postSignal))
+    const { controller, delay } = timeouts.get(postSignal)
+    assert.ok(delay > 0 && delay <= 10000)
+    const duplicate = button.props.onClick()
+    assert.equal(posts, 1)
+    controller.abort(new DOMException('Comando expirou', 'TimeoutError'))
+    await Promise.all([request, duplicate])
+    await settle()
+    assert.ok(!button.props.disabled)
+    assert.ok(descendants(root).some((el) => el.props.role === 'alert' &&
+      visibleText(el).includes('A API demorou para responder')))
+  })
+}
