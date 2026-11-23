@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue
 import { useRouter } from 'vue-router'
 import { request } from './api'
 import TemperatureHistory from './TemperatureHistory.vue'
-import { historyWindow, PERIODS } from './history.js'
+import { historyWindow, PERIODS, readingPoints } from './history.js'
 import { commandAction, commandStatus, isFinal, isOld, odValue, pumpReason, pumpState, pumpTime } from './pumpHistory.js'
 import { formatOdLimits } from './odLimits.js'
 
@@ -41,8 +41,11 @@ const pumpStatus = {
 const pumpSnapshot = shallowRef(null)
 const pump = computed(() => pumpSnapshot.value?.pump)
 const pumpHistory = computed(() => pumpSnapshot.value?.history)
-const lastOd = computed(() => pumpSnapshot.value?.latest_od)
-const odReadings = computed(() => pumpSnapshot.value?.od_readings ?? fallbackOdReadings.value)
+const odReadings = computed(() => pumpSnapshot.value
+  ? (pumpSnapshot.value.od_readings ?? []) : fallbackOdReadings.value)
+const lastOd = computed(() => pumpSnapshot.value
+  ? pumpSnapshot.value.latest_od
+  : readingPoints(odReadings.value, 'value').at(-1)?.reading)
 const lastChange = computed(() => pumpHistory.value?.transitions?.at(-1))
 const pendingCommand = computed(() => pumpHistory.value?.commands?.find(command =>
   command.command_id === pump.value?.pending_command_id))

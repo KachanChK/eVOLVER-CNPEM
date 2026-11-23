@@ -12,9 +12,13 @@ const compiled = compileScript(descriptor, { id: 'experiment-details', inlineTem
 const asModule = (code) => `data:text/javascript,${encodeURIComponent(code)}`
 const chart = asModule(`
   import { h } from '${import.meta.resolve('vue')}'
+  import { readingPoints } from '${new URL('../src/history.js', import.meta.url).href}'
   export default {
-    props: ['readings'],
-    render() { return h('chart', { count: this.readings.length }) },
+    props: ['readings', 'valueKey'],
+    render() {
+      const latest = readingPoints(this.readings, this.valueKey).at(-1)?.reading
+      return h('chart', { count: this.readings.length, latest })
+    },
   }
 `)
 const router = asModule(`
@@ -82,13 +86,14 @@ const settle = async () => {
   await nextTick()
 }
 
-test('pump snapshots recover from 503 and discard an outdated GET after a pause', async (t) => {
+test('OD fallback matches the chart until recovery and stale polling cannot restore it', async (t) => {
   const root = node('root')
   const start = new Date().toISOString()
   const experiment = { id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start }
   const automatic = {
     pump: { state: 'automatic', ending: false, confirmed_state: 'on' },
     latest_od: { value: 0.4, generated_at: start },
+    od_readings: [{ value: 0.4, generated_at: start }],
     history: { transitions: [], commands: [] },
   }
   const pausedSnapshot = {
@@ -106,6 +111,8 @@ test('pump snapshots recover from 503 and discard an outdated GET after a pause'
   const unavailable = () => response({ detail: 'Banco de dados indisponível.' }, 503)
   let getPump = unavailable
   let readings = []
+  let getOd = () => response(readings)
+  let fallbackRequests = 0
   let poll
   t.mock.method(globalThis, 'setInterval', (callback, ms) => {
     if (ms === 5000) poll = callback
@@ -120,6 +127,10 @@ test('pump snapshots recover from 503 and discard an outdated GET after a pause'
       getPump = () => response(pausedSnapshot)
       return response({ state: 'pausing', ending: false, pending_command_id: 'command-1' })
     }
+    if (url === `${base}/readings/od`) {
+      fallbackRequests++
+      return getOd()
+    }
     if (url.startsWith(`${base}/readings/`) || url === `${base}/temperature-readings`) {
       return response(readings)
     }
@@ -132,8 +143,27 @@ test('pump snapshots recover from 503 and discard an outdated GET after a pause'
   const button = (label) => descendants(root).find(
     (el) => el.type === 'button' && visibleText(el).trim() === label,
   )
-  const chartCounts = () => descendants(root).filter((el) => el.type === 'chart')
-    .map((el) => el.props.count)
+  const charts = () => descendants(root).filter((el) => el.type === 'chart')
+  const chartCounts = () => charts().map((el) => el.props.count)
+  const panelOd = () => descendants(root)
+    .find(el => el.type === 'dt' && visibleText(el) === 'Última OD')
+    .parent.children.find(el => el.type === 'dd')
+  const assertOd = (value, timestamp) => {
+    const chartReading = charts()[2].props.latest
+    assert.equal(chartReading?.value, value)
+    assert.equal(chartReading?.generated_at, timestamp)
+    const time = descendants(panelOd()).find(el => el.type === 'time')
+    if (timestamp) {
+      assert.equal(time.props.datetime, timestamp)
+      assert.match(visibleText(panelOd()), new RegExp('^' + String(value).replace('.', ',')))
+      assert.equal(visibleText(time), new Intl.DateTimeFormat('pt-BR', {
+        dateStyle: 'short', timeStyle: 'medium',
+      }).format(new Date(chartReading.generated_at)))
+    } else {
+      assert.equal(time, undefined)
+      assert.equal(visibleText(panelOd()), 'Sem medições')
+    }
+  }
 
   await settle()
   assert.match(text(), /Experimento de teste/)
@@ -144,14 +174,25 @@ test('pump snapshots recover from 503 and discard an outdated GET after a pause'
   poll()
   await settle()
   assert.deepEqual(chartCounts(), [1, 1, 1])
+  assertOd(0.7, start)
+  assert.match(text(), /Estado da bombaDesconhecida/)
+  assert.match(text(), /Comando pendenteAguardando consulta/)
+  assert.equal(button('Pausar bomba'), undefined)
   assert.doesNotMatch(text(), /Não foi possível atualizar as leituras/)
-  button('Pausar visualização').props.onClick()
-  await settle()
-  assert.ok(button('Retomar visualização'))
 
+  let finishFallback
+  getOd = () => new Promise(resolve => { finishFallback = resolve })
   getPump = () => response(automatic)
   poll()
   await settle()
+  assertOd(0.4, start)
+  finishFallback(response([{ value: 0.8, generated_at: start }]))
+  await settle()
+  assertOd(0.4, start)
+  const requestsAtRecovery = fallbackRequests
+  button('Pausar visualização').props.onClick()
+  await settle()
+  assert.ok(button('Retomar visualização'))
   const pausePump = button('Pausar bomba')
   assert.ok(pausePump)
 
@@ -182,6 +223,23 @@ test('pump snapshots recover from 503 and discard an outdated GET after a pause'
   await settle()
   assert.equal(text(), coherent)
   assert.deepEqual(chartCounts(), [1, 1, 2])
+
+  getPump = unavailable
+  poll()
+  await settle()
+  assertOd(0.35, start)
+  assert.match(text(), /Bomba pausada/)
+
+  getPump = () => response({ ...pausedSnapshot, latest_od: null, od_readings: [] })
+  poll()
+  await settle()
+  assertOd(undefined, undefined)
+
+  getPump = unavailable
+  poll()
+  await settle()
+  assertOd(undefined, undefined)
+  assert.equal(fallbackRequests, requestsAtRecovery)
 })
 
 
