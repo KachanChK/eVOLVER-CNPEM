@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 import paho.mqtt.client as mqtt
 import pytest
+from evolver.ingestion.control import action_for_od
 from evolver_contracts.models import PumpCommand, TelemetryEvent
-from evolver_contracts.pilot import ACTIVE_VIALS_REQUEST, ACTIVE_VIALS_RESPONSE
+from evolver_contracts.pilot import ACTIVE_VIALS_REQUEST, ACTIVE_VIALS_RESPONSE, ActiveVial
 from evolver_simulator.config import SimulatorSettings
 from evolver_simulator.mqtt import MqttConnectionError, MqttPublisher, MqttPublishError
+from evolver_simulator.runner import SimulatorRunner
+from evolver_simulator.telemetry import SimulatedTelemetryGenerator
 
 
 class FakeReasonCode:
@@ -139,6 +144,11 @@ class FakeClient:
 def make_settings(**overrides: object) -> SimulatorSettings:
     values: dict[str, object] = {"mqtt_simulator_password": "local-secret", **overrides}
     return SimulatorSettings(_env_file=None, **values)
+
+
+@pytest.fixture(autouse=True)
+def temporary_pump_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SIMULATOR_PUMP_STATE_PATH", str(tmp_path / "default.sqlite3"))
 
 
 def make_event() -> TelemetryEvent:
@@ -301,7 +311,7 @@ def test_disconnected_simulator_does_not_apply_a_pump_command(tmp_path: Path) ->
 def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
     tmp_path: Path,
 ) -> None:
-    settings = make_settings(pump_state_path=tmp_path / "pump.sqlite3")
+    settings = make_settings(pump_state_path=tmp_path / "pump.sqlite3", od_noise=0)
     now = datetime.now(UTC)
 
     def command(experiment_id: str, action: str) -> PumpCommand:
@@ -324,11 +334,27 @@ def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
     restarted_fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
     restarted = MqttPublisher(settings, client_factory=lambda **_kwargs: restarted_fake)
     restarted.connect()
+    allocation = ActiveVial(vial_id=1, experiment_id=41)
+    assert restarted.pump_is_on(allocation)
+    assert not restarted.pump_is_on(ActiveVial(vial_id=1, experiment_id=42))
+    assert not restarted.pump_is_on(ActiveVial(vial_id=2, experiment_id=41))
+    generator = SimulatedTelemetryGenerator(
+        settings, [allocation], pump_is_on=restarted.pump_is_on,
+    )
+
+    def sample_od() -> float:
+        od, _, _ = (generator.next_event() for _ in range(3))
+        return od.value
+
+    assert sample_od() == 0.35
+    assert sample_od() == 0.30
     restarted._handle_command(turn_on.model_dump_json().encode())
     assert restarted._pump_states == {(41, 1): True}
     assert not any(call[0][0] == ACTIVE_VIALS_REQUEST for call in restarted_fake.publish_calls)
     restarted._handle_command(command("41", "turn_off").model_dump_json().encode())
     assert restarted._pump_states == {(41, 1): False}
+    # The controller uses this same turn_off command when it pauses the experiment.
+    assert sample_od() == 0.32
     restarted.close()
 
     next_fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 42}])
@@ -420,13 +446,20 @@ def test_reconnect_delivers_older_on_after_newer_off(
         publisher.close()
 
 
-def test_pump_command_is_not_executed_when_state_cannot_be_saved(tmp_path: Path) -> None:
+def test_pump_command_is_not_executed_when_state_cannot_be_saved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
     publisher = MqttPublisher(
-        make_settings(pump_state_path=tmp_path),  # A directory cannot be opened as SQLite.
+        make_settings(),
         client_factory=lambda **_kwargs: fake,
     )
     publisher.connect()
+
+    def unavailable():
+        raise sqlite3.OperationalError("unavailable")
+
+    monkeypatch.setattr(publisher, "_state_database", unavailable)
     now = datetime.now(UTC)
     command = PumpCommand(
         schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
@@ -441,6 +474,77 @@ def test_pump_command_is_not_executed_when_state_cannot_be_saved(tmp_path: Path)
         for args, _kwargs in fake.publish_calls
     )
     publisher.close()
+
+
+def test_simulator_does_not_connect_if_persisted_state_is_unavailable(tmp_path: Path) -> None:
+    fake = FakeClient()
+    publisher = MqttPublisher(
+        make_settings(pump_state_path=tmp_path),  # A directory cannot be opened as SQLite.
+        client_factory=lambda **_kwargs: fake,
+    )
+    with pytest.raises(MqttConnectionError, match="carregar o estado da bomba"):
+        publisher.connect()
+    assert fake.connect_call is None
+
+
+@pytest.mark.parametrize(("minimum", "maximum"), [("0.10", "0.80"), ("0.400", "0.401")])
+def test_od_completes_two_controller_cycles(
+    minimum: str, maximum: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("evolver_simulator.runner.ROUND_INTERVAL_SECONDS", 0)
+    fake = FakeClient(allocation_response=[{"vial_id": 1, "experiment_id": 41}])
+    settings = make_settings(seed=71, od_noise=0.01)
+    publisher = MqttPublisher(settings, client_factory=lambda **_kwargs: fake)
+    runner = SimulatorRunner(settings, publisher=publisher)
+    state = "off"
+    issued_at = datetime.now(UTC)
+    previous = None
+    actions = []
+    thresholds = []
+    original_publish = publisher.publish
+
+    def publish(event: TelemetryEvent) -> None:
+        nonlocal previous, state
+        original_publish(event)
+        if event.measurement_type != "od":
+            return
+        value = event.value
+        assert 0.10 <= value <= 0.80
+        if previous is not None:
+            if state == "on":
+                assert value < previous
+            else:
+                assert value > previous
+        previous = value
+        if len(actions) == 4:
+            assert state == "off"
+            runner.stop()
+            return
+        action = action_for_od(state, Decimal(str(value)), Decimal(minimum), Decimal(maximum))
+        if action is None:
+            return
+        now = issued_at + timedelta(microseconds=len(actions))
+        command = PumpCommand(
+            schema_version="1.0", command_id=uuid4(), equipment_id=settings.equipment_id,
+            experiment_run_id="41", author_id="evolver-od-control", created_at=now,
+            expires_at=now + timedelta(seconds=10), target_type="pump", pump_id=1, action=action,
+        )
+        message = mqtt.MQTTMessage(topic=f"evolver/v1/{settings.equipment_id}/commands".encode())
+        message.payload = command.model_dump_json().encode()
+        publisher._on_message(fake, None, message)
+        publisher._command_executor.submit(lambda: None).result(timeout=5)
+        results = [json.loads(call[1]["payload"]) for call in fake.publish_calls[-2:]]
+        assert all(result["command_id"] == str(command.command_id) for result in results)
+        assert all(result["simulated"] for result in results)
+        assert [result["status"] for result in results] == ["received", "executed"]
+        state = "on" if action == "turn_on" else "off"
+        actions.append(action)
+        thresholds.append(value)
+
+    monkeypatch.setattr(publisher, "publish", publish)
+    assert runner.run(max_messages=360) < 360
+    assert actions == ["turn_on", "turn_off"] * 2
+    print(f"limiares={minimum}/{maximum} transições={thresholds} próxima subida={previous}")
 
 
 @pytest.mark.parametrize("response_kind", ["missing", "unmatched", "invalid"])

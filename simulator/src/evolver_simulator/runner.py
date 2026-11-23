@@ -43,7 +43,9 @@ class SimulatorRunner:
         limit = max_messages if max_messages is not None else self._settings.max_messages
         try:
             self._publisher.connect()
-            generator = SimulatedTelemetryGenerator(self._settings, [])
+            generator = SimulatedTelemetryGenerator(
+                self._settings, [], pump_is_on=self._publisher.pump_is_on,
+            )
             previous_allocations = None
             deadline = self._clock()
             while not self._stop_event.is_set() and (limit is None or published < limit):

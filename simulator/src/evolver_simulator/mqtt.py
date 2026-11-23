@@ -67,6 +67,7 @@ class MqttPublisher:
         self._allocation_lock = threading.Lock()
         self._command_executor = ThreadPoolExecutor(max_workers=1)
         self._command_lock = threading.Lock()
+        self._pump_state_lock = threading.Lock()
         self._pump_states: dict[tuple[int, int], bool] = {}
         self._client = client_factory(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -172,7 +173,8 @@ class MqttPublisher:
                     if reason:
                         self._send_command_result(command, "rejected", reason)
                         return
-                    self._pump_states[experiment_id, active.vial_id] = state
+                    with self._pump_state_lock:
+                        self._pump_states[experiment_id, active.vial_id] = state
                     self._send_command_result(command, "received")
                     self._send_command_result(command, "executed")
             except (OSError, sqlite3.Error) as exc:
@@ -200,12 +202,6 @@ class MqttPublisher:
                     experiment_id INTEGER PRIMARY KEY, issued_at TEXT NOT NULL
                 )
             """)
-            self._pump_states = {
-                (experiment_id, vial_id): bool(is_on)
-                for experiment_id, vial_id, is_on in database.execute(
-                    "SELECT experiment_id, vial_id, is_on FROM pump_states"
-                )
-            }
         except Exception:
             database.close()
             raise
@@ -276,6 +272,16 @@ class MqttPublisher:
         self._connected.clear()
         self._connect_error = None
         try:
+            with self._pump_state_lock, closing(self._state_database()) as database:
+                self._pump_states = {
+                    (experiment_id, vial_id): bool(is_on)
+                    for experiment_id, vial_id, is_on in database.execute(
+                        "SELECT experiment_id, vial_id, is_on FROM pump_states"
+                    )
+                }
+        except (OSError, sqlite3.Error) as exc:
+            raise MqttConnectionError("não foi possível carregar o estado da bomba") from exc
+        try:
             result = self._client.connect(
                 self._settings.mqtt_host,
                 self._settings.mqtt_port,
@@ -320,6 +326,10 @@ class MqttPublisher:
             event.event_id,
             event.sequence,
         )
+
+    def pump_is_on(self, allocation: ActiveVial) -> bool:
+        with self._pump_state_lock:
+            return self._pump_states.get((allocation.experiment_id, allocation.vial_id), False)
 
     def active_vials(self) -> list[ActiveVial]:
         with self._allocation_lock:

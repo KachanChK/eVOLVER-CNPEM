@@ -20,6 +20,7 @@ def test_defaults_match_mosquitto_acl_identity_and_topic() -> None:
     assert settings.mqtt_username == settings.equipment_id
     assert settings.telemetry_topic == "evolver/v1/evolver-sim-01/telemetry"
     assert settings.seed is None
+    assert (settings.od_baseline, settings.od_noise) == (0.35, 0.005)
     assert (settings.ph_baseline, settings.temperature_baseline) == (7.0, 37.0)
 
 
@@ -31,10 +32,11 @@ def test_password_is_required() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("od_baseline", -0.1),
-        ("od_variation", -0.1),
+        ("od_baseline", 0.099),
+        ("od_baseline", 0.801),
+        ("od_baseline", float("nan")),
         ("od_noise", -0.1),
-        ("od_noise", 0.2),
+        ("od_noise", 0.011),
         ("ph_variation", -0.1),
         ("ph_noise", -0.1),
         ("temperature_variation", -0.1),

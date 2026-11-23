@@ -52,6 +52,9 @@ class FakePublisher:
         self.calls.append("active_vials")
         return self.vials
 
+    def pump_is_on(self, allocation: ActiveVial) -> bool:
+        return allocation.experiment_id == 41
+
     def publish(self, event: TelemetryEvent) -> None:
         if self.fail:
             raise MqttPublishError("simulated failure")
@@ -134,7 +137,9 @@ def test_experiments_can_start_stop_and_reuse_vials_without_restarting() -> None
     publisher = ChangingPublisher([])
     clock = FakeClock()
     clock.stop_after_rounds = 5
-    runner = SimulatorRunner(settings(), publisher=publisher, stop_event=clock, clock=clock)
+    runner = SimulatorRunner(
+        settings(od_noise=0), publisher=publisher, stop_event=clock, clock=clock,
+    )
     assert runner.run() == 12
     assert [(e.vial_id, e.experiment_run_id, e.measurement_type) for e in publisher.events] == [
         (vial, experiment, kind)
@@ -142,6 +147,9 @@ def test_experiments_can_start_stop_and_reuse_vials_without_restarting() -> None
         for kind in ("od", "ph", "temperature")
     ]
     assert [e.sequence for e in publisher.events] == list(range(12))
+    assert [e.value for e in publisher.events if e.measurement_type == "od"] == [
+        0.35, 0.30, 0.35, 0.35,
+    ]
     assert publisher.closed
 
 
@@ -169,6 +177,18 @@ def test_stop_during_configured_pause_closes_connection() -> None:
     )
     assert runner.run() == 1
     assert publisher.closed
+
+
+def test_telemetry_pause_does_not_accumulate_od_steps() -> None:
+    clock = FakeClock()
+    publisher = FakePublisher(vials((2, 42)))
+    runner = SimulatorRunner(
+        settings(od_noise=0, pause_after_messages=3, pause_seconds=60),
+        publisher=publisher, stop_event=clock, clock=clock,
+    )
+    assert runner.run(max_messages=6) == 6
+    assert clock.waits == [0.5, 60.5, 60.5]
+    assert [e.value for e in publisher.events if e.measurement_type == "od"] == [0.35, 0.37]
 
 
 def test_interruption_stops_before_first_round() -> None:

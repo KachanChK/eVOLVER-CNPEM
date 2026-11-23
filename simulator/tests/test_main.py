@@ -32,6 +32,9 @@ def test_cli_stops_cleanly_on_signal_and_restores_handlers(
         def active_vials(self):
             return [ActiveVial(vial_id=1, experiment_id=41)]
 
+        def pump_is_on(self, _allocation):
+            return False
+
         def publish(self, event):
             self.count += 1
             if self.count == 45:
