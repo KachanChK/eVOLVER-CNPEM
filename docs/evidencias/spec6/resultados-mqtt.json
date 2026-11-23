@@ -1,0 +1,200 @@
+[
+  {
+    "schema_version": "1.0",
+    "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:00:40.374879Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:00:40.379021Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:00:42.420838Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:00:42.439452Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:00:50.146409Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:00:50.150251Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:00:51.696923Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:00:51.729788Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:01:29.969473Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:01:29.974807Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:01:30.813989Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:01:30.815618Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:01:40.320750Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:01:40.347579Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:01:44.896345Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:01:44.924075Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "f88fdb5a-652c-4bc5-89d0-3ca2302d63d1",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:02:22.469108Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "f88fdb5a-652c-4bc5-89d0-3ca2302d63d1",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:02:22.474622Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "07e8df22-7693-4348-9ff5-567eb60a4b2f",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:02:29.602228Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "07e8df22-7693-4348-9ff5-567eb60a4b2f",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:02:29.606732Z",
+    "detail": null,
+    "status": "executed"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "170d922a-61e1-4e89-9982-cbfab974d564",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:02:31.830239Z",
+    "detail": null,
+    "status": "received"
+  },
+  {
+    "schema_version": "1.0",
+    "command_id": "170d922a-61e1-4e89-9982-cbfab974d564",
+    "equipment_id": "evolver-sim-01",
+    "simulated": true,
+    "reported_at": "2026-11-23T14:02:31.833237Z",
+    "detail": null,
+    "status": "executed"
+  }
+]

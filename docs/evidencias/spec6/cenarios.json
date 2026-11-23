@@ -1,0 +1,4003 @@
+{
+  "01-criacao": {
+    "input": null,
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": false,
+        "resume_pending": false,
+        "confirmed_state": "off",
+        "desired_state": "off",
+        "pending_command_id": null,
+        "last_event_id": null,
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [],
+      "commands": []
+    },
+    "api_pump": {
+      "state": "automatic",
+      "ending": false,
+      "confirmed_state": "off",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        }
+      ],
+      "commands": []
+    },
+    "rendered_summary": "Última OD\nSem medições\nModo de controle\nBomba em modo automático\nEstado da bomba\nDesligada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nInício da alocação\n23/11/2026, 11:00:10\nÚltimo resultado registrado\nSem resultado registrado"
+  },
+  "02-dois-ciclos": {
+    "input": null,
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": false,
+        "resume_pending": false,
+        "confirmed_state": "off",
+        "desired_state": "off",
+        "pending_command_id": null,
+        "last_event_id": "bdaaabfe-a923-4632-a1c2-1863e39c3d3e",
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "bdaaabfe-a923-4632-a1c2-1863e39c3d3e",
+          "od_value": 0.33,
+          "generated_at": "2026-11-23 14:00:52.854553+00:00",
+          "received_at": "2026-11-23 14:00:52.925050+00:00",
+          "sequence": 81,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "2d67db45-e59e-4e93-9472-4f363a85066f",
+          "od_value": 0.31,
+          "generated_at": "2026-11-23 14:00:52.353555+00:00",
+          "received_at": "2026-11-23 14:00:52.406917+00:00",
+          "sequence": 78,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "2952d05c-9389-4801-992a-33a4639613a3",
+          "od_value": 0.29,
+          "generated_at": "2026-11-23 14:00:51.853280+00:00",
+          "received_at": "2026-11-23 14:00:51.908595+00:00",
+          "sequence": 75,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "od_value": 0.27,
+          "generated_at": "2026-11-23 14:00:51.353427+00:00",
+          "received_at": "2026-11-23 14:00:51.407226+00:00",
+          "sequence": 72,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        }
+      ]
+    },
+    "api_pump": {
+      "state": "automatic",
+      "ending": false,
+      "confirmed_state": "off",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,33\n23/11/2026, 11:00:52\nModo de controle\nBomba em modo automático\nEstado da bomba\nDesligada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nOD atingiu ou ficou abaixo do limite mínimo\n23/11/2026, 11:00:51\nÚltimo resultado registrado\nDesligar · Executado no simulador\n23/11/2026, 11:00:51"
+  },
+  "03a-desligamento-pendente": {
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+      "producer_id": "simulator-local-01",
+      "equipment_id": "evolver-sim-01",
+      "vial_id": "1",
+      "experiment_run_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+      "measurement_type": "od",
+      "value": 0.4,
+      "generated_at": "2026-11-23T14:01:30.362717Z",
+      "sequence": 3
+    },
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": true,
+        "resume_pending": false,
+        "confirmed_state": "on",
+        "desired_state": "off",
+        "pending_command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+        "last_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:30.362717+00:00",
+          "received_at": "2026-11-23 14:01:30.414525+00:00",
+          "sequence": 3,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:29.491149+00:00",
+          "received_at": "2026-11-23 14:01:29.564284+00:00",
+          "sequence": 2,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "bdaaabfe-a923-4632-a1c2-1863e39c3d3e",
+          "od_value": 0.33,
+          "generated_at": "2026-11-23 14:00:52.854553+00:00",
+          "received_at": "2026-11-23 14:00:52.925050+00:00",
+          "sequence": 81,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "2d67db45-e59e-4e93-9472-4f363a85066f",
+          "od_value": 0.31,
+          "generated_at": "2026-11-23 14:00:52.353555+00:00",
+          "received_at": "2026-11-23 14:00:52.406917+00:00",
+          "sequence": 78,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "pending",
+          "result_at": null,
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        }
+      ],
+      "input_od": {
+        "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+        "od_value": 0.4,
+        "generated_at": "2026-11-23 14:01:30.362717+00:00",
+        "received_at": "2026-11-23 14:01:30.414525+00:00",
+        "allocation_verified": true
+      }
+    },
+    "api_pump": {
+      "state": "pausing",
+      "ending": false,
+      "confirmed_state": "on",
+      "pending_command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "pending",
+          "result_at": null,
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:01:30\nModo de controle\nPausando…\nEstado da bomba\nLigada (simulada)\nComando pendente\nDesligar · Aguardando resultado\n1bcce35b-6837-4e97-83a1-f386e49f8a95\nÚltima mudança\nPausa solicitada\n23/11/2026, 11:01:37\nÚltimo resultado registrado\nLigar · Executado no simulador\n23/11/2026, 11:01:30"
+  },
+  "03-pausa-ligada": {
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+      "producer_id": "simulator-local-01",
+      "equipment_id": "evolver-sim-01",
+      "vial_id": "1",
+      "experiment_run_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+      "measurement_type": "od",
+      "value": 0.4,
+      "generated_at": "2026-11-23T14:01:30.362717Z",
+      "sequence": 3
+    },
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": true,
+        "resume_pending": false,
+        "confirmed_state": "off",
+        "desired_state": "off",
+        "pending_command_id": null,
+        "last_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:30.362717+00:00",
+          "received_at": "2026-11-23 14:01:30.414525+00:00",
+          "sequence": 3,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:29.491149+00:00",
+          "received_at": "2026-11-23 14:01:29.564284+00:00",
+          "sequence": 2,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "bdaaabfe-a923-4632-a1c2-1863e39c3d3e",
+          "od_value": 0.33,
+          "generated_at": "2026-11-23 14:00:52.854553+00:00",
+          "received_at": "2026-11-23 14:00:52.925050+00:00",
+          "sequence": 81,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "2d67db45-e59e-4e93-9472-4f363a85066f",
+          "od_value": 0.31,
+          "generated_at": "2026-11-23 14:00:52.353555+00:00",
+          "received_at": "2026-11-23 14:00:52.406917+00:00",
+          "sequence": 78,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        }
+      ],
+      "input_od": {
+        "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+        "od_value": 0.4,
+        "generated_at": "2026-11-23 14:01:30.362717+00:00",
+        "received_at": "2026-11-23 14:01:30.414525+00:00",
+        "allocation_verified": true
+      }
+    },
+    "api_pump": {
+      "state": "paused",
+      "ending": false,
+      "confirmed_state": "off",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:01:30\nLeitura antiga\nModo de controle\nBomba pausada\nEstado da bomba\nDesligada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nPausa solicitada\n23/11/2026, 11:01:40\nÚltimo resultado registrado\nDesligar · Executado no simulador\n23/11/2026, 11:01:40"
+  },
+  "04-retomada-abaixo": {
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+      "producer_id": "simulator-local-01",
+      "equipment_id": "evolver-sim-01",
+      "vial_id": "1",
+      "experiment_run_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+      "measurement_type": "od",
+      "value": 0.35,
+      "generated_at": "2026-11-23T14:01:42.075152Z",
+      "sequence": 4
+    },
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": false,
+        "resume_pending": false,
+        "confirmed_state": "off",
+        "desired_state": "off",
+        "pending_command_id": null,
+        "last_event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:42.075152+00:00",
+          "received_at": "2026-11-23 14:01:42.128951+00:00",
+          "sequence": 4,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:30.362717+00:00",
+          "received_at": "2026-11-23 14:01:30.414525+00:00",
+          "sequence": 3,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:29.491149+00:00",
+          "received_at": "2026-11-23 14:01:29.564284+00:00",
+          "sequence": 2,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "bdaaabfe-a923-4632-a1c2-1863e39c3d3e",
+          "od_value": 0.33,
+          "generated_at": "2026-11-23 14:00:52.854553+00:00",
+          "received_at": "2026-11-23 14:00:52.925050+00:00",
+          "sequence": 81,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        }
+      ],
+      "input_od": {
+        "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+        "od_value": 0.35,
+        "generated_at": "2026-11-23 14:01:42.075152+00:00",
+        "received_at": "2026-11-23 14:01:42.128951+00:00",
+        "allocation_verified": true
+      }
+    },
+    "api_pump": {
+      "state": "automatic",
+      "ending": false,
+      "confirmed_state": "off",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:42.589041Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:01:30\nLeitura antiga\nModo de controle\nBomba em modo automático\nEstado da bomba\nDesligada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nRetomada solicitada\n23/11/2026, 11:01:42\nÚltimo resultado registrado\nDesligar · Executado no simulador\n23/11/2026, 11:01:40"
+  },
+  "05-pausa-desligada": {
+    "input": null,
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": true,
+        "resume_pending": false,
+        "confirmed_state": "off",
+        "desired_state": "off",
+        "pending_command_id": null,
+        "last_event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:42.075152+00:00",
+          "received_at": "2026-11-23 14:01:42.128951+00:00",
+          "sequence": 4,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:30.362717+00:00",
+          "received_at": "2026-11-23 14:01:30.414525+00:00",
+          "sequence": 3,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:29.491149+00:00",
+          "received_at": "2026-11-23 14:01:29.564284+00:00",
+          "sequence": 2,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "bdaaabfe-a923-4632-a1c2-1863e39c3d3e",
+          "od_value": 0.33,
+          "generated_at": "2026-11-23 14:00:52.854553+00:00",
+          "received_at": "2026-11-23 14:00:52.925050+00:00",
+          "sequence": 81,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        }
+      ]
+    },
+    "api_pump": {
+      "state": "paused",
+      "ending": false,
+      "confirmed_state": "off",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:42.589041Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:43.382257Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": null
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:01:30\nLeitura antiga\nModo de controle\nBomba pausada\nEstado da bomba\nDesligada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nPausa solicitada\n23/11/2026, 11:01:43\nÚltimo resultado registrado\nDesligar · Executado no simulador\n23/11/2026, 11:01:40"
+  },
+  "06-retomada-no-maximo": {
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+      "producer_id": "simulator-local-01",
+      "equipment_id": "evolver-sim-01",
+      "vial_id": "1",
+      "experiment_run_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+      "measurement_type": "od",
+      "value": 0.4,
+      "generated_at": "2026-11-23T14:01:44.103358Z",
+      "sequence": 5
+    },
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": false,
+        "resume_pending": false,
+        "confirmed_state": "on",
+        "desired_state": "on",
+        "pending_command_id": null,
+        "last_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:44.103358+00:00",
+          "received_at": "2026-11-23 14:01:44.156590+00:00",
+          "sequence": 5,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:42.075152+00:00",
+          "received_at": "2026-11-23 14:01:42.128951+00:00",
+          "sequence": 4,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:30.362717+00:00",
+          "received_at": "2026-11-23 14:01:30.414525+00:00",
+          "sequence": 3,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:29.491149+00:00",
+          "received_at": "2026-11-23 14:01:29.564284+00:00",
+          "sequence": 2,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:44.493363+00:00",
+          "sent_at": "2026-11-23 14:01:44.681140+00:00",
+          "puback_at": "2026-11-23 14:01:44.799031+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:44.924075+00:00",
+          "result_detail": null,
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "trigger_od": 0.4
+        }
+      ],
+      "input_od": {
+        "event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+        "od_value": 0.4,
+        "generated_at": "2026-11-23 14:01:44.103358+00:00",
+        "received_at": "2026-11-23 14:01:44.156590+00:00",
+        "allocation_verified": true
+      }
+    },
+    "api_pump": {
+      "state": "automatic",
+      "ending": false,
+      "confirmed_state": "on",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:42.589041Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:43.382257Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:44.518535Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:45.057210Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "resume",
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d"
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "created_at": "2026-11-23T14:01:44.493363Z",
+          "sent_at": "2026-11-23T14:01:44.681140Z",
+          "puback_at": "2026-11-23T14:01:44.799031Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:44.924075Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:01:44\nModo de controle\nBomba em modo automático\nEstado da bomba\nLigada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nRetomada solicitada\n23/11/2026, 11:01:45\nÚltimo resultado registrado\nLigar · Executado no simulador\n23/11/2026, 11:01:44"
+  },
+  "07-leitura-atrasada": {
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "9a9f08d6-bde6-4fb5-96ab-9906de2b8f9b",
+      "producer_id": "simulator-local-01",
+      "equipment_id": "evolver-sim-01",
+      "vial_id": "1",
+      "experiment_run_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+      "measurement_type": "od",
+      "value": 0.1,
+      "generated_at": "2026-11-23T14:01:34.964744Z",
+      "sequence": 6
+    },
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": false,
+        "resume_pending": false,
+        "confirmed_state": "on",
+        "desired_state": "on",
+        "pending_command_id": null,
+        "last_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:44.103358+00:00",
+          "received_at": "2026-11-23 14:01:44.156590+00:00",
+          "sequence": 5,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:42.075152+00:00",
+          "received_at": "2026-11-23 14:01:42.128951+00:00",
+          "sequence": 4,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "9a9f08d6-bde6-4fb5-96ab-9906de2b8f9b",
+          "od_value": 0.1,
+          "generated_at": "2026-11-23 14:01:34.964744+00:00",
+          "received_at": "2026-11-23 14:01:47.029666+00:00",
+          "sequence": 6,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:30.362717+00:00",
+          "received_at": "2026-11-23 14:01:30.414525+00:00",
+          "sequence": 3,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:44.493363+00:00",
+          "sent_at": "2026-11-23 14:01:44.681140+00:00",
+          "puback_at": "2026-11-23 14:01:44.799031+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:44.924075+00:00",
+          "result_detail": null,
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "trigger_od": 0.4
+        }
+      ],
+      "input_od": {
+        "event_id": "9a9f08d6-bde6-4fb5-96ab-9906de2b8f9b",
+        "od_value": 0.1,
+        "generated_at": "2026-11-23 14:01:34.964744+00:00",
+        "received_at": "2026-11-23 14:01:47.029666+00:00",
+        "allocation_verified": true
+      }
+    },
+    "api_pump": {
+      "state": "automatic",
+      "ending": false,
+      "confirmed_state": "on",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:42.589041Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:43.382257Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:44.518535Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:45.057210Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "resume",
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d"
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "created_at": "2026-11-23T14:01:44.493363Z",
+          "sent_at": "2026-11-23T14:01:44.681140Z",
+          "puback_at": "2026-11-23T14:01:44.799031Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:44.924075Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:01:44\nModo de controle\nBomba em modo automático\nEstado da bomba\nLigada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nRetomada solicitada\n23/11/2026, 11:01:45\nÚltimo resultado registrado\nLigar · Executado no simulador\n23/11/2026, 11:01:44"
+  },
+  "08-desconexao": {
+    "input": null,
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": false,
+        "resume_pending": false,
+        "confirmed_state": "unknown",
+        "desired_state": "on",
+        "pending_command_id": null,
+        "last_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+        "reconcile_required": true,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:44.103358+00:00",
+          "received_at": "2026-11-23 14:01:44.156590+00:00",
+          "sequence": 5,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:42.075152+00:00",
+          "received_at": "2026-11-23 14:01:42.128951+00:00",
+          "sequence": 4,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "9a9f08d6-bde6-4fb5-96ab-9906de2b8f9b",
+          "od_value": 0.1,
+          "generated_at": "2026-11-23 14:01:34.964744+00:00",
+          "received_at": "2026-11-23 14:01:47.029666+00:00",
+          "sequence": 6,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:30.362717+00:00",
+          "received_at": "2026-11-23 14:01:30.414525+00:00",
+          "sequence": 3,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:44.493363+00:00",
+          "sent_at": "2026-11-23 14:01:44.681140+00:00",
+          "puback_at": "2026-11-23 14:01:44.799031+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:44.924075+00:00",
+          "result_detail": null,
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "trigger_od": 0.4
+        }
+      ]
+    },
+    "api_pump": {
+      "state": "automatic",
+      "ending": false,
+      "confirmed_state": "unknown",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:42.589041Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:43.382257Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:44.518535Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:45.057210Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "resume",
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:50.165253Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "created_at": "2026-11-23T14:01:44.493363Z",
+          "sent_at": "2026-11-23T14:01:44.681140Z",
+          "puback_at": "2026-11-23T14:01:44.799031Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:44.924075Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:01:44\nLeitura antiga\nModo de controle\nBomba em modo automático\nEstado da bomba\nDesconhecida\nComando pendente\nNenhum\nÚltima mudança\nConfirmação perdida ou indisponível\n23/11/2026, 11:01:50\nÚltimo resultado registrado\nLigar · Executado no simulador\n23/11/2026, 11:01:44\nResultado antigo"
+  },
+  "09-reconexao-sem-confirmacao": {
+    "input": null,
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": false,
+        "resume_pending": false,
+        "confirmed_state": "unknown",
+        "desired_state": "on",
+        "pending_command_id": null,
+        "last_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+        "reconcile_required": true,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:44.103358+00:00",
+          "received_at": "2026-11-23 14:01:44.156590+00:00",
+          "sequence": 5,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:42.075152+00:00",
+          "received_at": "2026-11-23 14:01:42.128951+00:00",
+          "sequence": 4,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "9a9f08d6-bde6-4fb5-96ab-9906de2b8f9b",
+          "od_value": 0.1,
+          "generated_at": "2026-11-23 14:01:34.964744+00:00",
+          "received_at": "2026-11-23 14:01:47.029666+00:00",
+          "sequence": 6,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:30.362717+00:00",
+          "received_at": "2026-11-23 14:01:30.414525+00:00",
+          "sequence": 3,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:44.493363+00:00",
+          "sent_at": "2026-11-23 14:01:44.681140+00:00",
+          "puback_at": "2026-11-23 14:01:44.799031+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:44.924075+00:00",
+          "result_detail": null,
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "trigger_od": 0.4
+        }
+      ]
+    },
+    "api_pump": {
+      "state": "automatic",
+      "ending": false,
+      "confirmed_state": "unknown",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:42.589041Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:43.382257Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:44.518535Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:45.057210Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "resume",
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:50.165253Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "created_at": "2026-11-23T14:01:44.493363Z",
+          "sent_at": "2026-11-23T14:01:44.681140Z",
+          "puback_at": "2026-11-23T14:01:44.799031Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:44.924075Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:01:44\nLeitura antiga\nModo de controle\nBomba em modo automático\nEstado da bomba\nDesconhecida\nComando pendente\nNenhum\nÚltima mudança\nConfirmação perdida ou indisponível\n23/11/2026, 11:01:50\nÚltimo resultado registrado\nLigar · Executado no simulador\n23/11/2026, 11:01:44\nResultado antigo"
+  },
+  "10-reinicio": {
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+      "producer_id": "simulator-local-01",
+      "equipment_id": "evolver-sim-01",
+      "vial_id": "1",
+      "experiment_run_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+      "measurement_type": "od",
+      "value": 0.35,
+      "generated_at": "2026-11-23T14:02:21.351449Z",
+      "sequence": 1
+    },
+    "extra": {
+      "sqlite_before_reconcile": [
+        {
+          "vial": 1,
+          "on": true
+        }
+      ]
+    },
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": null,
+        "paused": false,
+        "resume_pending": false,
+        "confirmed_state": "off",
+        "desired_state": "off",
+        "pending_command_id": null,
+        "last_event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+        "reconcile_required": false,
+        "ending": false
+      },
+      "od": [
+        {
+          "event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:02:21.351449+00:00",
+          "received_at": "2026-11-23 14:02:21.482023+00:00",
+          "sequence": 1,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:44.103358+00:00",
+          "received_at": "2026-11-23 14:01:44.156590+00:00",
+          "sequence": 5,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:42.075152+00:00",
+          "received_at": "2026-11-23 14:01:42.128951+00:00",
+          "sequence": 4,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "9a9f08d6-bde6-4fb5-96ab-9906de2b8f9b",
+          "od_value": 0.1,
+          "generated_at": "2026-11-23 14:01:34.964744+00:00",
+          "received_at": "2026-11-23 14:01:47.029666+00:00",
+          "sequence": 6,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:44.493363+00:00",
+          "sent_at": "2026-11-23 14:01:44.681140+00:00",
+          "puback_at": "2026-11-23 14:01:44.799031+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:44.924075+00:00",
+          "result_detail": null,
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "f88fdb5a-652c-4bc5-89d0-3ca2302d63d1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:02:21.482023+00:00",
+          "sent_at": "2026-11-23 14:02:21.989886+00:00",
+          "puback_at": "2026-11-23 14:02:22.261808+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:02:22.474622+00:00",
+          "result_detail": null,
+          "reading_event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+          "trigger_od": 0.35
+        }
+      ],
+      "input_od": {
+        "event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+        "od_value": 0.35,
+        "generated_at": "2026-11-23 14:02:21.351449+00:00",
+        "received_at": "2026-11-23 14:02:21.482023+00:00",
+        "allocation_verified": true
+      }
+    },
+    "api_pump": {
+      "state": "automatic",
+      "ending": false,
+      "confirmed_state": "off",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:42.589041Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:43.382257Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:44.518535Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:45.057210Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "resume",
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:50.165253Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:02:22.780245Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "f88fdb5a-652c-4bc5-89d0-3ca2302d63d1"
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "created_at": "2026-11-23T14:01:44.493363Z",
+          "sent_at": "2026-11-23T14:01:44.681140Z",
+          "puback_at": "2026-11-23T14:01:44.799031Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:44.924075Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "f88fdb5a-652c-4bc5-89d0-3ca2302d63d1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+          "created_at": "2026-11-23T14:02:21.482023Z",
+          "sent_at": "2026-11-23T14:02:21.989886Z",
+          "puback_at": "2026-11-23T14:02:22.261808Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:02:22.474622Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,35\n23/11/2026, 11:02:21\nModo de controle\nBomba em modo automático\nEstado da bomba\nDesligada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nReconciliação do estado da bomba\n23/11/2026, 11:02:22\nÚltimo resultado registrado\nDesligar · Executado no simulador\n23/11/2026, 11:02:22"
+  },
+  "11-encerramento": {
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "cda2b058-b0be-460d-9e36-62a7064719ff",
+      "producer_id": "simulator-local-01",
+      "equipment_id": "evolver-sim-01",
+      "vial_id": "1",
+      "experiment_run_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+      "measurement_type": "od",
+      "value": 0.4,
+      "generated_at": "2026-11-23T14:02:29.051626Z",
+      "sequence": 2
+    },
+    "extra": null,
+    "database": {
+      "control": {
+        "id": 1,
+        "allocation_id": "d16f74fe-d1b9-4be3-825e-16c7c6bc571c",
+        "ended_at": "2026-11-23 14:02:32.011043+00:00",
+        "paused": true,
+        "resume_pending": false,
+        "confirmed_state": "off",
+        "desired_state": "off",
+        "pending_command_id": null,
+        "last_event_id": "cda2b058-b0be-460d-9e36-62a7064719ff",
+        "reconcile_required": false,
+        "ending": true
+      },
+      "od": [
+        {
+          "event_id": "cda2b058-b0be-460d-9e36-62a7064719ff",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:02:29.051626+00:00",
+          "received_at": "2026-11-23 14:02:29.120462+00:00",
+          "sequence": 2,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:02:21.351449+00:00",
+          "received_at": "2026-11-23 14:02:21.482023+00:00",
+          "sequence": 1,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "od_value": 0.4,
+          "generated_at": "2026-11-23 14:01:44.103358+00:00",
+          "received_at": "2026-11-23 14:01:44.156590+00:00",
+          "sequence": 5,
+          "allocation_verified": true
+        },
+        {
+          "event_id": "57180e14-35f5-4349-8a9a-7e447d691a28",
+          "od_value": 0.35,
+          "generated_at": "2026-11-23 14:01:42.075152+00:00",
+          "received_at": "2026-11-23 14:01:42.128951+00:00",
+          "sequence": 4,
+          "allocation_verified": true
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:39.901098+00:00",
+          "sent_at": "2026-11-23 14:00:40.076606+00:00",
+          "puback_at": "2026-11-23 14:00:40.172376+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:40.379021+00:00",
+          "result_detail": null,
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "trigger_od": 0.41
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:41.581671+00:00",
+          "sent_at": "2026-11-23 14:00:41.898927+00:00",
+          "puback_at": "2026-11-23 14:00:42.356747+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:42.439452+00:00",
+          "result_detail": null,
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "trigger_od": 0.26
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:00:49.423865+00:00",
+          "sent_at": "2026-11-23 14:00:49.729840+00:00",
+          "puback_at": "2026-11-23 14:00:50.071355+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:50.150251+00:00",
+          "result_detail": null,
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:00:51.407226+00:00",
+          "sent_at": "2026-11-23 14:00:51.522959+00:00",
+          "puback_at": "2026-11-23 14:00:51.603261+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:00:51.729788+00:00",
+          "result_detail": null,
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "trigger_od": 0.27
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:29.564284+00:00",
+          "sent_at": "2026-11-23 14:01:29.817927+00:00",
+          "puback_at": "2026-11-23 14:01:29.850325+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:29.974807+00:00",
+          "result_detail": null,
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:30.414525+00:00",
+          "sent_at": "2026-11-23 14:01:30.555657+00:00",
+          "puback_at": "2026-11-23 14:01:30.661468+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:30.815618+00:00",
+          "result_detail": null,
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:01:37.757540+00:00",
+          "sent_at": "2026-11-23 14:01:38.036410+00:00",
+          "puback_at": "2026-11-23 14:01:38.117549+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:40.347579+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:01:44.493363+00:00",
+          "sent_at": "2026-11-23 14:01:44.681140+00:00",
+          "puback_at": "2026-11-23 14:01:44.799031+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:01:44.924075+00:00",
+          "result_detail": null,
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "f88fdb5a-652c-4bc5-89d0-3ca2302d63d1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:02:21.482023+00:00",
+          "sent_at": "2026-11-23 14:02:21.989886+00:00",
+          "puback_at": "2026-11-23 14:02:22.261808+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:02:22.474622+00:00",
+          "result_detail": null,
+          "reading_event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+          "trigger_od": 0.35
+        },
+        {
+          "command_id": "07e8df22-7693-4348-9ff5-567eb60a4b2f",
+          "reason": "od_max",
+          "desired_state": "on",
+          "created_at": "2026-11-23 14:02:29.120462+00:00",
+          "sent_at": "2026-11-23 14:02:29.373219+00:00",
+          "puback_at": "2026-11-23 14:02:29.443965+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:02:29.606732+00:00",
+          "result_detail": null,
+          "reading_event_id": "cda2b058-b0be-460d-9e36-62a7064719ff",
+          "trigger_od": 0.4
+        },
+        {
+          "command_id": "170d922a-61e1-4e89-9982-cbfab974d564",
+          "reason": "ending",
+          "desired_state": "off",
+          "created_at": "2026-11-23 14:02:30.973930+00:00",
+          "sent_at": "2026-11-23 14:02:31.551061+00:00",
+          "puback_at": "2026-11-23 14:02:31.704526+00:00",
+          "result_status": "executed",
+          "result_at": "2026-11-23 14:02:31.833237+00:00",
+          "result_detail": null,
+          "reading_event_id": null,
+          "trigger_od": null
+        }
+      ],
+      "input_od": {
+        "event_id": "cda2b058-b0be-460d-9e36-62a7064719ff",
+        "od_value": 0.4,
+        "generated_at": "2026-11-23 14:02:29.051626+00:00",
+        "received_at": "2026-11-23 14:02:29.120462+00:00",
+        "allocation_verified": true
+      }
+    },
+    "api_pump": {
+      "state": "paused",
+      "ending": true,
+      "confirmed_state": "off",
+      "pending_command_id": null
+    },
+    "api_history": {
+      "transitions": [
+        {
+          "observed_at": "2026-11-23T14:00:10.516379Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "initial",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:00:41.047353Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:42.913195Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:50.238572Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623"
+        },
+        {
+          "observed_at": "2026-11-23T14:00:51.798419Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "od_min",
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:29.660565Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.148009Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:30.904713Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:37.805570Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:40.465748Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:42.589041Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:43.382257Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "pause",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:44.518535Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "resume",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:01:45.057210Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "resume",
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d"
+        },
+        {
+          "observed_at": "2026-11-23T14:01:50.165253Z",
+          "paused": false,
+          "confirmed_state": "unknown",
+          "reason": "confirmation_lost",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:02:22.780245Z",
+          "paused": false,
+          "confirmed_state": "off",
+          "reason": "reconcile",
+          "command_id": "f88fdb5a-652c-4bc5-89d0-3ca2302d63d1"
+        },
+        {
+          "observed_at": "2026-11-23T14:02:29.745953Z",
+          "paused": false,
+          "confirmed_state": "on",
+          "reason": "od_max",
+          "command_id": "07e8df22-7693-4348-9ff5-567eb60a4b2f"
+        },
+        {
+          "observed_at": "2026-11-23T14:02:31.153123Z",
+          "paused": true,
+          "confirmed_state": "on",
+          "reason": "ending",
+          "command_id": null
+        },
+        {
+          "observed_at": "2026-11-23T14:02:31.972491Z",
+          "paused": true,
+          "confirmed_state": "off",
+          "reason": "ending",
+          "command_id": "170d922a-61e1-4e89-9982-cbfab974d564"
+        }
+      ],
+      "commands": [
+        {
+          "command_id": "2bc89a4f-a215-4229-9a15-611eba8b00af",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "77d71fbf-c753-46a3-9399-2d1907aa675d",
+          "created_at": "2026-11-23T14:00:39.901098Z",
+          "sent_at": "2026-11-23T14:00:40.076606Z",
+          "puback_at": "2026-11-23T14:00:40.172376Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:40.379021Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "2a24cd6c-05e8-418b-8664-c15abd8f4f24",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "28d9bb6c-5472-494d-a4e8-97721f65dcc7",
+          "created_at": "2026-11-23T14:00:41.581671Z",
+          "sent_at": "2026-11-23T14:00:41.898927Z",
+          "puback_at": "2026-11-23T14:00:42.356747Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:42.439452Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "049f73d1-b5ad-42eb-8b0a-d5eea9fd6623",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "9f4f9f4b-d695-4b2e-9f0d-f7bc98106f6d",
+          "created_at": "2026-11-23T14:00:49.423865Z",
+          "sent_at": "2026-11-23T14:00:49.729840Z",
+          "puback_at": "2026-11-23T14:00:50.071355Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:50.150251Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "e606fef3-dd06-4714-ae30-9a8b8abe54b7",
+          "reason": "od_min",
+          "desired_state": "off",
+          "reading_event_id": "082fe9a1-e8cc-4526-b1f6-a75dfe9b7fc4",
+          "created_at": "2026-11-23T14:00:51.407226Z",
+          "sent_at": "2026-11-23T14:00:51.522959Z",
+          "puback_at": "2026-11-23T14:00:51.603261Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:00:51.729788Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "6fecb9f8-8a20-4103-a1bb-bffd06e88da1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "7b02a401-13d7-4455-b3f0-b6343165be81",
+          "created_at": "2026-11-23T14:01:29.564284Z",
+          "sent_at": "2026-11-23T14:01:29.817927Z",
+          "puback_at": "2026-11-23T14:01:29.850325Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:29.974807Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "b14aed10-e43c-4d37-9680-76705beec8fc",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "db4198d8-122c-4d53-8075-d51f16f377fc",
+          "created_at": "2026-11-23T14:01:30.414525Z",
+          "sent_at": "2026-11-23T14:01:30.555657Z",
+          "puback_at": "2026-11-23T14:01:30.661468Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:30.815618Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "1bcce35b-6837-4e97-83a1-f386e49f8a95",
+          "reason": "pause",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:01:37.757540Z",
+          "sent_at": "2026-11-23T14:01:38.036410Z",
+          "puback_at": "2026-11-23T14:01:38.117549Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:40.347579Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "5e517ec2-ef00-41b9-9916-5d2e45f3420d",
+          "reason": "resume",
+          "desired_state": "on",
+          "reading_event_id": "381d61bf-04fc-45e6-ac34-7ab7b5350fd5",
+          "created_at": "2026-11-23T14:01:44.493363Z",
+          "sent_at": "2026-11-23T14:01:44.681140Z",
+          "puback_at": "2026-11-23T14:01:44.799031Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:01:44.924075Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "f88fdb5a-652c-4bc5-89d0-3ca2302d63d1",
+          "reason": "reconcile",
+          "desired_state": "off",
+          "reading_event_id": "14e03e79-1d00-4cb1-8117-b620533293e1",
+          "created_at": "2026-11-23T14:02:21.482023Z",
+          "sent_at": "2026-11-23T14:02:21.989886Z",
+          "puback_at": "2026-11-23T14:02:22.261808Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:02:22.474622Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "07e8df22-7693-4348-9ff5-567eb60a4b2f",
+          "reason": "od_max",
+          "desired_state": "on",
+          "reading_event_id": "cda2b058-b0be-460d-9e36-62a7064719ff",
+          "created_at": "2026-11-23T14:02:29.120462Z",
+          "sent_at": "2026-11-23T14:02:29.373219Z",
+          "puback_at": "2026-11-23T14:02:29.443965Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:02:29.606732Z",
+          "result_detail": null
+        },
+        {
+          "command_id": "170d922a-61e1-4e89-9982-cbfab974d564",
+          "reason": "ending",
+          "desired_state": "off",
+          "reading_event_id": null,
+          "created_at": "2026-11-23T14:02:30.973930Z",
+          "sent_at": "2026-11-23T14:02:31.551061Z",
+          "puback_at": "2026-11-23T14:02:31.704526Z",
+          "result_status": "executed",
+          "result_at": "2026-11-23T14:02:31.833237Z",
+          "result_detail": null
+        }
+      ]
+    },
+    "rendered_summary": "Última OD\n0,4\n23/11/2026, 11:02:29\nModo de controle\nEncerrado\nEstado da bomba\nDesligada (simulada)\nComando pendente\nNenhum\nÚltima mudança\nEncerramento solicitado\n23/11/2026, 11:02:31\nÚltimo resultado registrado\nDesligar · Executado no simulador\n23/11/2026, 11:02:31"
+  }
+}

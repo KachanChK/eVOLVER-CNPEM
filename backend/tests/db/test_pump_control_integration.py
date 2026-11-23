@@ -123,6 +123,13 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         first_event = uuid4()
         assert reading(experiment_id, 0.7, 1, now, first_event) == "gravada"
         assert reading(experiment_id, 0.7, 1, now, first_event) == "duplicada"
+        pump_url = f"/api/experiments/{experiment_id}/pump"
+        state = client.get(pump_url).json()
+        assert state["confirmed_state"] == "off"
+        history = client.get(f"{pump_url}/history").json()
+        assert [item["confirmed_state"] for item in history["transitions"]] == ["off"]
+        assert history["commands"][0]["command_id"] == state["pending_command_id"]
+        assert history["commands"][0]["result_status"] == "pending"
         first = commands(experiment_id)
         assert len(first) == 1 and first[0]["desired_state"] == "on"
         assert first[0]["reading_event_id"] is not None

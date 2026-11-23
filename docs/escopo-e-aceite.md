@@ -33,6 +33,20 @@ Definir exatamente o que será mostrado no piloto local, usando dados e comandos
 - Alegação de que um comando publicado foi executado fisicamente. Resultado significa apenas resposta do simulador.
 - Metas de quantidade de equipamentos, volume de dados ou tempo de resposta para produção. O tamanho e o ritmo da demonstração serão definidos e anotados antes do teste.
 
+## Ampliação de escopo da Spec 6
+
+O aceite original do piloto excluía a execução de rotinas experimentais
+automáticas. A Spec 6 amplia esse escopo para o controle de OD por histerese de
+uma bomba lógica por vial, com pausa, retomada, reconciliação e encerramento
+confirmado. Ingestão, API, interface e simulador seguem o comportamento descrito
+em [Controle de OD](controle-od.md).
+
+O aceite da Spec 6 exige observação da jornada de ponta a ponta com MQTT,
+TimescaleDB, ingestão, API, simulador e interface. A evidência de execução
+confirma o estado da bomba simulada. A atuação, calibração, vazão e volume em
+equipamento físico dependem de validação própria. Os critérios abaixo
+preservam o histórico do aceite original.
+
 ## Classes de prioridade
 
 ### P0 — necessário para o aceite do piloto

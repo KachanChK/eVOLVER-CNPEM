@@ -1,0 +1,11 @@
+{
+  "network": true,
+  "broker_from_simulator": "broker:1883",
+  "unreachable_monitor": [
+    50183,
+    32780
+  ],
+  "api_port": 50183,
+  "db_port": 32780,
+  "broker_host_port": 50182
+}

@@ -87,7 +87,7 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
   const start = new Date().toISOString()
   const experiment = { id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start }
   const automatic = { state: 'automatic', ending: false }
-  const pausing = { state: 'pausing', ending: false }
+  const pausing = { state: 'pausing', ending: false, pending_command_id: 'command-1' }
   const response = (body, status = 200) => Response.json(body, { status })
   const unavailable = () => response({ detail: 'Banco de dados indisponível.' }, 503)
   let getPump = unavailable
@@ -102,6 +102,14 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
     if (url === base) return response(experiment)
     if (url === base + '/closure') return response({ state: 'none' })
     if (url === `${base}/pump`) return getPump()
+    if (url === `${base}/pump/history`) {
+      return response({
+        transitions: [],
+        commands: [{
+          command_id: 'command-1', desired_state: 'off', result_status: 'executed', result_at: start,
+        }],
+      })
+    }
     if (url === `${base}/pump/pause` && options?.method === 'POST') return response(pausing)
     if (url.startsWith(`${base}/readings/`) || url === `${base}/temperature-readings`) {
       return response(readings)
@@ -150,6 +158,8 @@ test('pump 503 and an outdated GET do not block charts or overwrite a successful
   await settle()
   assert.ok(button('Despausar bomba'))
   assert.match(text(), /Pausando…/)
+  assert.match(text(), /Comando pendenteAtualizando estado…/)
+  assert.match(text(), /Último resultado registradoDesligar · Executado no simulador/)
   assert.ok(button('Retomar visualização'))
 })
 
