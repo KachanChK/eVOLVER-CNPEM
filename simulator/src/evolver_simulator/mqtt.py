@@ -32,6 +32,7 @@ from pydantic import ValidationError
 from .config import SimulatorSettings
 
 LOGGER = logging.getLogger(__name__)
+PUMP_GROUP_MEMBERS = (1, 2, 3)
 ClientFactory = Callable[..., mqtt.Client]
 
 
@@ -114,16 +115,13 @@ class MqttPublisher:
             try:
                 command = PumpCommand.model_validate_json(payload)
             except ValidationError:
-                LOGGER.warning("Comando de bomba inválido")
+                LOGGER.warning("Comando do grupo de bombas inválido")
                 return
             if command.equipment_id != self._settings.equipment_id:
                 return
             try:
                 allocation_id = str(UUID(command.experiment_run_id or ""))
             except ValueError:
-                self._send_command_result(command, "rejected", "invalid_payload")
-                return
-            if command.pump_id != 1:
                 self._send_command_result(command, "rejected", "invalid_payload")
                 return
             try:
@@ -176,10 +174,14 @@ class MqttPublisher:
                         return
                     with self._pump_state_lock:
                         self._pump_states[allocation_id, active.vial_id] = state
+                    LOGGER.info(
+                        "Ação %s aplicada ao grupo de bombas %s (command_id=%s)",
+                        command.action, list(PUMP_GROUP_MEMBERS), command.command_id,
+                    )
                     self._send_command_result(command, "received")
                     self._send_command_result(command, "executed")
             except (OSError, sqlite3.Error) as exc:
-                LOGGER.error("Estado da bomba não persistido: %s", exc)
+                LOGGER.error("Estado do grupo de bombas não persistido: %s", exc)
 
     def _state_database(self) -> sqlite3.Connection:
         path = self._settings.pump_state_path
@@ -283,7 +285,9 @@ class MqttPublisher:
                     )
                 }
         except (OSError, sqlite3.Error) as exc:
-            raise MqttConnectionError("não foi possível carregar o estado da bomba") from exc
+            raise MqttConnectionError(
+                "não foi possível carregar o estado do grupo de bombas",
+            ) from exc
         try:
             result = self._client.connect(
                 self._settings.mqtt_host,

@@ -6,10 +6,10 @@ experimento que o ocupava no horário da medição. Registra `gravada`, `duplica
 da rejeição. Precisa de `DATABASE_URL` e `MQTT_INGESTION_PASSWORD`; aceita `MQTT_HOST`
 e `MQTT_PORT`.
 
-Para OD recente, a ingestão decide a bomba simulada conforme os limites do
-experimento e publica comandos não retidos. Também recebe os resultados do
-simulador e persiste o estado confirmado ou desconhecido. O prazo de frescor,
-as transições e o teste de integração estão em `docs/controle-od.md`.
+Para OD recente, a ingestão decide o estado do grupo simulado `[1, 2, 3]`
+conforme os limites do experimento. Publica um comando não retido por ação do
+grupo com `pump_id: 1` e persiste um único estado confirmado ou desconhecido a
+partir do resultado do simulador. Consulte o [fluxo de controle do grupo](../../../../docs/arquitetura-atual.md#como-o-grupo-de-bombas-é-controlado).
 A perda da sessão MQTT exige reconciliação com desligamento confirmado antes de
 novas decisões automáticas.
 

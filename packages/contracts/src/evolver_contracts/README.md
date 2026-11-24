@@ -73,23 +73,21 @@ recente só porque chegaram depois.
 ## Comandos e resultados simulados
 
 O único comando de temperatura do piloto é `target_type: temperature_setpoint` com
-`action: set`. As bombas usam `target_type: pump`, `pump_id` entre 1 e 3 e as ações
-`turn_on` ou `turn_off`. Não há unidade, vazão, duração nem volume implícitos nesta
-versão.
-
-O controle automático de OD deste piloto usa **uma bomba lógica por vial** e envia
-somente `pump_id: 1`. O intervalo `1` a `3` permanece no contrato MQTT genérico
-para compatibilidade com outros fluxos; ele não cria bombas adicionais neste piloto.
+`action: set`. Na versão `1.0`, `target_type: pump` e `pump_id: 1` identificam
+o alvo lógico do grupo fixo de bombas `[1, 2, 3]` por alocação. Cada ação `turn_on`
+ou `turn_off` usa um único comando.
+Os valores `pump_id: 2` e `pump_id: 3` são inválidos. Não há unidade, vazão, duração
+nem volume implícitos nesta versão.
 
 A ingestão registra `command_id`, autor, alvo, ação, criação e validade antes de publicar.
 O simulador valida a identidade e o prazo e pode enviar uma atualização de resultado
 com `status: received`, seguida de `executed`, ou encerrar em `rejected`/`failed`.
-`executed` significa somente que a alteração ocorreu no estado simulado. Se não
-houver resultado no prazo definido pela implementação, a ingestão registra **resultado
-desconhecido**; não reenvia automaticamente comando de bomba.
+Para `target_type: pump`, `executed` confirma a aplicação da ação ao grupo no
+estado simulado. Se o prazo terminar sem resultado, a ingestão registra
+**resultado desconhecido**, sem reenvio automático do comando do grupo.
 
 `expires_at` deve ser posterior a `created_at`; o modelo Pydantic rejeita o comando
-caso essa relação não seja respeitada. O cenário de aceite A7 também é exercitado:
+caso essa relação não seja respeitada. O cenário de expiração também é exercitado:
 um comando inicialmente válido expira durante a desconexão e recebe uma resposta
 `rejected`/`expired` com o mesmo `command_id`.
 

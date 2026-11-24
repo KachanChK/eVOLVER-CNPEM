@@ -11,23 +11,26 @@ representam calibração ou precisão científica.
 - `runner.py` controla o intervalo e a parada do programa.
 - `mqtt.py` envia as mensagens e verifica a confirmação do broker.
 
-O estado da bomba simulada e os comandos concluídos ficam em um arquivo SQLite
-durável (`~/.evolver-simulator/pump-state.sqlite3`). Configure
+No contrato MQTT, `pump_id: 1` identifica o grupo fixo de bombas `[1, 2, 3]`.
+O estado único do grupo por alocação e vial e
+os comandos concluídos ficam no SQLite (`~/.evolver-simulator/pump-state.sqlite3`). Configure
 `SIMULATOR_PUMP_STATE_PATH` para outro caminho persistente se necessário. O
-simulador grava o estado antes de confirmar a execução de um comando.
+simulador grava o estado, registra a ação aplicada ao grupo no log e publica um
+resultado `executed` com o `command_id` do grupo.
 
 ### Atualizar uma instalação existente
 
 Aplique as migrações Alembic até `20261122_04` e atualize a ingestão e o
-simulador juntos. A telemetria e os comandos de bomba usam o UUID da alocação
+simulador juntos. A telemetria e os comandos do grupo usam o UUID da alocação
 descoberto via MQTT no campo existente `experiment_run_id`. Os tópicos, os
-schemas MQTT e os IDs numéricos da API são preservados. Se a descoberta vier
-sem UUID, o simulador ainda envia o ID numérico e usa a bomba desligada.
+IDs numéricos da API e o formato MQTT são preservados. O contrato limita
+`pump_id` a `1` e o simulador reaproveita o estado SQLite existente. Se a descoberta vier
+sem UUID, o simulador ainda envia o ID numérico e usa o grupo desligado.
 Comandos legados sem UUID são recusados.
 
 A ingestão aceita leituras com ID numérico ou sem identificador para o
 histórico, pela janela de tempo do experimento. Só a OD vinculada ao UUID
-pode participar do controle e da retomada da bomba. O UUID mantém leituras
+pode participar do controle e da retomada do grupo. O UUID mantém leituras
 atrasadas na alocação original quando a janela ainda é válida. Um UUID
 desconhecido no banco recriado é recusado, mesmo com IDs numéricos repetidos.
 A ingestão antiga espera IDs numéricos na telemetria, e o simulador antigo
@@ -36,7 +39,7 @@ espera a resposta de descoberta sem UUID.
 Mantenha o SQLite. As tabelas antigas continuam no arquivo. Como seus registros
 numéricos podem pertencer a outro banco, o simulador não os restaura nem
 reaproveita sua ordem ou seus resultados. Na atualização, reinicie a ingestão
-para reconciliar a bomba com `turn_off`. Depois disso, alocações com o mesmo
+para reconciliar o grupo com `turn_off`. Depois disso, alocações com o mesmo
 UUID preservam o estado entre reinícios. Um banco recriado emite UUIDs novos,
 mesmo se repetir IDs numéricos.
 
@@ -46,25 +49,26 @@ Revise estas variáveis no ambiente ou no arquivo `.env`:
 - `SIMULATOR_OD_NOISE` aceitava até 0,10. Reduza valores acima de 0,01 antes
   de iniciar o simulador. O valor 0 continua desabilitando o ruído.
 - Remova `SIMULATOR_OD_VARIATION`. A antiga onda de OD foi substituída pelos
-  passos da bomba e a variável é ignorada.
+  passos do controle de OD e a variável é ignorada.
 
 ### Dinâmica de OD
 
 A primeira leitura de OD de cada par vial/experimento usa `SIMULATOR_OD_BASELINE`
-(padrão 0,35). Nas próximas leituras a OD sobe **0,02 por amostra** com a bomba
-desligada e desce **0,05 por amostra** com a bomba ligada. Na cadência de 0,5 s,
+(padrão 0,35). Nas próximas leituras a OD sobe **0,02 por amostra** com o grupo
+desligado e desce **0,05 por amostra** com o grupo ligado. O passo se aplica uma
+vez por amostra para todo o grupo. Na cadência de 0,5 s,
 as taxas nominais são 0,04 OD/s na subida e 0,10 OD/s na descida. A OD satura em
 **[0,10; 0,80]**, inclusive. O ruído de OD altera o passo em até
 `SIMULATOR_OD_NOISE` em cada sentido (padrão 0,005, máximo 0,01, zero desabilita).
 A direção permanece a mesma até a saturação, inclusive com limiares próximos.
 Se houver atraso nas rodadas, aplica-se um passo por amostra gerada.
 
-Um novo experimento no mesmo vial começa na OD inicial e com a bomba desligada.
+Um novo experimento no mesmo vial começa na OD inicial e com o grupo desligado.
 Ao reiniciar o processo, a primeira OD usa a base configurada e os próximos
-passos usam o estado da bomba restaurado do SQLite. Ao pausar um experimento, o
-controlador envia `turn_off` se a bomba estiver ligada. Após executar o comando,
+passos usam o estado do grupo restaurado do SQLite. Ao pausar um experimento, o
+controlador envia `turn_off` se o grupo estiver ligado. Após executar o comando,
 o simulador confirma o mesmo `command_id` e a OD volta a subir.
-As ondas e o ruído de pH e temperatura continuam independentes da bomba.
+As ondas e o ruído de pH e temperatura continuam independentes do grupo.
 
 ## Preparar
 
@@ -123,7 +127,7 @@ consulte a tabela para verificar o salvamento.
 ## Ajustes opcionais
 
 - `SIMULATOR_SEED`: opcional; com o mesmo número, a mesma configuração e a mesma
-  sequência de vials ativos e de estados da bomba por rodada, repete os valores.
+  sequência de vials ativos e de estados do grupo por rodada, repete os valores.
   Sem esse ajuste, cada execução começa com novas sequências.
 - `SIMULATOR_MAX_MESSAGES`: limite opcional de medições; `--max-messages` tem prioridade.
   Deixe ambos sem definir para executar sem limite.

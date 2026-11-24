@@ -19,6 +19,7 @@ from pydantic import (
     NonNegativeInt,
     StringConstraints,
     TypeAdapter,
+    field_validator,
     model_validator,
 )
 
@@ -101,8 +102,15 @@ class TemperatureSetpointCommand(BaseCommand):
 
 class PumpCommand(BaseCommand):
     target_type: Literal["pump"]
-    pump_id: Literal[1, 2, 3]
+    pump_id: Literal[1] = Field(description="Compatibility ID for synchronized pumps 1, 2, and 3.")
     action: Literal["turn_on", "turn_off"]
+
+    @field_validator("pump_id", mode="before")
+    @classmethod
+    def reject_boolean_pump_id(cls, value: object) -> object:
+        if isinstance(value, bool):
+            raise ValueError("pump_id must be the numeric group ID 1")
+        return value
 
 
 type CommandPayload = Annotated[

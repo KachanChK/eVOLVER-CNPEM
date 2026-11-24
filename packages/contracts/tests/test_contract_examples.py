@@ -130,6 +130,16 @@ def test_expired_command_is_rejected_with_the_same_command_id() -> None:
     assert result.reason_code == "expired"
 
 
+@pytest.mark.parametrize("pump_id", [2, 3, True])
+def test_invalid_pump_targets_are_rejected(pump_id: int | bool) -> None:
+    payload = load_json("valid/command-pump-turn-on.json")
+    payload["pump_id"] = pump_id
+
+    assert not Draft202012Validator(schema_sources()["command.schema.json"]).is_valid(payload)
+    with pytest.raises(ValidationError, match="pump_id"):
+        COMMAND_ADAPTER.validate_python(payload)
+
+
 def test_committed_schemas_are_generated_from_runtime_models() -> None:
     for filename, generated_schema in schema_sources().items():
         committed_schema = json.loads(

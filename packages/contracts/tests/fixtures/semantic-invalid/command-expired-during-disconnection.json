@@ -4,7 +4,7 @@
   "equipment_id": "evolver-sim-01",
   "experiment_run_id": "run-2026-10-27-a",
   "target_type": "pump",
-  "pump_id": 2,
+  "pump_id": 1,
   "action": "turn_off",
   "author_id": "operator-demo",
   "created_at": "2026-10-27T13:10:00Z",

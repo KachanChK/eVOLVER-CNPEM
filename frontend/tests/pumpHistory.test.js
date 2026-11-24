@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { isFinal, isOld, pumpPeriods } from '../src/pumpHistory.js'
+import { commandAction, isFinal, isOld, pumpPeriods, pumpReason, pumpState } from '../src/pumpHistory.js'
 
 test('confirmed ON and paused periods are independent and clipped to the graph', () => {
   const transition = (second, paused, confirmed_state) => ({
@@ -28,4 +28,13 @@ test('receipt is still pending and result age starts after 10 seconds', () => {
   assert.equal(isFinal({ result_status: 'executed' }), true)
   assert.equal(isOld('1970-01-01T00:00:00Z', 10_000), false)
   assert.equal(isOld('1970-01-01T00:00:00Z', 10_001), true)
+})
+
+test('history describes a single action and state for the pump group', () => {
+  assert.equal(commandAction({ desired_state: 'on' }), 'Ligar bombas')
+  assert.equal(commandAction({ desired_state: 'off' }), 'Desligar bombas')
+  assert.equal(pumpState.on, 'Bombas ligadas (simuladas)')
+  assert.equal(pumpState.off, 'Bombas desligadas (simuladas)')
+  assert.equal(pumpState.unknown, 'Desconhecido')
+  assert.equal(pumpReason.reconcile, 'Reconciliação do estado das bombas')
 })

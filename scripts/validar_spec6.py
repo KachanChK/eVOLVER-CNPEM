@@ -327,12 +327,12 @@ COPY driver.py .
             else:
                 check("Última OD", "Sem medições")
             pump = current["pump"]
-            check("Estado da bomba", {
-                "on": "Ligada (simulada)", "off": "Desligada (simulada)", "unknown": "Desconhecida",
+            check("Estado das bombas", {
+                "on": "Bombas ligadas (simuladas)", "off": "Bombas desligadas (simuladas)", "unknown": "Desconhecido",
             }[pump["confirmed_state"]])
             mode = "Encerrado" if current["ended_at"] else (
                 "Pausado para encerrar" if pump["ending"] else {
-                    "automatic": "Bomba em modo automático", "paused": "Bomba pausada",
+                    "automatic": "Bombas em modo automático", "paused": "Bombas pausadas",
                     "pausing": "Pausando…",
                 }[pump["state"]]
             )
@@ -342,7 +342,7 @@ COPY driver.py .
                       "executed": "Executado no simulador"}
 
             def command_label(command):
-                action = "Ligar" if command["desired_state"] == "on" else "Desligar"
+                action = "Ligar bombas" if command["desired_state"] == "on" else "Desligar bombas"
                 return f'{action} · {status[command["result_status"]]}'
 
             if pending_id := pump["pending_command_id"]:
@@ -356,7 +356,7 @@ COPY driver.py .
                 "od_min": "OD atingiu ou ficou abaixo do limite mínimo",
                 "od_max": "OD atingiu ou superou o limite máximo", "pause": "Pausa solicitada",
                 "resume": "Retomada solicitada", "ending": "Encerramento solicitado",
-                "reconcile": "Reconciliação do estado da bomba",
+                "reconcile": "Reconciliação do estado das bombas",
                 "confirmation_lost": "Confirmação perdida ou indisponível",
             }[transition["reason"]], transition["observed_at"])
             results = [c for c in commands if c["result_status"] not in ("pending", "received")]
@@ -440,7 +440,7 @@ COPY driver.py .
             page.screenshot(path=output / f"{label}.jpg", quality=82, full_page=True)
             print(f"Capturado: {label}", flush=True)
 
-        expect(summary.get_by_text("Desligada (simulada)", exact=True)).to_be_visible()
+        expect(summary.get_by_text("Bombas desligadas (simuladas)", exact=True)).to_be_visible()
         capture("01-criacao")
 
         cycles = simulator("simulador-ciclos", "-m", "evolver_simulator")
@@ -461,12 +461,12 @@ COPY driver.py .
         cmd("docker", "stop", "--time", "8", f"{name}-simulador-ciclos")
         assert cycles.wait(timeout=15) == 0
         page.get_by_role("button", name="Tudo", exact=True).click()
-        page.get_by_text("Ver períodos e comandos da bomba").click()
-        expect(page.get_by_role("region", name="Comandos da bomba").get_by_text(
+        page.get_by_text("Ver períodos e comandos das bombas").click()
+        expect(page.get_by_role("region", name="Comandos das bombas").get_by_text(
             "Executado no simulador", exact=False
         ).first).to_be_visible()
         capture("02-dois-ciclos")
-        page.get_by_text("Ver períodos e comandos da bomba").click()
+        page.get_by_text("Ver períodos e comandos das bombas").click()
 
         sim = simulator("simulador-controlado", "driver.py", "--worker", interactive=True)
         ports = [api_port, db_port]
@@ -492,10 +492,10 @@ COPY driver.py .
         at_pump("automatic", "off")
         high = sample(0.40)
         at_pump("automatic", "on")
-        expect(summary.get_by_text("Ligada (simulada)", exact=True)).to_be_visible()
+        expect(summary.get_by_text("Bombas ligadas (simuladas)", exact=True)).to_be_visible()
         cmd("docker", "pause", f"{name}-simulador-controlado")
         try:
-            page.get_by_role("button", name="Pausar bomba").click()
+            page.get_by_role("button", name="Pausar bombas").click()
             pending = wait_for(lambda: state()["pending_command_id"], "intenção de desligar")
             expect(summary.get_by_text(pending, exact=True)).to_be_visible()
             assert state()["confirmed_state"] == "on"
@@ -503,27 +503,27 @@ COPY driver.py .
         finally:
             cmd("docker", "unpause", f"{name}-simulador-controlado")
         at_pump("paused", "off")
-        expect(summary.get_by_text("Bomba pausada", exact=True)).to_be_visible()
+        expect(summary.get_by_text("Bombas pausadas", exact=True)).to_be_visible()
         capture("03-pausa-ligada", input_event=high)
 
         below = sample(0.35)
         count = len(history()["commands"])
-        page.get_by_role("button", name="Despausar bomba").click()
+        page.get_by_role("button", name="Despausar bombas").click()
         at_pump("automatic", "off")
-        expect(summary.get_by_text("Bomba em modo automático", exact=True)).to_be_visible()
+        expect(summary.get_by_text("Bombas em modo automático", exact=True)).to_be_visible()
         assert len(history()["commands"]) == count
         capture("04-retomada-abaixo", input_event=below)
 
-        page.get_by_role("button", name="Pausar bomba").click()
+        page.get_by_role("button", name="Pausar bombas").click()
         at_pump("paused", "off")
-        expect(summary.get_by_text("Bomba pausada", exact=True)).to_be_visible()
+        expect(summary.get_by_text("Bombas pausadas", exact=True)).to_be_visible()
         assert len(history()["commands"]) == count
         capture("05-pausa-desligada")
 
         maximum = sample(0.40)
-        page.get_by_role("button", name="Despausar bomba").click()
+        page.get_by_role("button", name="Despausar bombas").click()
         at_pump("automatic", "on")
-        expect(summary.get_by_text("Ligada (simulada)", exact=True)).to_be_visible()
+        expect(summary.get_by_text("Bombas ligadas (simuladas)", exact=True)).to_be_visible()
         assert history()["commands"][-1]["reason"] == "resume"
         capture("06-retomada-no-maximo", input_event=maximum)
 
@@ -546,7 +546,7 @@ COPY driver.py .
         wait_for(lambda: ingestion_sessions() > sessions_before_restart, "reconexão da ingestão")
         assert wire_ready.wait(timeout=15)
         at_pump("automatic", "unknown")
-        expect(summary.get_by_text("Desconhecida", exact=True)).to_be_visible()
+        expect(summary.get_by_text("Desconhecido", exact=True)).to_be_visible()
         capture("09-reconexao-sem-confirmacao")
 
         sim = simulator("simulador-reiniciado", "driver.py", "--worker", interactive=True)
@@ -554,7 +554,7 @@ COPY driver.py .
         assert preserved[0]["on"]
         fresh = sample(0.35)
         at_pump("automatic", "off")
-        expect(summary.get_by_text("Desligada (simulada)", exact=True)).to_be_visible()
+        expect(summary.get_by_text("Bombas desligadas (simuladas)", exact=True)).to_be_visible()
         assert history()["commands"][-1]["reason"] == "reconcile"
         capture("10-reinicio", input_event=fresh, extra={"sqlite_before_reconcile": preserved})
 

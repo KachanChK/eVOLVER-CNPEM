@@ -409,7 +409,7 @@ def change_pump_mode(
     experiment = visible_experiment(db, experiment_id, lock=True)
     control = db.get(PumpControl, experiment_id, with_for_update=True)
     if experiment.ended_at is not None or control.ending:
-        raise HTTPException(409, "A bomba só pode ser controlada em um experimento ativo.")
+        raise HTTPException(409, "As bombas só podem ser controladas em um experimento ativo.")
     change(db.connection(), experiment_id, db.scalar(select(func.clock_timestamp())))
     db.refresh(control)
     result = pump_view(control)

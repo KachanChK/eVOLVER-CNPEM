@@ -1,7 +1,7 @@
 export const pumpState = {
-  on: 'Ligada (simulada)',
-  off: 'Desligada (simulada)',
-  unknown: 'Desconhecida',
+  on: 'Bombas ligadas (simuladas)',
+  off: 'Bombas desligadas (simuladas)',
+  unknown: 'Desconhecido',
 }
 
 export const pumpReason = {
@@ -12,7 +12,7 @@ export const pumpReason = {
   pause: 'Pausa solicitada',
   resume: 'Retomada solicitada',
   ending: 'Encerramento solicitado',
-  reconcile: 'Reconciliação do estado da bomba',
+  reconcile: 'Reconciliação do estado das bombas',
   resume_reconcile: 'Desligamento para retomar o automático',
   confirmation_lost: 'Confirmação perdida ou indisponível',
 }
@@ -28,7 +28,7 @@ export const commandStatus = {
   superseded: 'Substituído',
 }
 
-export const commandAction = command => command.desired_state === 'on' ? 'Ligar' : 'Desligar'
+export const commandAction = command => command.desired_state === 'on' ? 'Ligar bombas' : 'Desligar bombas'
 export const isFinal = command => !['pending', 'received'].includes(command.result_status)
 export const isOld = (time, now) => !!time && now - Date.parse(time) > 10_000
 

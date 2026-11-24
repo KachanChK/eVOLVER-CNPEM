@@ -16,8 +16,8 @@ docker compose ps
 docker compose exec mosquitto sh /mosquitto/config/smoke-test.sh
 ```
 
-O broker deve aparecer como `healthy`. O teste completo com o simulador está em
-[`docs/plano-mqtt-independente.md`](../docs/plano-mqtt-independente.md).
+O broker deve aparecer como `healthy`. Para inspecionar mensagens do simulador,
+consulte o [roteiro de observação do MQTT](../docs/legacy/plano-mqtt-independente.md).
 
 Para encerrar somente o MQTT, preservando seu volume:
 
@@ -129,7 +129,7 @@ A ingestão grava os três tipos; a API e o frontend são processos locais.
 
 Cada projeto Python tem seu próprio pacote no workspace `uv` da raiz. O comando do
 simulador e a ingestão funcionam após iniciar o Compose independente em `mqtt/` e
-o banco. Consulte o [teste completo](../README.md#7-receber-e-enviar-a-temperatura):
+o banco. Consulte as [instruções de uso](../README.md#iniciar-e-usar):
 
 ```bash
 uv run --env-file backend/.env --package evolver-cnpem-backend python -m evolver.ingestion

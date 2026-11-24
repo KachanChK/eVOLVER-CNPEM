@@ -191,7 +191,7 @@ const options = computed(() => ({
       <span v-if="gaps.length"><i class="legend-gap" aria-hidden="true"></i> Sem leituras</span>
       <template v-if="odLimits">
         <span v-if="limits.length"><i class="legend-average" aria-hidden="true"></i> Limites de OD ({{ formatOdLimits(odLimits) }})</span>
-        <span><i class="legend-on" aria-hidden="true"></i> Bomba ligada, confirmada</span>
+        <span><i class="legend-on" aria-hidden="true"></i> Bombas ligadas com confirmação</span>
         <span><i class="legend-paused" aria-hidden="true"></i> Automação pausada</span>
         <span><i class="legend-intent" aria-hidden="true"></i> Intenção de comando</span>
         <span><i class="legend-result" aria-hidden="true"></i> Resultado registrado</span>
@@ -205,15 +205,15 @@ const options = computed(() => ({
       <p>Escolha um período maior ou aguarde novas medições.</p>
     </div>
     <details v-if="periods.length || commands.length" class="pump-history">
-      <summary>Ver períodos e comandos da bomba</summary>
+      <summary>Ver períodos e comandos das bombas</summary>
       <ul v-if="periods.length">
         <li v-for="(interval, index) in periods" :key="index">
           {{ pumpTime.format(interval.start) }} a {{ pumpTime.format(interval.end) }}
           · {{ interval.paused ? 'Automação pausada' : 'Automação ativa' }}
-          <template v-if="interval.confirmed_state === 'on'"> · Bomba ligada, confirmada</template>
+          <template v-if="interval.confirmed_state === 'on'"> · Bombas ligadas com confirmação</template>
         </li>
       </ul>
-      <div v-if="commands.length" class="table-scroll" tabindex="0" role="region" aria-label="Comandos da bomba">
+      <div v-if="commands.length" class="table-scroll" tabindex="0" role="region" aria-label="Comandos das bombas">
         <table>
           <thead><tr><th scope="col">Comando</th><th scope="col">Intenção</th><th scope="col">Resultado</th></tr></thead>
           <tbody>

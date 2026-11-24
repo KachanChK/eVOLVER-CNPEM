@@ -143,6 +143,9 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
   const button = (label) => descendants(root).find(
     (el) => el.type === 'button' && visibleText(el).trim() === label,
   )
+  const pumpButtons = () => descendants(root)
+    .filter(el => el.type === 'button' && /bombas?/i.test(visibleText(el)))
+    .map(el => visibleText(el).trim())
   const charts = () => descendants(root).filter((el) => el.type === 'chart')
   const chartCounts = () => charts().map((el) => el.props.count)
   const panelOd = () => descendants(root)
@@ -167,7 +170,7 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
 
   await settle()
   assert.match(text(), /Experimento de teste/)
-  assert.match(text(), /Não foi possível atualizar o estado da bomba/)
+  assert.match(text(), /Não foi possível atualizar o estado das bombas/)
   assert.deepEqual(chartCounts(), [0, 0, 0])
 
   readings = [{ generated_at: start, value: 0.7, temperature_celsius: 37 }]
@@ -175,9 +178,9 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
   await settle()
   assert.deepEqual(chartCounts(), [1, 1, 1])
   assertOd(0.7, start)
-  assert.match(text(), /Estado da bombaDesconhecida/)
+  assert.match(text(), /Estado das bombasDesconhecido/)
   assert.match(text(), /Comando pendenteAguardando consulta/)
-  assert.equal(button('Pausar bomba'), undefined)
+  assert.equal(button('Pausar bombas'), undefined)
   assert.doesNotMatch(text(), /Não foi possível atualizar as leituras/)
 
   let finishFallback
@@ -193,8 +196,12 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
   button('Pausar visualização').props.onClick()
   await settle()
   assert.ok(button('Retomar visualização'))
-  const pausePump = button('Pausar bomba')
+  const pausePump = button('Pausar bombas')
   assert.ok(pausePump)
+  assert.deepEqual(pumpButtons(), ['Pausar bombas'])
+  assert.deepEqual(descendants(root).filter(el => el.type === 'dt'
+    && /estado d[aeo]s? bombas?/i.test(visibleText(el))).map(visibleText), ['Estado das bombas'])
+  assert.doesNotMatch(text(), /\bbomba\s*[123]\b/i)
 
   let finishOldGet
   let outdatedSignal
@@ -205,7 +212,7 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
   poll()
   pausePump.props.onClick()
   await settle()
-  assert.ok(button('Despausar bomba'))
+  assert.deepEqual(pumpButtons(), ['Despausar bombas'])
   assert.ok(outdatedSignal.aborted)
   assert.deepEqual(chartCounts(), [1, 1, 1])
   assert.ok(button('Retomar visualização'))
@@ -214,11 +221,11 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
   assert.deepEqual(chartCounts(), [1, 1, 2])
   const coherent = text()
   assert.match(coherent, /Última OD0,35/)
-  assert.match(coherent, /Bomba pausada/)
-  assert.match(coherent, /Desligada \(simulada\)/)
+  assert.match(coherent, /Bombas pausadas/)
+  assert.match(coherent, /Bombas desligadas \(simuladas\)/)
   assert.match(coherent, /Comando pendenteNenhum/)
   assert.match(coherent, /Última mudançaPausa solicitada/)
-  assert.match(coherent, /Último resultado registradoDesligar · Executado no simulador/)
+  assert.match(coherent, /Último resultado registradoDesligar bombas · Executado no simulador/)
   finishOldGet()
   await settle()
   assert.equal(text(), coherent)
@@ -228,7 +235,7 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
   poll()
   await settle()
   assertOd(0.35, start)
-  assert.match(text(), /Bomba pausada/)
+  assert.match(text(), /Bombas pausadas/)
 
   getPump = () => response({ ...pausedSnapshot, latest_od: null, od_readings: [] })
   poll()
@@ -523,9 +530,9 @@ for (const action of ['delete', 'inactivate']) {
 
     await settle()
     button('Pausar visualização').props.onClick()
-    const pause = button('Pausar bomba').props.onClick()
+    const pause = button('Pausar bombas').props.onClick()
     await settle()
-    assert.ok(button('Pausar bomba').props.disabled)
+    assert.ok(button('Pausar bombas').props.disabled)
     closure = { state: 'unconfirmed', action }
     poll()
     await settle()
@@ -544,7 +551,7 @@ for (const action of ['delete', 'inactivate']) {
     await pause
     await settle()
     assert.match(visibleText(root), /Aguardando a confirmação/)
-    assert.ok(!button('Despausar bomba'))
+    assert.ok(!button('Despausar bombas'))
     assert.ok(button('Retomar visualização'))
     closure = { state: 'completed', action, ended_at: start }
     poll()
@@ -595,7 +602,7 @@ for (const action of ['pause', 'resume']) {
     app.mount(root)
     t.after(() => app.unmount())
     await settle()
-    const label = action === 'pause' ? 'Pausar bomba' : 'Despausar bomba'
+    const label = action === 'pause' ? 'Pausar bombas' : 'Despausar bombas'
     const button = descendants(root).find((el) => el.type === 'button' && visibleText(el).trim() === label)
     const request = button.props.onClick()
     await settle()

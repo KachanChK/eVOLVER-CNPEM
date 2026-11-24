@@ -49,11 +49,8 @@
           "type": "string"
         },
         "pump_id": {
-          "enum": [
-            1,
-            2,
-            3
-          ],
+          "const": 1,
+          "description": "Compatibility ID for synchronized pumps 1, 2, and 3.",
           "title": "Pump Id",
           "type": "integer"
         },

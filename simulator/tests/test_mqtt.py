@@ -279,7 +279,10 @@ def test_pump_command_requires_current_experiment(
     publisher.close()
 
 
-def test_duplicate_pump_command_rechecks_allocation_without_applying_again(tmp_path: Path) -> None:
+def test_duplicate_pump_command_rechecks_allocation_without_applying_again(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="evolver_simulator.mqtt")
     fake = FakeClient(allocation_response=[allocation_payload()])
     publisher = MqttPublisher(
         make_settings(pump_state_path=tmp_path / "pump.sqlite3"),
@@ -298,6 +301,13 @@ def test_duplicate_pump_command_rechecks_allocation_without_applying_again(tmp_p
     publisher._handle_command(payload)
     assert len([call for call in fake.publish_calls if call[0][0] == ACTIVE_VIALS_REQUEST]) == 2
     assert publisher._pump_states == {(ALLOCATION_41, 1): True}
+    results = [
+        json.loads(kwargs["payload"]) for args, kwargs in fake.publish_calls
+        if args[0] == "evolver/v1/evolver-sim-01/command-results"
+    ]
+    assert [result["status"] for result in results] == ["received", "executed", "executed"]
+    assert {result["command_id"] for result in results} == {str(command.command_id)}
+    assert caplog.text.count("Ação turn_on aplicada ao grupo de bombas [1, 2, 3]") == 1
     publisher.close()
 
 
@@ -319,6 +329,45 @@ def test_disconnected_simulator_does_not_apply_a_pump_command(tmp_path: Path) ->
     publisher._handle_command(command.model_dump_json().encode())
     assert publisher._pump_states == {}
     publisher.close()
+
+
+@pytest.mark.parametrize("pump_id", [1, 2, 3])
+def test_expired_or_individually_targeted_command_leaves_group_off(
+    pump_id: int, caplog: pytest.LogCaptureFixture,
+) -> None:
+    fake = FakeClient(allocation_response=[allocation_payload()])
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+    try:
+        now = datetime.now(UTC)
+        expires_at = now - timedelta(seconds=1) if pump_id == 1 else now + timedelta(seconds=10)
+        command = PumpCommand(
+            schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
+            experiment_run_id=ALLOCATION_41, author_id="evolver-od-control",
+            created_at=now - timedelta(seconds=2), expires_at=expires_at,
+            target_type="pump", pump_id=1, action="turn_on",
+        )
+        payload = command.model_dump(mode="json")
+        payload["pump_id"] = pump_id
+        publisher._handle_command(json.dumps(payload).encode())
+
+        assert publisher._pump_states == {}
+        with closing(publisher._state_database()) as database:
+            assert database.execute("SELECT * FROM allocation_pump_states").fetchall() == []
+        results = [
+            json.loads(kwargs["payload"]) for args, kwargs in fake.publish_calls
+            if args[0] == "evolver/v1/evolver-sim-01/command-results"
+        ]
+        if pump_id == 1:
+            result, = results
+            assert (result["command_id"], result["status"], result["reason_code"]) == (
+                str(command.command_id), "rejected", "expired",
+            )
+        else:
+            assert results == []
+            assert "Comando do grupo de bombas inválido" in caplog.text
+    finally:
+        publisher.close()
 
 
 def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
@@ -347,6 +396,7 @@ def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
     restarted_fake = FakeClient(allocation_response=[allocation_payload()])
     restarted = MqttPublisher(settings, client_factory=lambda **_kwargs: restarted_fake)
     restarted.connect()
+    assert restarted._pump_states == {(ALLOCATION_41, 1): True}
     allocation = ActiveVial.model_validate(allocation_payload())
     assert restarted.pump_is_on(allocation)
     assert not restarted.pump_is_on(ActiveVial(vial_id=1, experiment_id=42))
@@ -378,7 +428,10 @@ def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
     next_run.close()
 
 
-def test_simulator_handles_turn_off_after_a_pending_turn_on(tmp_path: Path) -> None:
+def test_simulator_handles_turn_off_after_a_pending_turn_on(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="evolver_simulator.mqtt")
     fake = FakeClient(allocation_response=[allocation_payload()])
     publisher = MqttPublisher(
         make_settings(pump_state_path=tmp_path / "pump.sqlite3"),
@@ -405,7 +458,14 @@ def test_simulator_handles_turn_off_after_a_pending_turn_on(tmp_path: Path) -> N
             json.loads(kwargs["payload"]) for args, kwargs in fake.publish_calls
             if args[0] == "evolver/v1/evolver-sim-01/command-results"
         ]
-        assert [r["command_id"] for r in results if r["status"] == "executed"] == command_ids
+        assert [(r["command_id"], r["status"]) for r in results] == [
+            (command_id, status)
+            for command_id in command_ids for status in ("received", "executed")
+        ]
+        assert [r.getMessage() for r in caplog.records if "grupo de bombas" in r.getMessage()] == [
+            f"Ação {action} aplicada ao grupo de bombas [1, 2, 3] (command_id={command_id})"
+            for action, command_id in zip(("turn_on", "turn_off"), command_ids, strict=True)
+        ]
         assert publisher._pump_states == {(ALLOCATION_41, 1): False}
     finally:
         publisher.close()
@@ -532,8 +592,9 @@ def test_recreated_database_can_reuse_numeric_ids(
 
 
 def test_pump_command_is_not_executed_when_state_cannot_be_saved(
-    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.INFO, logger="evolver_simulator.mqtt")
     fake = FakeClient(allocation_response=[allocation_payload()])
     publisher = MqttPublisher(
         make_settings(),
@@ -541,10 +602,11 @@ def test_pump_command_is_not_executed_when_state_cannot_be_saved(
     )
     publisher.connect()
 
-    def unavailable():
-        raise sqlite3.OperationalError("unavailable")
-
-    monkeypatch.setattr(publisher, "_state_database", unavailable)
+    with closing(publisher._state_database()) as database, database:
+        database.execute("""
+            CREATE TRIGGER fail_completed_command BEFORE INSERT ON completed_allocation_commands
+            BEGIN SELECT RAISE(ABORT, 'unavailable'); END
+        """)
     now = datetime.now(UTC)
     command = PumpCommand(
         schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
@@ -554,6 +616,11 @@ def test_pump_command_is_not_executed_when_state_cannot_be_saved(
     )
     publisher._handle_command(command.model_dump_json().encode())
     assert publisher._pump_states == {}
+    assert "Estado do grupo de bombas não persistido" in caplog.text
+    assert "aplicada ao grupo de bombas" not in caplog.text
+    with closing(publisher._state_database()) as database:
+        assert database.execute("SELECT * FROM allocation_pump_states").fetchall() == []
+        assert database.execute("SELECT * FROM allocation_pump_order").fetchall() == []
     assert not any(
         args[0] == "evolver/v1/evolver-sim-01/command-results"
         for args, _kwargs in fake.publish_calls
@@ -567,7 +634,7 @@ def test_simulator_does_not_connect_if_persisted_state_is_unavailable(tmp_path: 
         make_settings(pump_state_path=tmp_path),  # A directory cannot be opened as SQLite.
         client_factory=lambda **_kwargs: fake,
     )
-    with pytest.raises(MqttConnectionError, match="carregar o estado da bomba"):
+    with pytest.raises(MqttConnectionError, match="carregar o estado do grupo de bombas"):
         publisher.connect()
     assert fake.connect_call is None
 

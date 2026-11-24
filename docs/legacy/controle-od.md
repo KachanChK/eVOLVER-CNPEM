@@ -1,7 +1,8 @@
 # Controle automático de OD (simulador)
 
-O backend decide a bomba lógica única de cada vial. Um experimento novo começa
-com a bomba simulada desligada; esse é o estado inicial definido pelo simulador.
+O backend controla um único grupo por alocação, formado pelas bombas simuladas
+`[1, 2, 3]` conforme a [Spec 7](spec-7-bombas-sincronizadas.md). Um experimento novo
+começa com o grupo desligado.
 Experimentos anteriores à configuração de limites mantêm estado desconhecido e
 não entram no controle automático.
 
@@ -24,11 +25,12 @@ não entram no controle automático.
   somente transporte. `received` confirma recebimento pelo simulador; somente
   `executed` confirma o novo estado simulado. Sem resultado conclusivo em 10 s,
   o estado fica `unknown` e o controlador não repete o comando.
-- A ingestão publica comandos com QoS 1 e `retain=false` usando `pump_id: 1` e
-  o UUID persistido da alocação em `experiment_run_id`. O simulador consulta a
+- A ingestão publica um comando por ação do grupo com QoS 1 e `retain=false`.
+  O contrato `1.0` usa `pump_id: 1` para o grupo e o UUID persistido da alocação
+  em `experiment_run_id`. O simulador consulta a
   alocação ativa antes de executar ou repetir um resultado e rejeita vínculo
   ausente, encerrado ou incompatível. A telemetria simulada carrega o mesmo UUID.
-- O simulador grava estado e identidade dos comandos concluídos em SQLite antes
+- O simulador grava o estado único do grupo e a identidade dos comandos concluídos em SQLite antes
   de publicar `executed`. O arquivo padrão é
   `~/.evolver-simulator/pump-state.sqlite3` e pode ser definido por
   `SIMULATOR_PUMP_STATE_PATH`. Preserve esse arquivo entre reinícios do simulador.
@@ -55,8 +57,8 @@ não entram no controle automático.
   quando necessário. A retomada só volta a avaliar OD após confirmar o
   desligamento, se necessário. A retomada solicita ligar apenas com uma leitura
   verificada e recente que atinja ou supere o máximo.
-  Inativação/exclusão também bloqueia a automação e, se a bomba não estiver
-  comprovadamente desligada, conclui o encerramento após resultado `executed`
+  Inativação/exclusão também bloqueia a automação e, se o grupo não estiver
+  comprovadamente desligado, conclui o encerramento após resultado `executed`
   do comando de desligar. O vial continua ocupado enquanto a solicitação
   aguarda confirmação. Se o comando falhar ou expirar, a interface permite
   repetir apenas o desligamento, sem criar outro comando enquanto houver um
@@ -71,22 +73,22 @@ sem confirmação ou concluído, inclusive após uma exclusão lógica.
 ## Acompanhamento
 
 O cadastro exige OD mínima e máxima entre 0,10 e 0,80, inclusive, com a máxima
-maior que a mínima. A bomba lógica pertence ao vial e não é escolhida no cadastro.
+maior que a mínima. Os membros do grupo são fixos para todo experimento.
 O detalhe consulta a API a cada 5 s. A última OD é ordenada por geração e ganha o
 aviso de leitura antiga após 10 s. O último resultado registrado também é marcado
 como antigo após 10 s. A idade desse resultado informa quando houve a última
 resposta conclusiva ou desfecho registrado. A perda de confirmação aparece no
-campo de estado da bomba como **Desconhecida**.
+campo **Estado das bombas** como **Desconhecido**.
 
 `GET /api/experiments/{id}/pump` expõe o modo, o estado confirmado mais recente e
 o identificador do comando pendente. `GET /api/experiments/{id}/pump/history`
-expõe solicitações, resultados e transições da bomba em uma fotografia do banco.
+expõe solicitações, resultados e transições do grupo em uma fotografia do banco.
 A interface consulta `GET /api/experiments/{id}/pump/snapshot`, que lê modo,
 estado, histórico, leituras de OD e encerramento na mesma fotografia transacional.
 Após uma ação, o painel aguarda a nova fotografia completa e descarta
 consultas anteriores à ação. O gráfico de
 OD usa os limites cadastrados, marca intenções e resultados separadamente e
-mostra faixas independentes para bomba ligada com confirmação e automação
+mostra faixas distintas para o grupo ligado com confirmação e para a automação
 pausada. Uma pausa pode se sobrepor ao trecho ligado enquanto o desligamento
 aguarda confirmação. A pausa da visualização congela o gráfico e preserva a
 atualização do painel de controle.
@@ -96,6 +98,7 @@ do estado observado naquele momento. Os comandos existentes continuam
 consultáveis. Dados anteriores à migração podem não ter períodos registrados.
 
 O teste com TimescaleDB descartável é
-`backend/tests/db/test_pump_control_integration.py`. Ele não valida bomba física.
+`backend/tests/db/test_pump_control_integration.py`.
 
-O [aceite da Spec 6](evidencias/spec6/README.md) reúne a matriz, as capturas e o roteiro.
+A [matriz de aceite da Spec 7](evidencias-controle-bombas/README.md) registra a validação do
+grupo de bombas. As evidências originais da Spec 6 antecedem essa mudança.

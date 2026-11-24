@@ -102,6 +102,14 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
                 status="executed", reported_at=datetime.now(UTC),
             ))
 
+    def assert_queued(experiment_id: int, command_id: UUID, action: str) -> None:
+        with engine.connect() as connection:
+            queued, = pending_commands(connection, datetime.now(UTC))
+        assert queued.command_id == command_id
+        assert queued.experiment_run_id == allocation_id(experiment_id)
+        assert queued.pump_id == 1
+        assert queued.action == action
+
     def mark_sent(command_id) -> None:
         with engine.begin() as connection:
             connection.execute(text("""
@@ -134,12 +142,7 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         first = commands(experiment_id)
         assert len(first) == 1 and first[0]["desired_state"] == "on"
         assert first[0]["reading_event_id"] is not None
-        with engine.connect() as connection:
-            queued = pending_commands(connection, datetime.now(UTC))
-        assert len(queued) == 1
-        assert queued[0].experiment_run_id == allocation_id(experiment_id)
-        assert queued[0].pump_id == 1
-        assert queued[0].action == "turn_on"
+        assert_queued(experiment_id, first[0]["command_id"], "turn_on")
         assert first[0]["sent_at"] is None and first[0]["puback_at"] is None
         with engine.begin() as connection:
             connection.execute(text("""
@@ -163,17 +166,26 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         assert reading(experiment_id, 0.2, 3, now + timedelta(milliseconds=2)) == "gravada"
         second = commands(experiment_id)[-1]
         assert second["desired_state"] == "off"
+        assert_queued(experiment_id, second["command_id"], "turn_off")
         executed(second["command_id"])
+        assert len(commands(experiment_id)) == 2
         assert reading(experiment_id, 0.7, 4, now + timedelta(milliseconds=3)) == "gravada"
         third = commands(experiment_id)[-1]
         assert third["desired_state"] == "on"
+        assert_queued(experiment_id, third["command_id"], "turn_on")
         executed(third["command_id"])
         assert reading(experiment_id, 0.2, 5, now + timedelta(milliseconds=4)) == "gravada"
         fourth = commands(experiment_id)[-1]
         assert fourth["desired_state"] == "off"
+        assert_queued(experiment_id, fourth["command_id"], "turn_off")
         executed(fourth["command_id"])
         assert [row["desired_state"] for row in commands(experiment_id)] == [
             "on", "off", "on", "off",
+        ]
+        history = client.get(f"{pump_url}/history").json()
+        assert [row["result_status"] for row in history["commands"]] == ["executed"] * 4
+        assert [row["confirmed_state"] for row in history["transitions"]] == [
+            "off", "on", "off", "on", "off",
         ]
         # A late but valid historical event is stored without reversing the controller.
         assert reading(experiment_id, 0.8, 0, now - timedelta(seconds=1)) == "gravada"
@@ -186,14 +198,20 @@ def test_two_cycles_reordering_unknown_ending_and_experiment_isolation(
         with engine.begin() as connection:
             expire_commands(connection, datetime.now(UTC) + timedelta(seconds=11))
         assert commands(experiment_id)[-1]["result_status"] == "unknown"
+        assert client.get(pump_url).json()["confirmed_state"] == "unknown"
         assert reading(experiment_id, 0.2, 8, db_now()) == "gravada"
         assert len(commands(experiment_id)) == 5
         # Ending with unknown state requests a safe off command, then completes on execution.
         assert client.post(f"/api/experiments/{experiment_id}/inactivate").status_code == 202
         ending = commands(experiment_id)[-1]
         assert ending["desired_state"] == "off"
+        assert_queued(experiment_id, ending["command_id"], "turn_off")
+        assert client.get(f"/api/experiments/{experiment_id}").json()["ended_at"] is None
         executed(ending["command_id"])
         assert client.get(f"/api/experiments/{experiment_id}").json()["status"] == "inactive"
+        assert client.post(f"{pump_url}/pause").json() == {
+            "detail": "As bombas só podem ser controladas em um experimento ativo.",
+        }
         replacement = client.post("/api/experiments", json={
             "name": "Novo", "culture_type": "Levedura", "vial_id": 1,
             "od_min": 0.2, "od_max": 0.7,

@@ -31,9 +31,9 @@ const now = ref(Date.now())
 const viewTime = ref(Date.now())
 const updateError = ref('')
 const pumpStatus = {
-  automatic: 'Bomba em modo automático',
+  automatic: 'Bombas em modo automático',
   pausing: 'Pausando…',
-  paused: 'Bomba pausada',
+  paused: 'Bombas pausadas',
   off_unconfirmed: 'Desligamento não confirmado. O modo automático está pausado.',
   resuming: 'Despausando… Aguardando a confirmação do desligamento.',
   resume_off_unconfirmed: 'Desligamento não confirmado. Aguardando reconciliação.',
@@ -136,7 +136,7 @@ async function loadPump(afterAction = false) {
     pumpError.value = ''
   } catch {
     if (!disposed && pumpRequest === controller) {
-      pumpError.value = 'Não foi possível atualizar o estado da bomba. A atualização será tentada novamente.'
+      pumpError.value = 'Não foi possível atualizar o estado das bombas. A atualização será tentada novamente.'
     }
   } finally {
     if (pumpRequest === controller) pumpRequest = null
@@ -264,7 +264,7 @@ async function changePumpMode() {
   } catch (failure) {
     if (!disposed && revision === pumpRevision && !experiment.value?.ended_at) {
       pumpError.value = signal.aborted
-        ? 'A API demorou para responder. O estado da bomba será consultado novamente.'
+        ? 'A API demorou para responder. O estado das bombas será consultado novamente.'
         : failure.message
     }
   } finally {
@@ -324,8 +324,8 @@ onUnmounted(() => {
       <p role="status">
         {{ closure.action === 'delete' ? 'Exclusão' : 'Inativação' }} solicitada.
         {{ closure.state === 'pending'
-          ? 'Aguardando a confirmação de que a bomba desligou. O vial continua ocupado.'
-          : 'O desligamento da bomba ficou sem confirmação. O vial continua ocupado. Verifique se o simulador está conectado e tente novamente.' }}
+          ? 'Aguardando a confirmação de que as bombas desligaram. O vial continua ocupado.'
+          : 'O desligamento das bombas ficou sem confirmação. O vial continua ocupado. Verifique se o simulador está conectado e tente novamente.' }}
       </p>
       <button v-if="closure.state === 'unconfirmed'" type="button" :disabled="pending"
         @click="change(closure.action)">Tentar desligar novamente</button>
@@ -335,7 +335,7 @@ onUnmounted(() => {
         <h2 id="pump-heading">Controle de OD</h2>
         <button v-if="pump && experiment.status === 'active' && !closing && !pump.ending"
           type="button" :disabled="pending || pendingPump" @click="changePumpMode">
-          {{ pumpAction === 'pause' ? 'Pausar bomba' : 'Despausar bomba' }}
+          {{ pumpAction === 'pause' ? 'Pausar bombas' : 'Despausar bombas' }}
         </button>
       </div>
       <dl class="pump-summary">
@@ -356,7 +356,7 @@ onUnmounted(() => {
           </dd>
         </div>
         <div>
-          <dt>Estado da bomba</dt>
+          <dt>Estado das bombas</dt>
           <dd role="status">{{ pumpState[pump?.confirmed_state] ?? pumpState.unknown }}</dd>
         </div>
         <div>

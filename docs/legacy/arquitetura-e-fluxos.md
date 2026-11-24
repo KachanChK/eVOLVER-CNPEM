@@ -19,7 +19,7 @@ a stack de monitoramento. O simulador Python consulta os vials ativos, publica t
 comandos e publica resultados pelo broker MQTT, único intermediário. A stack de
 monitoramento contém ingestão, PostgreSQL/TimescaleDB, API e interface. A API,
 o PostgreSQL e os arquivos do monitoramento ficam restritos ao lado do
-monitoramento. O arquivo SQLite da bomba lógica pertence ao simulador.
+monitoramento. O arquivo SQLite do grupo de bombas pertence ao simulador.
 
 Na máquina do simulador, configure `MQTT_HOST` com o nome DNS ou IP do broker
 acessível na rede, `MQTT_PORT` com a porta publicada (por exemplo, 1883) e
@@ -49,13 +49,13 @@ flowchart LR
         ingestion["Ingestão Python"] <-->|"alocações, medições e controle"| db
     end
     subgraph producer["Máquina do simulador"]
-        sim["Simulador Python + estado SQLite da bomba"]
+        sim["Simulador Python + estado SQLite do grupo de bombas"]
     end
     sim <-->|"descoberta de vials, telemetria, comandos e resultados"| mqtt["Mosquitto"]
     mqtt <-->|"mensagens MQTT"| ingestion
 ```
 
-**Leitura do diagrama:** MQTT (*Message Queuing Telemetry Transport*) é o protocolo de mensagens; Mosquitto é o *broker* (servidor que as encaminha). SQLite guarda o estado simulado da bomba em arquivo local; TimescaleDB acrescenta suporte a séries temporais ao PostgreSQL. ACK é a confirmação da aplicação de uma leitura. O banco é a fonte do estado persistido. O navegador não acessa o banco nem o broker diretamente. As setas mostram o caminho previsto, não execução comprovada.
+**Leitura do diagrama:** MQTT (*Message Queuing Telemetry Transport*) é o protocolo de mensagens; Mosquitto é o *broker* (servidor que as encaminha). SQLite guarda o estado simulado do grupo de bombas em arquivo local; TimescaleDB acrescenta suporte a séries temporais ao PostgreSQL. ACK é a confirmação da aplicação de uma leitura. O banco é a fonte do estado persistido. O navegador não acessa o banco nem o broker diretamente. As setas mostram o caminho previsto, não execução comprovada.
 
 Na implementação da Spec 6, o navegador atualiza os dados persistidos por
 consultas HTTP a cada 5 s. O [T03](stack-e-desenvolvimento.md) descreve a
@@ -64,9 +64,9 @@ proposta anterior de SSE.
 ## Diagrama de componentes e fronteiras
 
 O fluxo de telemetria abaixo preserva o desenho original do piloto para
-a fila durável de leituras. Na jornada da Spec 6, o SQLite guarda o estado da
-bomba no simulador e a ingestão persiste a telemetria no TimescaleDB.
-O diagrama de comandos já mostra o fluxo de controle de OD da Spec 6.
+a fila durável de leituras. O SQLite guarda o estado do grupo de bombas no
+simulador e a ingestão persiste a telemetria no TimescaleDB. O diagrama de
+comandos mostra o fluxo de controle de OD com a semântica de grupo da Spec 7.
 
 **Telemetria, gravação e confirmação**
 
@@ -115,7 +115,7 @@ sequenceDiagram
 
 O PUBACK do broker comprova a entrega ao transporte. A ingestão confirma
 a persistência da leitura após o commit. O banco guarda o histórico e a
-auditoria e a API atende o navegador. O estado simulado da bomba sobrevive
+auditoria e a API atende o navegador. O estado simulado do grupo de bombas sobrevive
 ao reinício do produtor pelo SQLite. Backup e restauração continuam como
 requisitos do desenho original do piloto.
 
@@ -123,7 +123,7 @@ requisitos do desenho original do piloto.
 
 | Componente | Responsabilidade no piloto | Não significa |
 | --- | --- | --- |
-| Simulador Python | Gerar OD (densidade óptica), pH e temperatura medida com IDs, sequência e horário de geração; gravar leituras na fila antes de publicar; receber setpoint e comandos ligar/desligar das bombas 1, 2 e 3; responder com o mesmo `command_id` e resultado simulado. | Sensor calibrado, atuador real, vazão, volume bombeado ou execução física. |
+| Simulador Python | Gerar OD (densidade óptica), pH e temperatura medida com IDs, sequência e horário de geração; gravar leituras na fila antes de publicar; receber setpoint e comandos de ligar/desligar o grupo de bombas; responder com o mesmo `command_id` e resultado simulado. | Sensor calibrado, atuador real, vazão, volume bombeado ou execução física. |
 | Fila local durável (SQLite) | Manter leituras até confirmação da aplicação; preservar `event_id`, sequência e horário original; recuperar pendências após reinício; expor quantidade, idade pendente e erro de publicação. | Substituto de backup ou garantia contra perda do disco/host. |
 | Mosquitto / MQTT | Transportar mensagens entre produtores e consumidores locais, com tópicos separados para telemetria, ACK, comandos e respostas. | Banco de dados, confirmação de commit, execução de comando ou interface comprovada do hardware eVOLVER. |
 | Ingestão Python | Validar esquema, origem, IDs e horários; registrar horário de recebimento; impedir duplicatas; gravar em transação; emitir ACK de aplicação somente após commit; receber resultados simulados e persistir eventos correlacionados. | Autoridade para inferir efeito científico ou físico. |
@@ -141,7 +141,7 @@ Um horário antigo não torna o evento inválido: ele entra no histórico pelo h
 
 ### Comandos
 
-Todo comando contém `command_id` (identidade de correlação), tipo/alvo, ação/valor, instante de criação, prazo de validade, autor e vínculo com a execução experimental quando aplicável. No piloto, os alvos são setpoint de temperatura e bombas 1, 2 e 3 com ação ligar/desligar.
+Todo comando contém `command_id` (identidade de correlação), tipo/alvo, ação/valor, instante de criação, prazo de validade, autor e vínculo com a execução experimental quando aplicável. No piloto, os alvos são o setpoint de temperatura e o grupo de bombas `[1, 2, 3]`. O contrato `1.0` usa `pump_id: 1` para o grupo. [Spec 7](spec-7-bombas-sincronizadas.md)
 
 Apresentar estados separados e só avançar quando houver evidência correspondente:
 
@@ -156,7 +156,7 @@ Temperatura **medida** é telemetria; temperatura **desejada** é setpoint. Valo
 ## Fluxos principais
 
 Os itens 1 a 5 preservam a descrição histórica do planejamento do piloto.
-O item 6 descreve o controle de OD implementado na Spec 6.
+O item 6 descreve o controle de OD com a semântica de grupo da Spec 7.
 
 ### 1. Telemetria normal e confirmação pós-commit
 
@@ -198,20 +198,20 @@ A ingestão conserva `generated_at`, `received_at`, sequência e identidade do p
 4. O estado **enviado** é registrado separadamente do recebimento.
 5. Simulador valida prazo e identidade, altera apenas seu estado simulado e devolve resposta com o mesmo `command_id`. A confirmação de recebimento e o resultado são eventos distintos.
 6. Ingestão valida a correlação e grava a resposta/evento; a API mostra o resultado persistido como executado no simulador, falhou ou rejeitado, conforme a evidência.
-7. Se a resposta não chegar, mostrar **resultado desconhecido**. Não repetir automaticamente comando antigo de bomba após reconexão. Uma nova tentativa exige política explícita e não deve esconder a incerteza do resultado anterior.
+7. Se a resposta não chegar, mostrar **resultado desconhecido**. Uma nova tentativa segue a política explícita de reconciliação do grupo após reconexão.
 
-Comandos expirados durante desconexão são recusados pelo simulador e permanecem auditáveis como expirados/rejeitados. O piloto não usa comandos MQTT retidos para atuadores. **Verificar e registrar:** guardar pedido, `command_id`, autor disponível no piloto, validação, publicação, confirmação de recebimento, resposta, consulta de auditoria e captura dos estados. Testar setpoint e ligar/desligar de cada bomba separadamente, além de comando expirado durante desconexão. Espera-se correlação pelo mesmo ID e nenhuma execução do expirado (A7 do T01). Semântica de retentativa e timeouts continuam pendentes.
+Comandos expirados durante desconexão são recusados pelo simulador e permanecem auditáveis como expirados/rejeitados. O piloto publica comandos MQTT com `retain=false`. Para conferir os comandos, testar o setpoint, um ciclo de ligar e desligar o grupo e a expiração durante desconexão. Guardar pedido, `command_id`, autor, publicação, recebimento, resultado e consulta ao histórico. Os prazos e a reconciliação do grupo estão no [Controle de OD](controle-od.md).
 
-### 6. Controle de OD da Spec 6
+### 6. Controle de OD do grupo de bombas
 
 A API registra limites e mudanças de modo no banco. A ingestão encontra as
 alocações ativas em resposta a pedidos via MQTT e decide se deve solicitar
-ligar ou desligar a bomba lógica. Na subida, OD no máximo ou acima dele
+ligar ou desligar o grupo `[1, 2, 3]`. Na subida, OD no máximo ou acima dele
 solicita ligar. Na descida, OD no mínimo ou abaixo dele solicita desligar.
 Entre os limites, conserva o estado confirmado. A mesma ingestão publica o
-comando persistido, com validade e identificador da alocação. O simulador
-consulta a alocação via MQTT, executa a ação no seu estado local e publica o
-resultado. A ingestão registra o resultado e o estado na mesma transação. A
+único comando persistido por ação, com validade e identificador da alocação.
+O simulador consulta a alocação via MQTT, grava um único estado para o grupo e
+publica o resultado. A ingestão registra o resultado e o estado na mesma transação. A
 interface consulta a API para mostrar a intenção, o resultado e as mudanças
 observadas pelo banco. O fluxo de pausa, recuperação e encerramento está
 descrito em [Controle de OD](controle-od.md).

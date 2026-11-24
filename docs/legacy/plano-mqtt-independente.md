@@ -7,7 +7,7 @@ e `.../response`, depois publica OD, pH e temperatura no tópico
 O PUBACK confirma entrega ao broker, não a gravação no banco.
 
 Prepare os arquivos `.env`, as dependências e os serviços conforme o
-[README principal](../README.md). A ingestão, o banco e o broker precisam estar
+[README principal](../../README.md). A ingestão, o banco e o broker precisam estar
 em execução, e pelo menos um experimento deve estar ativo para observar eventos.
 
 Na raiz do repositório, execute uma rodada:
@@ -31,4 +31,4 @@ docker compose --env-file mqtt/.env -f mqtt/compose.yaml exec mosquitto sh -c 'm
 ```
 
 O log da ingestão e as tabelas de leituras confirmam o salvamento. O
-[guia do simulador](../simulator/README.md) descreve as opções de teste.
+[guia do simulador](../../simulator/README.md) descreve as opções de teste.
