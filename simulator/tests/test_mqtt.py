@@ -13,8 +13,13 @@ from uuid import UUID, uuid4
 import paho.mqtt.client as mqtt
 import pytest
 from evolver.ingestion.control import action_for_od
-from evolver_contracts.models import PumpCommand, TelemetryEvent
-from evolver_contracts.pilot import ACTIVE_VIALS_REQUEST, ACTIVE_VIALS_RESPONSE, ActiveVial
+from evolver_contracts.models import PumpCommand, TelemetryAcknowledgement, TelemetryEvent
+from evolver_contracts.pilot import (
+    ACTIVE_VIALS_REQUEST,
+    ACTIVE_VIALS_RESPONSE,
+    TELEMETRY_MODE_PROPERTY,
+    ActiveVial,
+)
 from evolver_simulator.config import SimulatorSettings
 from evolver_simulator.mqtt import MqttConnectionError, MqttPublisher, MqttPublishError
 from evolver_simulator.runner import SimulatorRunner
@@ -73,10 +78,14 @@ class FakeClient:
         allocation_response: list[dict[str, int | str]] | None = None,
         wrong_request_id: bool = False,
         invalid_response: bool = False,
+        auto_ack: bool = False,
+        subscription_failure: bool = False,
     ) -> None:
         self.connect_result = connect_result
         self.connect_failure = connect_failure
-        self.message_info = message_info or FakeMessageInfo()
+        self.message_info = message_info
+        self.auto_ack = auto_ack
+        self.subscription_failure = subscription_failure
         self.allocation_response = allocation_response
         self.wrong_request_id = wrong_request_id
         self.invalid_response = invalid_response
@@ -99,6 +108,12 @@ class FakeClient:
         self.username = username
         self.password = password
 
+    def max_inflight_messages_set(self, count: int) -> None:
+        assert count > 128
+
+    def max_queued_messages_set(self, count: int) -> None:
+        assert count > 128
+
     def connect(self, *args: Any, **kwargs: Any) -> int:
         self.connect_call = (*args, kwargs)
         return self.connect_result
@@ -110,12 +125,13 @@ class FakeClient:
     def publish(self, *args: Any, **kwargs: Any) -> FakeMessageInfo:
         self.publish_call = (args, kwargs)
         self.publish_calls.append((args, kwargs))
-        if self.message_info.rc == mqtt.MQTT_ERR_SUCCESS and self.message_info.invoke_callback:
+        info = self.message_info or FakeMessageInfo(mid=len(self.publish_calls))
+        if info.rc == mqtt.MQTT_ERR_SUCCESS and info.invoke_callback:
             self.on_publish(
                 self,
                 None,
-                self.message_info.mid,
-                self.message_info.reason_code,
+                info.mid,
+                info.reason_code,
                 None,
             )
         if args[0] == ACTIVE_VIALS_REQUEST and self.allocation_response is not None:
@@ -137,12 +153,24 @@ class FakeClient:
                 },
             )()
             self.on_message(self, None, message)
-        return self.message_info
+        if self.auto_ack and args[0].endswith("/telemetry"):
+            event = TelemetryEvent.model_validate_json(kwargs["payload"])
+            outcome = TelemetryAcknowledgement(
+                schema_version="1.0", event_id=event.event_id, equipment_id=event.equipment_id,
+                status="persisted", acknowledged_at=datetime.now(UTC),
+            )
+            message = mqtt.MQTTMessage(topic=f"{args[0]}/ack".encode())
+            message.payload = outcome.model_dump_json().encode()
+            self.on_message(self, None, message)
+        return info
 
-    def subscribe(self, topic: str, qos: int) -> tuple[int, int]:
-        assert qos == 1
-        self.subscriptions.append(topic)
-        self.on_subscribe(self, None, 1, [FakeReasonCode()], None)
+    def subscribe(self, topics) -> tuple[int, int]:
+        for topic, options in topics:
+            assert options.QoS == 1 and options.retainAsPublished
+            self.subscriptions.append(topic)
+        codes = [FakeReasonCode() for _topic in topics]
+        codes[-1] = FakeReasonCode(is_failure=self.subscription_failure)
+        self.on_subscribe(self, None, 1, codes, None)
         return mqtt.MQTT_ERR_SUCCESS, 1
 
     def disconnect(self) -> None:
@@ -192,13 +220,14 @@ def test_client_uses_mqtt5_authenticated_identity_and_connection_parameters() ->
         "callback_api_version": mqtt.CallbackAPIVersion.VERSION2,
         "client_id": "simulator-local-01-telemetry",
         "protocol": mqtt.MQTTv5,
+        "reconnect_on_failure": False,
     }
     assert (fake.username, fake.password) == ("evolver-sim-01", "local-secret")
     assert fake.connect_call == (
         "127.0.0.1",
         1883,
         60,
-        {"clean_start": mqtt.MQTT_CLEAN_START_FIRST_ONLY},
+        {"clean_start": True},
     )
     publisher.close()
     assert fake.disconnected and fake.loop_stopped
@@ -218,6 +247,8 @@ def test_active_vials_request_returns_correlated_allocations() -> None:
     assert fake.subscriptions == [
         "evolver/v1/evolver-sim-01/commands",
         "evolver/v1/evolver-sim-01/active-vials/response",
+        "evolver/v1/evolver-sim-01/telemetry/ack",
+        "evolver/v1/evolver-sim-01/telemetry/rejection",
     ]
     args, kwargs = fake.publish_calls[0]
     assert args == ("evolver/v1/evolver-sim-01/active-vials/request",)
@@ -643,8 +674,8 @@ def test_simulator_does_not_connect_if_persisted_state_is_unavailable(tmp_path: 
 def test_od_completes_two_controller_cycles(
     minimum: str, maximum: str, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("evolver_simulator.runner.ROUND_INTERVAL_SECONDS", 0)
-    fake = FakeClient(allocation_response=[allocation_payload()])
+    monkeypatch.setattr("evolver_simulator.runner.ROUND_INTERVAL_SECONDS", 0.05)
+    fake = FakeClient(allocation_response=[allocation_payload()], auto_ack=True)
     settings = make_settings(seed=71, od_noise=0.01)
     publisher = MqttPublisher(settings, client_factory=lambda **_kwargs: fake)
     runner = SimulatorRunner(settings, publisher=publisher)
@@ -655,11 +686,12 @@ def test_od_completes_two_controller_cycles(
     thresholds = []
     original_publish = publisher.publish
 
-    def publish(event: TelemetryEvent) -> None:
+    def publish(payload, *, session, live):
         nonlocal previous, state
-        original_publish(event)
+        info = original_publish(payload, session=session, live=live)
+        event = TelemetryEvent.model_validate_json(payload)
         if event.measurement_type != "od":
-            return
+            return info
         value = event.value
         assert 0.10 <= value <= 0.80
         if previous is not None:
@@ -671,10 +703,10 @@ def test_od_completes_two_controller_cycles(
         if len(actions) == 4:
             assert state == "off"
             runner.stop()
-            return
+            return info
         action = action_for_od(state, Decimal(str(value)), Decimal(minimum), Decimal(maximum))
         if action is None:
-            return
+            return info
         now = issued_at + timedelta(microseconds=len(actions))
         command = PumpCommand(
             schema_version="1.0", command_id=uuid4(), equipment_id=settings.equipment_id,
@@ -692,6 +724,7 @@ def test_od_completes_two_controller_cycles(
         state = "on" if action == "turn_on" else "off"
         actions.append(action)
         thresholds.append(value)
+        return info
 
     monkeypatch.setattr(publisher, "publish", publish)
     assert runner.run(max_messages=360) < 360
@@ -717,119 +750,96 @@ def test_unusable_response_fails_without_fallback(response_kind: str) -> None:
     publisher.close()
 
 
-def test_publish_uses_contract_json_topic_qos_one_and_no_retain() -> None:
+@pytest.mark.parametrize("live", [False, True])
+def test_publish_uses_original_json_and_transport_metadata(live: bool) -> None:
     fake = FakeClient()
     publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
     publisher.connect()
-
-    publisher.publish(make_event())
-
-    assert fake.publish_call is not None
-    args, kwargs = fake.publish_call
-    assert args == ("evolver/v1/evolver-sim-01/telemetry",)
-    assert kwargs["qos"] == 1
-    assert kwargs["retain"] is False
-    assert json.loads(kwargs["payload"])["measurement_type"] == "od"
-    assert fake.message_info.wait_timeout == 10.0
-    assert len(fake.publish_calls) == 1
-
-
-@pytest.mark.parametrize(
-    ("measurement_type", "value", "expected"),
-    [
-        ("od", 0.42, "Frasco 1 | OD: 0.42 | Enviado ao MQTT"),
-        ("ph", 7.1, "Frasco 1 | pH: 7.1 | Enviado ao MQTT"),
-        ("temperature", 37.5, "Frasco 1 | Temperatura: 37.5 °C | Enviado ao MQTT"),
-    ],
-)
-def test_published_measurement_is_shown_in_the_terminal(
-    measurement_type: str, value: float, expected: str, caplog: pytest.LogCaptureFixture
-) -> None:
-    fake = FakeClient()
-    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
-    publisher.connect()
-    event = make_event().model_copy(
-        update={"vial_id": "1", "measurement_type": measurement_type, "value": value}
-    )
-
-    with caplog.at_level(logging.INFO, logger="evolver_simulator.mqtt"):
-        publisher.publish(event)
-
-    assert expected in caplog.text
-
-
-def test_temperature_is_sent_once_in_the_v1_format() -> None:
-    fake = FakeClient()
-    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
-    publisher.connect()
-    event = make_event().model_copy(
-        update={"vial_id": "42", "measurement_type": "temperature", "value": 37.5},
-    )
-
-    publisher.publish(event)
+    original = make_event().model_dump_json()
+    info = publisher.publish(original, session=publisher.session, live=live)
 
     assert len(fake.publish_calls) == 1
-    (args, kwargs) = fake.publish_calls[0]
+    args, kwargs = fake.publish_calls[0]
     assert args == ("evolver/v1/evolver-sim-01/telemetry",)
     assert kwargs["qos"] == 1 and kwargs["retain"] is False
-    sent = json.loads(kwargs["payload"])
-    assert sent["measurement_type"] == "temperature"
-    assert sent["vial_id"] == "42" and sent["value"] == 37.5
+    assert kwargs["payload"] == original
+    properties = kwargs["properties"]
+    assert properties.UserProperty == [(TELEMETRY_MODE_PROPERTY, "live" if live else "history")]
+    assert getattr(properties, "MessageExpiryInterval", None) == (2 if live else None)
+    assert info.wait_timeout is None
+    assert not publisher.publish_outcome(info, publisher.session).is_failure
+    publisher.close()
 
 
-def test_negative_mqtt5_puback_is_reported_as_publish_failure() -> None:
-    message_info = FakeMessageInfo(
-        mid=17,
-        reason_code=FakeReasonCode(is_failure=True),
-    )
-    fake = FakeClient(message_info=message_info)
+def test_negative_mqtt5_puback_is_reported_as_transport_failure() -> None:
+    fake = FakeClient(message_info=FakeMessageInfo(reason_code=FakeReasonCode(is_failure=True)))
     publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
     publisher.connect()
-
-    with pytest.raises(MqttPublishError, match="PUBACK rejected message 17: not authorized"):
-        publisher.publish(make_event())
-
-
-def test_missing_puback_result_is_reported_as_publish_failure() -> None:
-    fake = FakeClient(message_info=FakeMessageInfo(mid=23, invoke_callback=False))
-    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
-    publisher.connect()
-
-    with pytest.raises(MqttPublishError, match="PUBACK result missing for message 23"):
-        publisher.publish(make_event())
+    info = publisher.publish(make_event().model_dump_json(), session=publisher.session, live=True)
+    assert publisher.publish_outcome(info, publisher.session).is_failure
+    assert list(publisher.outcomes()) == []
+    publisher.close()
 
 
 def test_connect_return_code_failure_is_reported_without_starting_loop() -> None:
     fake = FakeClient(connect_result=mqtt.MQTT_ERR_NO_CONN)
     publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
-
     with pytest.raises(MqttConnectionError, match="error code"):
         publisher.connect()
-
     assert not fake.loop_started
 
 
-def test_connack_failure_is_reported_and_client_is_closed() -> None:
-    fake = FakeClient(connect_failure=True)
+@pytest.mark.parametrize("failure", ["connect_failure", "subscription_failure"])
+def test_connect_or_subscription_failure_closes_transport(failure: str) -> None:
+    fake = FakeClient(**{failure: True})
     publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
-
-    with pytest.raises(MqttConnectionError, match="not authorized"):
+    with pytest.raises(MqttConnectionError):
         publisher.connect()
+    assert fake.disconnected and fake.loop_stopped and publisher.session is None
 
-    assert fake.disconnected and fake.loop_stopped
 
-
-@pytest.mark.parametrize(
-    "message_info",
-    [
-        FakeMessageInfo(rc=mqtt.MQTT_ERR_NO_CONN),
-        FakeMessageInfo(published=False),
-    ],
-)
-def test_publish_failure_is_reported(message_info: FakeMessageInfo) -> None:
-    fake = FakeClient(message_info=message_info)
+def test_publish_failure_is_reported() -> None:
+    fake = FakeClient(message_info=FakeMessageInfo(rc=mqtt.MQTT_ERR_NO_CONN))
     publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
     publisher.connect()
-
     with pytest.raises(MqttPublishError):
-        publisher.publish(make_event())
+        publisher.publish(make_event().model_dump_json(), session=publisher.session, live=True)
+    publisher.close()
+
+
+def test_application_outcome_requires_valid_identity_topic_version_and_no_retain() -> None:
+    fake = FakeClient()
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: fake)
+    publisher.connect()
+    event = make_event()
+    ack = TelemetryAcknowledgement(
+        schema_version="1.0", event_id=event.event_id, equipment_id=event.equipment_id,
+        status="persisted", acknowledged_at=datetime.now(UTC),
+    )
+    topic = f"evolver/v1/{event.equipment_id}/telemetry/ack"
+    for topic_override, payload, retained in [
+        (topic, ack.model_dump_json(), True),
+        (topic, ack.model_copy(update={"equipment_id": "other"}).model_dump_json(), False),
+        (topic, ack.model_copy(update={"schema_version": "2.0"}).model_dump_json(), False),
+        (f"{topic}x", ack.model_dump_json(), False),
+        (topic, ack.model_dump_json(), False),
+    ]:
+        message = mqtt.MQTTMessage(topic=topic_override.encode())
+        message.payload = payload.encode()
+        message.retain = retained
+        fake.on_message(fake, None, message)
+    assert list(publisher.outcomes()) == [ack]
+    publisher.close()
+
+
+def test_reconnect_creates_a_fresh_client() -> None:
+    first, second = FakeClient(), FakeClient()
+    clients = iter((first, second))
+    publisher = MqttPublisher(make_settings(), client_factory=lambda **_kwargs: next(clients))
+    publisher.connect()
+    old_session = publisher.session
+    publisher.connect()
+    assert first.disconnected and first.loop_stopped and second.loop_started
+    with pytest.raises(MqttConnectionError):
+        publisher.publish(make_event().model_dump_json(), session=old_session, live=True)
+    publisher.close()

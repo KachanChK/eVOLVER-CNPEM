@@ -5,10 +5,14 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from queue import Empty, SimpleQueue
+from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -18,11 +22,13 @@ from evolver_contracts.models import (
     PumpCommand,
     ReceivedCommandResult,
     RejectedCommandResult,
-    TelemetryEvent,
+    TelemetryAcknowledgement,
+    TelemetryRejection,
 )
 from evolver_contracts.pilot import (
     ACTIVE_VIALS_REQUEST,
     ACTIVE_VIALS_RESPONSE,
+    TELEMETRY_MODE_PROPERTY,
     ActiveVial,
     AllocationRequest,
     AllocationResponse,
@@ -44,8 +50,20 @@ class MqttPublishError(RuntimeError):
     """Falha ao confirmar a publicacao no transporte MQTT."""
 
 
+class PumpStateError(MqttConnectionError):
+    """O estado durável das bombas não pôde ser carregado."""
+
+
+@dataclass
+class AllocationQuery:
+    request_id: UUID
+    session: int
+    finished: threading.Event = field(default_factory=threading.Event)
+    response: AllocationResponse | None = None
+
+
 class MqttPublisher:
-    """Publica ``TelemetryEvent`` com MQTT 5, QoS 1 e sem retencao."""
+    """Recria a sessão MQTT e entrega respostas ao ciclo da fila."""
 
     def __init__(
         self,
@@ -54,134 +72,160 @@ class MqttPublisher:
         client_factory: ClientFactory = mqtt.Client,
     ) -> None:
         self._settings = settings
+        self._client_factory = client_factory
+        self._client: mqtt.Client | None = None
+        self._session = 0
         self._connect_finished = threading.Event()
         self._connected = threading.Event()
         self._connect_error: str | None = None
-        self._publish_results: dict[int, mqtt.ReasonCode] = {}
+        self._publish_results: OrderedDict[int, mqtt.ReasonCode] = OrderedDict()
         self._publish_results_lock = threading.Lock()
-        self._loop_started = False
-        self._subscription_finished = threading.Event()
-        self._subscription_error: str | None = None
-        self._allocation_received = threading.Event()
-        self._allocation_request_id: UUID | None = None
-        self._allocations: list[ActiveVial] | None = None
         self._allocation_lock = threading.Lock()
+        self._queries: dict[UUID, AllocationQuery] = {}
+        self._outcomes: SimpleQueue[TelemetryAcknowledgement | TelemetryRejection] = SimpleQueue()
         self._command_executor = ThreadPoolExecutor(max_workers=1)
         self._command_lock = threading.Lock()
         self._pump_state_lock = threading.Lock()
         self._pump_states: dict[tuple[str, int], bool] = {}
-        self._client = client_factory(
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=settings.mqtt_client_id,
-            protocol=mqtt.MQTTv5,
-        )
-        self._client.username_pw_set(settings.mqtt_username, settings.mqtt_simulator_password)
-        self._client.on_connect = self._on_connect
-        self._client.on_disconnect = self._on_disconnect
-        self._client.on_publish = self._on_publish
-        self._client.on_subscribe = self._on_subscribe
-        self._client.on_message = self._on_message
+        prefix = self._settings.telemetry_topic
+        self._ack_topic = f"{prefix}/ack"
+        self._rejection_topic = f"{prefix}/rejection"
+        self._command_topic = f"evolver/v1/{settings.equipment_id}/commands"
+
+    @property
+    def session(self) -> int | None:
+        return self._session if self._connected.is_set() else None
 
     def _on_subscribe(
-        self,
-        _client: mqtt.Client,
-        _userdata: Any,
-        _mid: int,
-        reason_codes: list[mqtt.ReasonCode],
-        _properties: mqtt.Properties | None,
+        self, client, _userdata, _mid, reason_codes, _properties,
     ) -> None:
-        self._subscription_error = next(
-            (str(code) for code in reason_codes if code.is_failure), None
-        )
-        self._subscription_finished.set()
-
-    def _on_message(self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
-        command_topic = f"evolver/v1/{self._settings.equipment_id}/commands"
-        if message.topic == command_topic and not message.retain:
-            self._command_executor.submit(self._handle_command, message.payload)
+        if client is not self._client:
             return
-        if message.topic != ACTIVE_VIALS_RESPONSE or message.retain:
+        if len(reason_codes) != 4 or any(code.is_failure for code in reason_codes):
+            self._connect_error = f"MQTT subscription refused: {reason_codes}"
+        else:
+            self._connected.set()
+        self._connect_finished.set()
+
+    def _on_message(self, client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
+        if client is not self._client or message.retain:
+            return
+        session = self.session
+        if session is None:
+            return
+        if message.topic == self._command_topic:
+            self._command_executor.submit(self._handle_command, message.payload, session)
             return
         try:
-            response = AllocationResponse.model_validate_json(message.payload)
+            if message.topic == ACTIVE_VIALS_RESPONSE:
+                response = AllocationResponse.model_validate_json(message.payload)
+                with self._allocation_lock:
+                    query = self._queries.pop(response.request_id, None)
+                    if query is not None and query.session == session:
+                        query.response = response
+                        query.finished.set()
+                return
+            if message.topic == self._ack_topic:
+                outcome = TelemetryAcknowledgement.model_validate_json(message.payload)
+            elif message.topic == self._rejection_topic:
+                outcome = TelemetryRejection.model_validate_json(message.payload)
+            else:
+                return
+            if outcome.equipment_id == self._settings.equipment_id:
+                self._outcomes.put(outcome)
         except ValidationError:
-            return
-        if response.request_id == self._allocation_request_id:
-            self._allocations = response.vials
-            self._allocation_received.set()
+            LOGGER.warning("Resposta MQTT inválida em %s", message.topic)
 
-    def _handle_command(self, payload: bytes) -> None:
+    def outcomes(self):
+        while True:
+            try:
+                yield self._outcomes.get_nowait()
+            except Empty:
+                return
+
+    def _handle_command(self, payload: bytes, session: int | None = None) -> None:
+        session = self.session if session is None else session
         with self._command_lock:
             try:
-                command = PumpCommand.model_validate_json(payload)
-            except ValidationError:
-                LOGGER.warning("Comando do grupo de bombas inválido")
-                return
-            if command.equipment_id != self._settings.equipment_id:
-                return
-            try:
-                allocation_id = str(UUID(command.experiment_run_id or ""))
-            except ValueError:
-                self._send_command_result(command, "rejected", "invalid_payload")
-                return
-            try:
-                allocations = self.active_vials()
-            except (MqttConnectionError, MqttPublishError):
-                LOGGER.warning("Não foi possível verificar o experimento do comando")
-                return
-            active = next((v for v in allocations if str(v.allocation_id) == allocation_id), None)
-            if active is None:
-                self._send_command_result(command, "rejected", "invalid_payload")
-                return
-            try:
-                with closing(self._state_database()) as database:
-                    previous = database.execute(
-                        """SELECT status, reason FROM completed_allocation_commands
-                        WHERE allocation_id = ? AND command_id = ?""",
-                        (allocation_id, str(command.command_id)),
-                    ).fetchone()
-                    if previous:
-                        self._send_command_result(command, *previous)
-                        return
-                    with database:
-                        reason = "expired" if command.is_expired_at(datetime.now(UTC)) else None
-                        if reason is None:
-                            issued_at = command.created_at.astimezone(UTC).isoformat(
-                                timespec="microseconds",
-                            )
-                            advanced = database.execute("""
-                                INSERT INTO allocation_pump_order VALUES (?, ?)
-                                ON CONFLICT (allocation_id) DO UPDATE
-                                SET issued_at = excluded.issued_at
-                                WHERE excluded.issued_at > allocation_pump_order.issued_at
-                            """, (allocation_id, issued_at)).rowcount
-                            if not advanced:
-                                reason = "invalid_payload"
-                            else:
-                                state = command.action == "turn_on"
-                                database.execute(
-                                    "INSERT OR REPLACE INTO allocation_pump_states "
-                                    "VALUES (?, ?, ?)",
-                                    (allocation_id, active.vial_id, state),
-                                )
-                        database.execute(
-                            "INSERT INTO completed_allocation_commands VALUES (?, ?, ?, ?)",
-                            (allocation_id, str(command.command_id),
-                             "rejected" if reason else "executed", reason),
+                self._apply_command(payload, session)
+            except (MqttConnectionError, MqttPublishError) as exc:
+                LOGGER.warning("Resultado do comando sem confirmação MQTT: %s", exc)
+
+    def _apply_command(self, payload: bytes, session: int | None) -> None:
+        if session is None or session != self.session:
+            return
+        try:
+            command = PumpCommand.model_validate_json(payload)
+        except ValidationError:
+            LOGGER.warning("Comando do grupo de bombas inválido")
+            return
+        if command.equipment_id != self._settings.equipment_id:
+            return
+        try:
+            allocation_id = str(UUID(command.experiment_run_id or ""))
+        except ValueError:
+            self._send_command_result(command, "rejected", "invalid_payload", session=session)
+            return
+        try:
+            allocations = self.active_vials(session=session)
+        except (MqttConnectionError, MqttPublishError):
+            LOGGER.warning("Não foi possível verificar o experimento do comando")
+            return
+        if session != self.session:
+            return
+        active = next((v for v in allocations if str(v.allocation_id) == allocation_id), None)
+        if active is None:
+            self._send_command_result(command, "rejected", "invalid_payload", session=session)
+            return
+        try:
+            with closing(self._state_database()) as database:
+                previous = database.execute(
+                    """SELECT status, reason FROM completed_allocation_commands
+                    WHERE allocation_id = ? AND command_id = ?""",
+                    (allocation_id, str(command.command_id)),
+                ).fetchone()
+                if previous:
+                    self._send_command_result(command, *previous, session=session)
+                    return
+                with database:
+                    reason = "expired" if command.is_expired_at(datetime.now(UTC)) else None
+                    if reason is None:
+                        issued_at = command.created_at.astimezone(UTC).isoformat(
+                            timespec="microseconds",
                         )
-                    if reason:
-                        self._send_command_result(command, "rejected", reason)
-                        return
-                    with self._pump_state_lock:
-                        self._pump_states[allocation_id, active.vial_id] = state
-                    LOGGER.info(
-                        "Ação %s aplicada ao grupo de bombas %s (command_id=%s)",
-                        command.action, list(PUMP_GROUP_MEMBERS), command.command_id,
+                        advanced = database.execute("""
+                            INSERT INTO allocation_pump_order VALUES (?, ?)
+                            ON CONFLICT (allocation_id) DO UPDATE
+                            SET issued_at = excluded.issued_at
+                            WHERE excluded.issued_at > allocation_pump_order.issued_at
+                        """, (allocation_id, issued_at)).rowcount
+                        if not advanced:
+                            reason = "invalid_payload"
+                        else:
+                            state = command.action == "turn_on"
+                            database.execute(
+                                "INSERT OR REPLACE INTO allocation_pump_states "
+                                "VALUES (?, ?, ?)",
+                                (allocation_id, active.vial_id, state),
+                            )
+                    database.execute(
+                        "INSERT INTO completed_allocation_commands VALUES (?, ?, ?, ?)",
+                        (allocation_id, str(command.command_id),
+                         "rejected" if reason else "executed", reason),
                     )
-                    self._send_command_result(command, "received")
-                    self._send_command_result(command, "executed")
-            except (OSError, sqlite3.Error) as exc:
-                LOGGER.error("Estado do grupo de bombas não persistido: %s", exc)
+                if reason:
+                    self._send_command_result(command, "rejected", reason, session=session)
+                    return
+                with self._pump_state_lock:
+                    self._pump_states[allocation_id, active.vial_id] = state
+                LOGGER.info(
+                    "Ação %s aplicada ao grupo de bombas %s (command_id=%s)",
+                    command.action, list(PUMP_GROUP_MEMBERS), command.command_id,
+                )
+                self._send_command_result(command, "received", session=session)
+                self._send_command_result(command, "executed", session=session)
+        except (OSError, sqlite3.Error) as exc:
+            LOGGER.error("Estado do grupo de bombas não persistido: %s", exc)
 
     def _state_database(self) -> sqlite3.Connection:
         path = self._settings.pump_state_path
@@ -213,7 +257,7 @@ class MqttPublisher:
         return database
 
     def _send_command_result(
-        self, command: PumpCommand, status: str, reason: str | None = None,
+        self, command: PumpCommand, status: str, reason: str | None = None, *, session: int,
     ) -> None:
         fields = dict(
             schema_version="1.0", command_id=command.command_id,
@@ -226,58 +270,54 @@ class MqttPublisher:
             result = ExecutedCommandResult(status="executed", **fields)
         else:
             result = RejectedCommandResult(status="rejected", reason_code=reason, **fields)
-        self._publish_payload(
+        info = self._publish(
             f"evolver/v1/{self._settings.equipment_id}/command-results",
-            result.model_dump_json(),
+            result.model_dump_json(), session=session,
         )
+        self._wait_for_puback(info, session)
 
-    def _on_connect(
-        self,
-        _client: mqtt.Client,
-        _userdata: Any,
-        _flags: mqtt.ConnectFlags,
-        reason_code: mqtt.ReasonCode,
-        _properties: mqtt.Properties | None,
-    ) -> None:
+    def _on_connect(self, client, _userdata, _flags, reason_code, _properties) -> None:
         if reason_code.is_failure:
             self._connect_error = str(reason_code)
         else:
-            result, _mid = self._client.subscribe(
-                f"evolver/v1/{self._settings.equipment_id}/commands", qos=1,
-            )
+            options = mqtt.SubscribeOptions(qos=1, retainAsPublished=True)
+            result, _mid = client.subscribe([
+                (self._command_topic, options),
+                (ACTIVE_VIALS_RESPONSE, options),
+                (self._ack_topic, options),
+                (self._rejection_topic, options),
+            ])
             if result == mqtt.MQTT_ERR_SUCCESS:
-                self._connected.set()
-            else:
-                self._connect_error = f"MQTT command subscription failed: {result}"
+                return
+            self._connect_error = f"MQTT subscribe failed: {result}"
         self._connect_finished.set()
 
-    def _on_disconnect(
-        self,
-        _client: mqtt.Client,
-        _userdata: Any,
-        _disconnect_flags: mqtt.DisconnectFlags,
-        _reason_code: mqtt.ReasonCode,
-        _properties: mqtt.Properties | None,
-    ) -> None:
-        self._connected.clear()
+    def _on_disconnect(self, client, _userdata, _flags, _reason_code, _properties) -> None:
+        if client is self._client:
+            self._connected.clear()
+            self._connect_finished.set()
+            with self._allocation_lock:
+                for query in self._queries.values():
+                    query.finished.set()
+                self._queries.clear()
 
-    def _on_publish(
-        self,
-        _client: mqtt.Client,
-        _userdata: Any,
-        mid: int,
-        reason_code: mqtt.ReasonCode,
-        _properties: mqtt.Properties | None,
-    ) -> None:
-        with self._publish_results_lock:
-            self._publish_results[mid] = reason_code
+    def _on_publish(self, client, _userdata, mid, reason_code, _properties) -> None:
+        if client is self._client:
+            with self._publish_results_lock:
+                self._publish_results[mid] = reason_code
+                if len(self._publish_results) > 1024:
+                    self._publish_results.popitem(last=False)
 
     def connect(self) -> None:
+        self.disconnect()
         self._connect_finished.clear()
-        self._connected.clear()
         self._connect_error = None
         try:
-            with self._pump_state_lock, closing(self._state_database()) as database:
+            with (
+                self._command_lock,
+                self._pump_state_lock,
+                closing(self._state_database()) as database,
+            ):
                 self._pump_states = {
                     (allocation_id, vial_id): bool(is_on)
                     for allocation_id, vial_id, is_on in database.execute(
@@ -285,120 +325,129 @@ class MqttPublisher:
                     )
                 }
         except (OSError, sqlite3.Error) as exc:
-            raise MqttConnectionError(
-                "não foi possível carregar o estado do grupo de bombas",
-            ) from exc
+            raise PumpStateError("não foi possível carregar o estado do grupo de bombas") from exc
+        client = self._client_factory(
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+            client_id=self._settings.mqtt_client_id, protocol=mqtt.MQTTv5,
+            reconnect_on_failure=False,
+        )
+        client.connect_timeout = self._settings.mqtt_connect_timeout_seconds
+        # Leave transport space for discovery and command results alongside the application window.
+        client.max_inflight_messages_set(256)
+        client.max_queued_messages_set(256)
+        client.username_pw_set(self._settings.mqtt_username, self._settings.mqtt_simulator_password)
+        client.on_connect = self._on_connect
+        client.on_disconnect = self._on_disconnect
+        client.on_publish = self._on_publish
+        client.on_subscribe = self._on_subscribe
+        client.on_message = self._on_message
+        client.on_socket_open = lambda _client, _userdata, socket: socket.setsockopt(
+            IPPROTO_TCP, TCP_NODELAY, 1,
+        )
+        self._session += 1
+        self._client = client
         try:
-            result = self._client.connect(
-                self._settings.mqtt_host,
-                self._settings.mqtt_port,
-                self._settings.mqtt_keepalive_seconds,
-                clean_start=mqtt.MQTT_CLEAN_START_FIRST_ONLY,
+            result = client.connect(
+                self._settings.mqtt_host, self._settings.mqtt_port,
+                self._settings.mqtt_keepalive_seconds, clean_start=True,
             )
-        except (OSError, mqtt.WebsocketConnectionError) as exc:
-            raise MqttConnectionError(f"could not connect to MQTT broker: {exc}") from exc
-        if result != mqtt.MQTT_ERR_SUCCESS:
-            raise MqttConnectionError(f"MQTT connect returned error code {result}")
-
-        self._client.loop_start()
-        self._loop_started = True
-        if not self._connect_finished.wait(self._settings.mqtt_connect_timeout_seconds):
-            self.close()
-            raise MqttConnectionError("timed out waiting for MQTT CONNACK")
-        if self._connect_error is not None:
-            error = self._connect_error
-            self.close()
-            raise MqttConnectionError(f"MQTT connection refused: {error}")
-
-        LOGGER.info(
-            "Conectado ao broker MQTT em %s:%s como %s",
-            self._settings.mqtt_host,
-            self._settings.mqtt_port,
-            self._settings.mqtt_username,
-        )
-
-    def publish(self, event: TelemetryEvent) -> None:
-        if not self._connected.is_set():
-            raise MqttPublishError("MQTT client is not connected")
-
-        self._publish_payload(self._settings.telemetry_topic, event.model_dump_json())
-        labels = {"od": "OD", "ph": "pH", "temperature": "Temperatura"}
-        unit = " °C" if event.measurement_type == "temperature" else ""
-        LOGGER.info(
-            "Frasco %s | %s: %s%s | Enviado ao MQTT | event_id=%s sequence=%s",
-            event.vial_id,
-            labels[event.measurement_type],
-            event.value,
-            unit,
-            event.event_id,
-            event.sequence,
-        )
+            if result != mqtt.MQTT_ERR_SUCCESS:
+                raise MqttConnectionError(f"MQTT connect returned error code {result}")
+            client.loop_start()
+            if not self._connect_finished.wait(self._settings.mqtt_connect_timeout_seconds):
+                raise MqttConnectionError("timed out waiting for MQTT CONNACK/SUBACK")
+            if self.session is None:
+                raise MqttConnectionError(self._connect_error or "sessão MQTT encerrada")
+        except (OSError, mqtt.WebsocketConnectionError, MqttConnectionError) as exc:
+            self.disconnect()
+            raise MqttConnectionError(f"não foi possível conectar ao MQTT: {exc}") from exc
+        LOGGER.info("Sessão MQTT pronta após SUBACK")
 
     def pump_is_on(self, allocation: ActiveVial) -> bool:
         with self._pump_state_lock:
             return self._pump_states.get((str(allocation.allocation_id), allocation.vial_id), False)
 
-    def active_vials(self) -> list[ActiveVial]:
+    def request_allocations(self, session: int) -> AllocationQuery:
+        query = AllocationQuery(uuid4(), session)
+        request = AllocationRequest(request_id=query.request_id)
         with self._allocation_lock:
-            return self._active_vials_locked()
+            self._queries[query.request_id] = query
+        try:
+            self._publish(ACTIVE_VIALS_REQUEST, request.model_dump_json(), session=session)
+        except (MqttConnectionError, MqttPublishError):
+            self.cancel_query(query)
+            raise
+        return query
 
-    def _active_vials_locked(self) -> list[ActiveVial]:
-        if not self._connected.is_set():
+    def cancel_query(self, query: AllocationQuery) -> None:
+        with self._allocation_lock:
+            self._queries.pop(query.request_id, None)
+
+    def active_vials(self, *, session: int | None = None) -> list[ActiveVial]:
+        session = self.session if session is None else session
+        if session is None:
             raise MqttConnectionError("MQTT client is not connected")
-        self._subscription_finished.clear()
-        self._subscription_error = None
-        result, _mid = self._client.subscribe(ACTIVE_VIALS_RESPONSE, qos=1)
-        if result != mqtt.MQTT_ERR_SUCCESS:
-            raise MqttConnectionError(f"MQTT subscribe returned error code {result}")
-        if not self._subscription_finished.wait(self._settings.mqtt_connect_timeout_seconds):
-            raise MqttConnectionError("timed out waiting for active vial subscription")
-        if self._subscription_error is not None:
-            raise MqttConnectionError(
-                f"active vial subscription rejected: {self._subscription_error}"
-            )
-        self._allocation_request_id = uuid4()
-        self._allocation_received.clear()
-        self._allocations = None
-        request = AllocationRequest(request_id=self._allocation_request_id)
-        self._publish_payload(ACTIVE_VIALS_REQUEST, request.model_dump_json())
-        if not self._allocation_received.wait(self._settings.mqtt_connect_timeout_seconds):
-            raise MqttConnectionError("timed out waiting for active vials from ingestion")
-        assert self._allocations is not None
-        return self._allocations
+        query = self.request_allocations(session)
+        try:
+            query.finished.wait(self._settings.mqtt_connect_timeout_seconds)
+            if query.response is None or session != self.session:
+                raise MqttConnectionError("timed out waiting for active vials from ingestion")
+            return query.response.vials
+        finally:
+            self.cancel_query(query)
 
-    def _publish_payload(self, topic: str, payload: str) -> None:
-        info = self._client.publish(
-            topic,
-            payload=payload,
-            qos=1,
-            retain=False,
+    def publish(self, payload: str | bytes, *, session: int, live: bool) -> mqtt.MQTTMessageInfo:
+        properties = mqtt.Properties(mqtt.PacketTypes.PUBLISH)
+        properties.UserProperty = (TELEMETRY_MODE_PROPERTY, "live" if live else "history")
+        if live:
+            properties.MessageExpiryInterval = 2
+        return self._publish(
+            self._settings.telemetry_topic, payload, session=session, properties=properties,
         )
+
+    def _publish(
+        self, topic: str, payload: str | bytes, *, session: int,
+        properties: mqtt.Properties | None = None,
+    ) -> mqtt.MQTTMessageInfo:
+        client = self._client
+        if client is None or session != self.session:
+            raise MqttConnectionError("MQTT client is not connected")
+        kwargs = {"properties": properties} if properties is not None else {}
+        info = client.publish(topic, payload=payload, qos=1, retain=False, **kwargs)
         if info.rc != mqtt.MQTT_ERR_SUCCESS:
             raise MqttPublishError(f"MQTT publish returned error code {info.rc}")
+        return info
+
+    def publish_outcome(self, info: mqtt.MQTTMessageInfo, session: int) -> mqtt.ReasonCode | None:
+        if session != self.session or not info.is_published():
+            return None
+        with self._publish_results_lock:
+            return self._publish_results.pop(info.mid, None)
+
+    def _wait_for_puback(self, info: mqtt.MQTTMessageInfo, session: int) -> None:
         try:
             info.wait_for_publish(timeout=self._settings.mqtt_publish_timeout_seconds)
         except RuntimeError as exc:
             raise MqttPublishError(f"MQTT publication failed: {exc}") from exc
-        if not info.is_published():
-            raise MqttPublishError("timed out waiting for MQTT PUBACK")
+        reason = self.publish_outcome(info, session)
+        if reason is None:
+            raise MqttPublishError(f"MQTT PUBACK missing for message {info.mid}")
+        if reason.is_failure:
+            raise MqttPublishError(f"MQTT PUBACK rejected message {info.mid}: {reason}")
 
-        with self._publish_results_lock:
-            reason_code = self._publish_results.pop(info.mid, None)
-        if reason_code is None:
-            raise MqttPublishError(f"MQTT PUBACK result missing for message {info.mid}")
-        if reason_code.is_failure:
-            raise MqttPublishError(f"MQTT PUBACK rejected message {info.mid}: {reason_code}")
-
-    def close(self) -> None:
-        self._connected.clear()
-        if not self._loop_started:
+    def disconnect(self) -> None:
+        client = self._client
+        if client is None:
             return
+        self._on_disconnect(client, None, None, None, None)
+        self._client = None
         try:
-            self._client.disconnect()
+            client.disconnect()
         finally:
-            self._client.loop_stop()
-            self._loop_started = False
-            self._command_executor.shutdown(wait=True, cancel_futures=True)
-            self._command_executor = ThreadPoolExecutor(max_workers=1)
+            client.loop_stop()
             with self._publish_results_lock:
                 self._publish_results.clear()
+
+    def close(self) -> None:
+        self.disconnect()
+        self._command_executor.shutdown(wait=True, cancel_futures=True)

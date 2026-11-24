@@ -1,228 +1,287 @@
 from __future__ import annotations
 
-from collections import Counter
+import sqlite3
+from concurrent.futures import Future
+from contextlib import closing
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 import pytest
-from evolver_contracts.models import TelemetryEvent
-from evolver_contracts.pilot import ActiveVial
+from evolver_contracts.models import TelemetryAcknowledgement, TelemetryEvent, TelemetryRejection
+from evolver_contracts.pilot import ActiveVial, AllocationResponse
 from evolver_simulator.config import SimulatorSettings
-from evolver_simulator.mqtt import MqttConnectionError, MqttPublishError
-from evolver_simulator.runner import SimulatedFailureError, SimulatorRunner
+from evolver_simulator.mqtt import AllocationQuery, MqttConnectionError
+from evolver_simulator.queue import QueueIdentityError, TelemetryQueue
+from evolver_simulator.runner import Delivery, SimulatedFailureError, SimulatorRunner
+from evolver_simulator.telemetry import SimulatedTelemetryGenerator
+
+VIAL = ActiveVial(vial_id=1, experiment_id=41, allocation_id=UUID(int=41))
 
 
-class FakeClock:
-    def __init__(self) -> None:
+class Clock:
+    def __init__(self, stop_at=60.0):
         self.now = 0.0
-        self.waits: list[float] = []
-        self.stop_after_first = False
-        self.stopped = False
-        self.stop_after_rounds: int | None = None
+        self.stop_at = stop_at
 
-    def __call__(self) -> float:
+    def __call__(self):
         return self.now
 
-    def is_set(self) -> bool:
-        return self.stopped
+    def is_set(self):
+        return self.now >= self.stop_at
 
-    def set(self) -> None:
-        self.stopped = True
+    def set(self):
+        self.stop_at = self.now
 
-    def wait(self, seconds: float) -> bool:
+    def wait(self, seconds):
         self.now += seconds
-        self.waits.append(self.now)
-        return (
-            self.stopped
-            or self.stop_after_first
-            or (self.stop_after_rounds is not None and len(self.waits) > self.stop_after_rounds)
-        )
 
 
-class FakePublisher:
-    def __init__(self, vials: list[ActiveVial], *, fail: bool = False) -> None:
-        self.vials = vials
-        self.fail = fail
+class InlineConnector:
+    def __init__(self, _workers):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exception):
+        pass
+
+    def submit(self, connect):
+        result = Future()
+        try:
+            result.set_result(connect())
+        except MqttConnectionError as exc:
+            result.set_exception(exc)
+        return result
+
+
+class PublishResult:
+    is_failure = False
+
+
+class Publisher:
+    def __init__(self, *, offline=False, vials=(VIAL,), acknowledge=True):
+        self.session = None
+        self.offline = offline
+        self.vials = list(vials)
+        self.acknowledge = acknowledge
+        self.sent = []
+        self.responses = []
         self.closed = False
-        self.events: list[TelemetryEvent] = []
-        self.calls: list[str] = []
 
-    def connect(self) -> None:
-        self.calls.append("connect")
+    def connect(self):
+        if self.offline:
+            raise MqttConnectionError("offline")
+        self.session = 1
 
-    def active_vials(self) -> list[ActiveVial]:
-        self.calls.append("active_vials")
-        return self.vials
+    def disconnect(self):
+        self.session = None
 
-    def pump_is_on(self, allocation: ActiveVial) -> bool:
-        return allocation.experiment_id == 41
-
-    def publish(self, event: TelemetryEvent) -> None:
-        if self.fail:
-            raise MqttPublishError("simulated failure")
-        self.events.append(event)
-
-    def close(self) -> None:
+    def close(self):
         self.closed = True
 
+    def request_allocations(self, session):
+        query = AllocationQuery(uuid4(), session)
+        query.response = AllocationResponse(request_id=query.request_id, vials=self.vials)
+        query.finished.set()
+        return query
 
-def settings(**overrides: object) -> SimulatorSettings:
-    return SimulatorSettings(_env_file=None, mqtt_simulator_password="local-secret", **overrides)
+    def cancel_query(self, _query):
+        pass
 
+    def pump_is_on(self, _allocation):
+        return False
 
-def vials(*pairs: tuple[int, int]) -> list[ActiveVial]:
-    return [ActiveVial(vial_id=vial, experiment_id=experiment) for vial, experiment in pairs]
+    def publish(self, payload, *, session, live):
+        assert session == self.session
+        self.sent.append((payload, live))
+        if self.acknowledge:
+            self.responses.append(ack(TelemetryEvent.model_validate_json(payload)))
+        return PublishResult()
 
+    def publish_outcome(self, info, _session):
+        return info
 
-def test_continuous_run_exceeds_ten_rounds_until_interrupted() -> None:
-    publisher = FakePublisher(vials((1, 41), (3, 43), (6, 46)))
-    clock = FakeClock()
-    clock.stop_after_rounds = 25
-    runner = SimulatorRunner(settings(), publisher=publisher, stop_event=clock, clock=clock)
-
-    assert runner.run() == 225
-    assert clock.waits == [round_number * 0.5 for round_number in range(1, 27)]
-    assert Counter((e.vial_id, e.measurement_type) for e in publisher.events) == {
-        (str(vial), kind): 25 for vial in (1, 3, 6) for kind in ("od", "ph", "temperature")
-    }
-    assert {e.vial_id: e.experiment_run_id for e in publisher.events} == {
-        "1": "41",
-        "3": "43",
-        "6": "46",
-    }
-    assert publisher.calls == ["connect"] + ["active_vials"] * 25
-    assert publisher.closed
+    def outcomes(self):
+        responses, self.responses = self.responses, []
+        return iter(responses)
 
 
-def test_no_active_vials_waits_until_interrupted() -> None:
-    publisher = FakePublisher([])
-    clock = FakeClock()
-    clock.stop_after_rounds = 25
-    runner = SimulatorRunner(settings(), publisher=publisher, stop_event=clock, clock=clock)
-    assert runner.run() == 0
-    assert publisher.calls.count("active_vials") == 25
-    assert publisher.events == [] and publisher.closed
-
-
-def test_limit_shortens_run() -> None:
-    publisher = FakePublisher(vials((1, 41)))
-    clock = FakeClock()
-    runner = SimulatorRunner(settings(), publisher=publisher, stop_event=clock, clock=clock)
-    assert runner.run(max_messages=3) == 3
-    assert clock.waits == [0.5]
-
-
-@pytest.mark.parametrize(("configured", "requested", "expected"), [(75, None, 75), (3, 74, 74)])
-def test_optional_limits_can_exceed_old_limit(
-    configured: int, requested: int | None, expected: int
-) -> None:
-    publisher = FakePublisher(vials((1, 41)))
-    clock = FakeClock()
-    # Bound the fake run so a regression cannot hang the test suite.
-    clock.stop_after_rounds = 30
-    runner = SimulatorRunner(
-        settings(max_messages=configured), publisher=publisher, stop_event=clock, clock=clock
+def ack(event):
+    return TelemetryAcknowledgement(
+        schema_version="1.0", event_id=event.event_id, equipment_id=event.equipment_id,
+        status="persisted", acknowledged_at=datetime.now(UTC),
     )
-    assert runner.run(max_messages=requested) == expected
-    assert publisher.closed
 
 
-def test_experiments_can_start_stop_and_reuse_vials_without_restarting() -> None:
-    snapshots = iter([
-        [], vials((1, 41)), vials((1, 41), (3, 43)), [], vials((1, 51)),
-    ])
+@pytest.fixture(autouse=True)
+def inline_connection(monkeypatch):
+    monkeypatch.setattr("evolver_simulator.runner.ThreadPoolExecutor", InlineConnector)
 
-    class ChangingPublisher(FakePublisher):
-        def active_vials(self) -> list[ActiveVial]:
-            return next(snapshots)
 
-    publisher = ChangingPublisher([])
-    clock = FakeClock()
-    clock.stop_after_rounds = 5
-    runner = SimulatorRunner(
-        settings(od_noise=0), publisher=publisher, stop_event=clock, clock=clock,
+@pytest.fixture
+def settings(tmp_path):
+    return SimulatorSettings(
+        _env_file=None, mqtt_simulator_password="test", pump_state_path=tmp_path / "pump.sqlite3",
+        telemetry_queue_path=tmp_path / "queue.sqlite3", telemetry_queue_max_events=6,
     )
-    assert runner.run() == 12
-    assert [(e.vial_id, e.experiment_run_id, e.measurement_type) for e in publisher.events] == [
-        (vial, experiment, kind)
-        for vial, experiment in [("1", "41"), ("1", "41"), ("3", "43"), ("1", "51")]
-        for kind in ("od", "ph", "temperature")
-    ]
-    assert [e.sequence for e in publisher.events] == list(range(12))
-    assert [e.value for e in publisher.events if e.measurement_type == "od"] == [
-        0.35, 0.30, 0.35, 0.35,
-    ]
-    assert publisher.closed
 
 
-def test_stop_during_publication_does_not_send_rest_of_round() -> None:
-    clock = FakeClock()
-
-    class StoppingPublisher(FakePublisher):
-        def publish(self, event: TelemetryEvent) -> None:
-            super().publish(event)
-            runner.stop()
-
-    publisher = StoppingPublisher(vials((1, 41), (2, 42)))
-    runner = SimulatorRunner(settings(), publisher=publisher, stop_event=clock, clock=clock)
-    assert runner.run() == 1
-    assert publisher.closed
+def prime(settings, vials):
+    with closing(TelemetryQueue(settings)) as queue:
+        queue.confirm_allocation(AllocationResponse(request_id=uuid4(), vials=vials))
 
 
-def test_stop_during_configured_pause_closes_connection() -> None:
-    clock = FakeClock()
-    clock.stop_after_rounds = 1
-    publisher = FakePublisher(vials((1, 41)))
-    runner = SimulatorRunner(
-        settings(pause_after_messages=1, pause_seconds=60),
-        publisher=publisher, stop_event=clock, clock=clock,
-    )
-    assert runner.run() == 1
-    assert publisher.closed
+def test_offline_restart_preserves_payload_and_recovers_independently_of_discovery(settings):
+    prime(settings, [VIAL])
+    producer = Publisher(offline=True)
+    clock = Clock()
+    assert SimulatorRunner(settings, publisher=producer, clock=clock, stop_event=clock).run(
+        max_messages=4,
+    ) == 4
+    assert producer.sent == [] and producer.closed
+    with closing(TelemetryQueue(settings)) as queue:
+        assert queue.last_allocation().vials == [VIAL]
+        original = [row["payload"] for row in queue.eligible(0, 2, 10, live=False)]
+    receiver = Publisher(vials=[])
+    clock = Clock(stop_at=2)
+    assert SimulatorRunner(settings, publisher=receiver, clock=clock, stop_event=clock).run() == 0
+    assert receiver.sent == [(payload, False) for payload in original]
+    with closing(TelemetryQueue(settings)) as queue:
+        assert queue.last_allocation().vials == []
+        assert queue.stats() == (0, 0, None)
+    clock = Clock(stop_at=2)
+    assert SimulatorRunner(
+        settings, publisher=Publisher(offline=True), clock=clock, stop_event=clock,
+    ).run() == 0
 
 
-def test_telemetry_pause_does_not_accumulate_od_steps() -> None:
-    clock = FakeClock()
-    publisher = FakePublisher(vials((2, 42)))
-    runner = SimulatorRunner(
-        settings(od_noise=0, pause_after_messages=3, pause_seconds=60),
-        publisher=publisher, stop_event=clock, clock=clock,
-    )
-    assert runner.run(max_messages=6) == 6
-    assert clock.waits == [0.5, 60.5, 60.5]
-    assert [e.value for e in publisher.events if e.measurement_type == "od"] == [0.35, 0.37]
+def test_cli_counts_new_events_without_application_ack(settings):
+    publisher = Publisher(acknowledge=False)
+    clock = Clock()
+    assert SimulatorRunner(settings, publisher=publisher, clock=clock, stop_event=clock).run(
+        max_messages=2,
+    ) == 2
+    assert [live for _, live in publisher.sent] == [True, True]
+    assert 5.5 <= clock.now < 5.6
+    with closing(TelemetryQueue(settings)) as queue:
+        assert queue.stats()[0] == 2
 
 
-def test_interruption_stops_before_first_round() -> None:
-    publisher = FakePublisher(vials((1, 41)))
-    clock = FakeClock()
-    clock.stop_after_first = True
-    runner = SimulatorRunner(settings(), publisher=publisher, stop_event=clock, clock=clock)
-    assert runner.run() == 0
-    assert publisher.events == [] and publisher.closed
+def test_failure_and_pause_use_exact_locally_committed_counts(settings):
+    clock = Clock()
+    crash = settings.model_copy(update={"fail_after_messages": 2})
+    with pytest.raises(SimulatedFailureError, match="2 leituras"):
+        SimulatorRunner(crash, publisher=Publisher(), clock=clock, stop_event=clock).run()
+    with closing(TelemetryQueue(settings)) as queue:
+        assert queue.stats()[0] == 2
+    clock = Clock()
+    paused = settings.model_copy(update={"pause_after_messages": 1, "pause_seconds": 7})
+    publisher = Publisher()
+    assert SimulatorRunner(paused, publisher=publisher, clock=clock, stop_event=clock).run(
+        max_messages=3,
+    ) == 3
+    assert 7.5 <= clock.now < 7.7
+    events = [TelemetryEvent.model_validate_json(payload) for payload, _ in publisher.sent]
+    assert [event.sequence for event in events] == [0, 1, 0, 1, 2]
 
 
-def test_publish_failure_and_simulated_failure_close_connection() -> None:
-    clock = FakeClock()
-    publisher = FakePublisher(vials((1, 41)), fail=True)
-    runner = SimulatorRunner(settings(), publisher=publisher, stop_event=clock, clock=clock)
-    with pytest.raises(MqttPublishError):
-        runner.run()
-    assert publisher.closed
+def test_puback_alone_keeps_pending_and_retry_preserves_json(settings):
+    clock = Clock()
+    publisher = Publisher(acknowledge=False)
+    publisher.connect()
+    event = SimulatedTelemetryGenerator(settings, [VIAL]).next_event()
+    with closing(TelemetryQueue(settings)) as queue:
+        assert queue.append([event], session=1, live_until=2)
+        delivery = Delivery(queue, publisher, clock)
+        delivery.step(0, 1)
+        assert queue.stats()[0] == 1
+        clock.now = 5
+        delivery.step(5, 1)
+        assert len(publisher.sent) == 1 and not delivery.waiting
+        clock.now = 6
+        delivery.step(6, 1)
+        assert publisher.sent == [(event.model_dump_json(), True), (event.model_dump_json(), False)]
+        publisher.responses.append(ack(event))
+        delivery.step(6, 1)
+        assert queue.stats() == (0, 0, None)
 
-    publisher = FakePublisher(vials((1, 41)))
-    runner = SimulatorRunner(
-        settings(fail_after_messages=2), publisher=publisher, stop_event=clock, clock=clock
-    )
-    with pytest.raises(SimulatedFailureError):
-        runner.run()
-    assert len(publisher.events) == 2 and publisher.closed
+
+def test_quota_rejection_and_rollback_leave_prior_events_intact(settings):
+    generator = SimulatedTelemetryGenerator(settings, [VIAL])
+    events = [generator.next_event() for _ in range(6)]
+    with closing(TelemetryQueue(settings)) as queue:
+        assert queue.database.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert queue.database.execute("PRAGMA synchronous").fetchone()[0] == 2
+        assert queue.append(events[:3], session=None, live_until=0)
+        with pytest.raises(sqlite3.IntegrityError):
+            queue.append([events[3], events[0]], session=None, live_until=0)
+        assert queue.stats()[0] == 3
+        assert queue.append(events[3:], session=None, live_until=0)
+        rejection = TelemetryRejection(
+            schema_version="1.0", event_id=events[0].event_id, equipment_id=settings.equipment_id,
+            disposition="quarantined", reason_code="invalid_origin", detail="alocação encerrada",
+            rejected_at=datetime.now(UTC),
+        )
+        queue.apply([rejection])
+        assert queue.stats()[:2] == (5, 1)
+        assert not queue.append([generator.next_event()], session=None, live_until=0)
+        assert queue.apply([ack(events[0])]) == []
+        assert queue.apply([ack(events[1]).model_copy(update={"equipment_id": "wrong"})]) == []
+        queue.apply([ack(events[1])])
+        assert queue.append([generator.next_event()], session=None, live_until=0)
+    with closing(TelemetryQueue(settings)) as queue:
+        quarantined, = queue.database.execute("""
+            SELECT payload, reason_code, detail FROM telemetry_queue WHERE rejected_at IS NOT NULL
+        """).fetchall()
+        assert tuple(quarantined) == (
+            events[0].model_dump_json(), "invalid_origin", "alocação encerrada",
+        )
+    with pytest.raises(QueueIdentityError):
+        TelemetryQueue(settings.model_copy(update={"producer_id": "new-producer"}))
 
 
-def test_discovery_failure_closes_connection() -> None:
-    class FailingPublisher(FakePublisher):
-        def active_vials(self) -> list[ActiveVial]:
-            raise MqttConnectionError("no response")
+def test_sqlite_full_and_failed_ack_deletion_allow_retry(settings):
+    settings = settings.model_copy(update={"telemetry_queue_max_events": 1000})
+    generator = SimulatedTelemetryGenerator(settings, [VIAL])
+    first = generator.next_event()
+    with closing(TelemetryQueue(settings)) as queue:
+        assert queue.append([first], session=None, live_until=0)
+        pages = queue.database.execute("PRAGMA page_count").fetchone()[0]
+        queue.database.execute(f"PRAGMA max_page_count = {pages}")
+        events = [generator.next_event() for _ in range(40)]
+        with pytest.raises(sqlite3.OperationalError) as failure:
+            queue.append(events, session=None, live_until=0)
+        assert failure.value.sqlite_errorcode == sqlite3.SQLITE_FULL
+        assert queue.stats()[0] == 1
+        queue.database.execute("""
+            CREATE TEMP TRIGGER fail_delete BEFORE DELETE ON telemetry_queue
+            BEGIN SELECT raise(ABORT, 'delete failure'); END
+        """)
+        with pytest.raises(sqlite3.IntegrityError):
+            queue.apply([ack(first)])
+        assert queue.stats()[0] == 1
+        queue.database.execute("DROP TRIGGER fail_delete")
+        queue.database.execute(f"PRAGMA max_page_count = {pages + 100}")
+        assert queue.append(events, session=None, live_until=0)
+        assert queue.apply([ack(first)])
+        assert queue.stats()[0] == len(events)
 
-    publisher = FailingPublisher([])
-    with pytest.raises(MqttConnectionError):
-        SimulatorRunner(settings(), publisher=publisher).run()
-    assert publisher.closed and publisher.events == []
+
+def test_invalid_local_bytes_are_isolated_before_sending_following_rows(settings):
+    clock = Clock()
+    publisher = Publisher()
+    publisher.connect()
+    events = [SimulatedTelemetryGenerator(settings, [VIAL]).next_event() for _ in range(2)]
+    with closing(TelemetryQueue(settings)) as queue:
+        queue.append(events, session=None, live_until=0)
+        with queue.database:
+            queue.database.execute(
+                "UPDATE telemetry_queue SET payload = ? WHERE event_id = ?",
+                (b"\xffinvalid", str(events[0].event_id)),
+            )
+        delivery = Delivery(queue, publisher, clock)
+        delivery.step(0, 1)
+        delivery.step(1, 1)
+        assert queue.stats()[:2] == (0, 1)
+        assert publisher.sent == [(events[1].model_dump_json(), False)]

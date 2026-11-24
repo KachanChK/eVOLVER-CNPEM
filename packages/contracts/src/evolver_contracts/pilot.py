@@ -9,6 +9,7 @@ EQUIPMENT_ID = "evolver-sim-01"
 TOPIC_PREFIX = f"evolver/v1/{EQUIPMENT_ID}"
 ACTIVE_VIALS_REQUEST = f"{TOPIC_PREFIX}/active-vials/request"
 ACTIVE_VIALS_RESPONSE = f"{TOPIC_PREFIX}/active-vials/response"
+TELEMETRY_MODE_PROPERTY = "evolver-telemetry-mode"
 DatabaseID = Annotated[int, Field(strict=True, gt=0, le=2**63 - 1)]
 VialID = Annotated[int, Field(strict=True, ge=1, le=12)]
 

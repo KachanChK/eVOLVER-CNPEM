@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import signal
+import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 
 from .config import SimulatorSettings
 from .mqtt import MqttConnectionError, MqttPublishError
+from .queue import QueueIdentityError
 from .runner import SimulatedFailureError, SimulatorRunner
 
 LOGGER = logging.getLogger(__name__)
@@ -31,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-messages",
         type=positive_int,
-        help="encerra apos este total de medicoes; por padrao, executa sem limite",
+        help="encerra apos gravar este total de medicoes novas e tentar confirmar o envio",
     )
     parser.add_argument("--env-file", type=Path, help="arquivo de configuracao do simulador")
     return parser
@@ -68,6 +70,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 3
     except (MqttConnectionError, MqttPublishError) as exc:
         LOGGER.error("Falha no transporte MQTT: %s", exc)
+        return 1
+    except (OSError, sqlite3.Error, QueueIdentityError) as exc:
+        LOGGER.error("Fila de telemetria indisponível: %s", exc)
         return 1
     finally:
         for current_signal, previous_handler in previous_handlers.items():

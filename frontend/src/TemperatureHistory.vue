@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Chart, LineElement, LinearScale, PointElement, Tooltip } from 'chart.js'
 import { Line } from 'vue-chartjs'
-import { chartPoints, missingIntervals, movingAverage, readingAge, readingPoints, timeStep } from './history.js'
+import { chartPoints, latestGeneratedAt, missingIntervals, movingAverage, readingAge, readingPoints, timeStep } from './history.js'
 
 import { commandAction, commandStatus, isFinal, odValue, pumpPeriods, pumpTime } from './pumpHistory.js'
 import { formatOdLimits } from './odLimits.js'
@@ -40,12 +40,9 @@ const commands = computed(() => (props.pumpHistory?.commands ?? [])
 const points = computed(() => readingPoints(props.readings, props.valueKey))
 const visible = computed(() => points.value.filter(point => point.x >= props.window.min && point.x <= props.window.max))
 const latest = computed(() => points.value.at(-1))
-const liveReceived = computed(() => props.liveReadings.reduce((last, reading) => {
-  const time = Date.parse(reading.received_at ?? reading.generated_at)
-  return Number.isFinite(time) ? Math.max(last, time) : last
-}, -Infinity))
-const freshness = computed(() => readingAge(liveReceived.value, props.now))
-const stale = computed(() => Number.isFinite(liveReceived.value) && props.now - liveReceived.value > 15_000)
+const liveGenerated = computed(() => latestGeneratedAt(props.liveReadings))
+const freshness = computed(() => readingAge(liveGenerated.value, props.now))
+const stale = computed(() => Number.isFinite(liveGenerated.value) && props.now - liveGenerated.value > 15_000)
 const gaps = computed(() => missingIntervals(visible.value, props.window))
 const drawn = computed(() => chartPoints(visible.value))
 const reduced = computed(() => drawn.value.filter(point => point.y !== null).length < visible.value.length)
