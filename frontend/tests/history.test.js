@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { chartPoints, historyWindow, missingIntervals, movingAverage, readingAge, readingPoints, reducePoints, timeStep } from '../src/history.js'
+import { chartPoints, historyWindow, latestGeneratedAt, missingIntervals, movingAverage, readingAge, readingPoints, reducePoints, timeStep } from '../src/history.js'
 
 const now = Date.parse('2026-11-17T12:00:00Z')
 const reading = (offset, value) => ({ generated_at: new Date(now + offset).toISOString(), value })
+
+test('recovered points keep their generation order and do not refresh stale series', () => {
+  const newer = reading(-20_000, 37)
+  const recovered = { ...reading(-60_000, 36), received_at: new Date(now).toISOString() }
+  const series = [newer, recovered]
+  assert.equal(latestGeneratedAt(series), now - 20_000)
+  assert.equal(latestGeneratedAt([]), -Infinity)
+  assert.deepEqual(readingPoints(series, 'value').map(point => point.reading), [recovered, newer])
+})
 
 test('time labels use regular seconds, minutes and days', () => {
   assert.equal(timeStep(60_000), 15_000)
@@ -72,8 +81,8 @@ test('the optional average is based on elapsed time and resets after gaps', () =
 
 test('freshness handles missing data, clock differences and long interruptions', () => {
   assert.equal(readingAge(-Infinity, now), 'Ainda sem leituras')
-  assert.equal(readingAge(now + 1000, now), 'Última leitura recebida agora')
-  assert.equal(readingAge(now - 15_000, now), 'Última leitura recebida há 15 s')
-  assert.equal(readingAge(now - 180_000, now), 'Última leitura recebida há 3 min')
-  assert.equal(readingAge(now - 86_400_000, now), 'Última leitura recebida há 1 dia(s)')
+  assert.equal(readingAge(now + 1000, now), 'Última leitura gerada agora')
+  assert.equal(readingAge(now - 15_000, now), 'Última leitura gerada há 15 s')
+  assert.equal(readingAge(now - 180_000, now), 'Última leitura gerada há 3 min')
+  assert.equal(readingAge(now - 86_400_000, now), 'Última leitura gerada há 1 dia(s)')
 })

@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    LargeBinary,
     Numeric,
     PrimaryKeyConstraint,
     String,
@@ -93,6 +94,15 @@ class Experiment(Base):
         )
 
 
+class TelemetryEventRecord(Base):
+    __tablename__ = "telemetry_events"
+
+    event_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    measurement_type: Mapped[str] = mapped_column(String(11))
+    payload_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+
+
 class TemperatureReading(Base):
     __tablename__ = "temperature_readings"
     __table_args__ = (
@@ -152,6 +162,7 @@ class OdReading(Base):
     producer_id: Mapped[str | None] = mapped_column(String(64))
     sequence: Mapped[int | None] = mapped_column(BigInteger)
     allocation_verified: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    control_eligible: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     @property
     def value(self) -> float:

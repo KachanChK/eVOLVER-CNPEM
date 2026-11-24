@@ -45,8 +45,10 @@ Se estiver atualizando um banco antigo com dados, consulte o [guia de migraçõe
 ## Iniciar e usar
 
 1. Execute `.\scripts\iniciar-local.ps1`. O script abre três janelas, uma para a API, uma para a ingestão e uma para a interface. Os logs ficam em `.local/`.
-2. Abra [a interface local](http://127.0.0.1:5173), clique em **Criar experimento**, preencha os dados e escolha um vial livre.
+2. Abra [a interface local](http://127.0.0.1:5173), clique em **Novo experimento**, preencha os dados e escolha um vial livre.
 3. Execute `.\scripts\simular.ps1` em outro PowerShell. Abra o detalhe do experimento para acompanhar as leituras. O simulador continua em execução até você interrompê-lo.
+
+O simulador grava as leituras em uma fila SQLite antes de publicá-las. Durante uma queda, ele usa a última lista confirmada de vials ativos. No retorno, reenvia as pendências até receber da ingestão a confirmação de gravação no PostgreSQL. O painel usa o horário de geração para mostrar a idade de cada leitura. [Recuperação de telemetria](operations/README.md#recuperação-de-telemetria)
 
 ## Parar e manter os dados
 
@@ -59,7 +61,7 @@ docker compose stop
 
 ## Resetar o ambiente local
 
-**O reset apaga os dados locais.** Isso inclui experimentos, leituras, histórico de comandos, dados do broker MQTT e estado das bombas simuladas. Para guardar o histórico dos experimentos, faça [backup do banco](operations/README.md#backup-e-restauração) antes de continuar.
+**O reset apaga os dados locais.** Isso inclui experimentos, leituras, histórico de comandos, dados do broker MQTT, estado das bombas simuladas e telemetria pendente no SQLite. Para guardar o histórico dos experimentos, faça [backup do banco](operations/README.md#backup-e-restauração) antes de continuar.
 
 1. Pressione **Ctrl+C** no simulador e nas janelas da API, da ingestão e da interface.
 2. Remova os contêineres e os volumes locais do MQTT e do banco. Se iniciou os serviços com nomes de projeto Compose personalizados, use os mesmos nomes aqui.
@@ -69,14 +71,17 @@ docker compose stop
    docker compose down --volumes
    ```
 
-3. Apague o arquivo SQLite do simulador e seus arquivos auxiliares. Se configurou `SIMULATOR_PUMP_STATE_PATH` em `simulator/.env` ou no ambiente, substitua o caminho padrão pelo arquivo usado nessa execução.
+3. Apague os arquivos SQLite do simulador e seus arquivos auxiliares. Ajuste os caminhos abaixo se configurou `SIMULATOR_PUMP_STATE_PATH` ou `SIMULATOR_TELEMETRY_QUEUE_PATH` em `simulator/.env` ou no ambiente. Por padrão, a fila fica no mesmo diretório do estado das bombas.
 
    ```powershell
    $estadoSimulador = Join-Path $env:USERPROFILE '.evolver-simulator\pump-state.sqlite3'
-   foreach ($sufixo in @('', '-journal', '-wal', '-shm')) {
-       $arquivo = "$estadoSimulador$sufixo"
-       if (Test-Path -LiteralPath $arquivo -PathType Leaf) {
-           Remove-Item -LiteralPath $arquivo -ErrorAction Stop
+   $filaTelemetria = Join-Path (Split-Path -Parent $estadoSimulador) 'telemetry.sqlite3'
+   foreach ($bancoLocal in @($estadoSimulador, $filaTelemetria)) {
+       foreach ($sufixo in @('', '-journal', '-wal', '-shm')) {
+           $arquivo = "$bancoLocal$sufixo"
+           if (Test-Path -LiteralPath $arquivo -PathType Leaf) {
+               Remove-Item -LiteralPath $arquivo -ErrorAction Stop
+           }
        }
    }
    ```

@@ -38,7 +38,9 @@ antigo não pode ser executado por um simulador que acabou de se reconectar.
 O simulador assina a resposta antes de publicar o pedido. O pedido contém apenas
 `request_id` (UUID). A ingestão devolve o mesmo `request_id` e `vials`, uma lista
 de até 12 alocações ativas ordenadas por `vial_id`. Cada item contém `vial_id`
-(inteiro entre 1 e 12) e `experiment_id` (inteiro positivo de até 64 bits com sinal).
+(inteiro entre 1 e 12), `experiment_id` (inteiro positivo de até 64 bits com sinal)
+e `allocation_id` (UUID da alocação). O simulador atualizado usa esse UUID
+em `experiment_run_id` e exige o UUID para aceitar a lista.
 Quando não há alocações ativas, `vials` é uma lista vazia. Os modelos de
 `pilot.py` aceitam somente os campos descritos aqui.
 
@@ -56,7 +58,8 @@ Quando não há alocações ativas, `vials` é uma lista vazia. Os modelos de
    quarantined`. O simulador deve mover o item para uma quarentena durável com o
    motivo registrado e removê-lo da fila de reenvio — uma mensagem inválida não
    pode bloquear as seguintes.
-6. Falha de transporte, indisponibilidade do banco ou ausência de ACK/rejeição são
+6. Falha de transporte, indisponibilidade do banco, horário de geração ainda
+   no futuro ou ausência de ACK/rejeição são
    situações transitórias: o item continua pendente com o mesmo `event_id`, horário
    e sequência. O reenvio jamais cria outra identidade.
 
@@ -69,6 +72,13 @@ são JSON legível justamente para que a rejeição possa conter o `event_id`.
 do payload publicado pelo simulador. Eventos atrasados continuam válidos: entram no
 histórico por `generated_at` e não devem substituir automaticamente a leitura mais
 recente só porque chegaram depois.
+
+A propriedade MQTT 5 `evolver-telemetry-mode` vai nos User Properties. O simulador
+usa `live` na primeira tentativa de uma rodada com alocação recém-confirmada e
+sessão pronta, com expiração MQTT de 2 s. Usa `history` para pendências recuperadas
+e novas tentativas. A ingestão limita o controle de OD a publicações elegíveis e
+mantém a janela de geração de 10 s. A ausência da propriedade segue o fluxo
+legado. O JSON v1 é igual nos dois modos.
 
 ## Comandos e resultados simulados
 

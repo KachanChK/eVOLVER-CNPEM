@@ -122,6 +122,115 @@ Faça uma restauração de conferência em outro banco antes de depender do back
 usuário, banco e caminho em ambos os comandos quando `.env` não usar os padrões. Não
 use `docker compose down -v` como método de restauração: ele remove o volume.
 
+## Recuperação de telemetria
+
+Em uma atualização, mantenha o mesmo arquivo da fila e as mesmas identidades
+do equipamento e do produtor. Pare o simulador e a ingestão antiga. Aplique a
+migração com `alembic upgrade head`, suba a ingestão atualizada e confira que ela
+publica confirmações após gravar. Inicie o simulador atualizado em seguida, pois
+o controle de OD depende da interpretação de `evolver-telemetry-mode` na ingestão.
+Se a migração apontar UUIDs repetidos, confira os IDs diagnosticados nas três
+séries antes de prosseguir.
+
+Mantenha a fila SQLite em disco local. O arquivo padrão é
+`telemetry.sqlite3` no diretório do estado das bombas. Com 12 vials, a coleta
+gera 72 eventos por segundo. A cota padrão de 259.200 inclui as pendências e
+os registros em quarentena. Reserve **160 MiB** para esse perfil, considerando
+o SQLite, `-wal` e `-shm`. A soma dos picos medidos foi de 136,03 MiB.
+Consulte a [medição da carga e a conciliação por ID](../docs/validacao-store-and-forward.md#capacidade-com-doze-vials).
+
+### Inspecionar a fila
+
+Na raiz do repositório, ajuste o caminho se estiver usando
+`SIMULATOR_TELEMETRY_QUEUE_PATH` ou um diretório personalizado para o estado das bombas.
+
+```powershell
+$queue = Join-Path $env:USERPROFILE '.evolver-simulator/telemetry.sqlite3'
+if (-not (Test-Path -LiteralPath $queue -PathType Leaf)) { throw 'Fila SQLite ausente' }
+.\.venv\Scripts\python.exe -m sqlite3 $queue "SELECT count(*) FILTER (WHERE rejected_at IS NULL) AS pendentes, count(rejected_at) AS quarentena, min(generated_at) FILTER (WHERE rejected_at IS NULL) AS pendencia_mais_antiga FROM telemetry_queue"
+.\.venv\Scripts\python.exe -m sqlite3 $queue "SELECT id, event_id, rejected_at, reason_code, detail FROM telemetry_queue WHERE rejected_at IS NOT NULL ORDER BY id"
+```
+
+### Exportar e remover quarentena
+
+Pare o simulador para que a exportação e a remoção usem o mesmo conjunto de
+registros. O exemplo cria um arquivo novo com os registros rejeitados,
+incluindo o payload original. Bytes inválidos ficam em hexadecimal.
+
+```powershell
+@'
+import json
+import sqlite3
+import sys
+from contextlib import closing
+from pathlib import Path
+
+source = Path(sys.argv[1]).resolve(strict=True)
+with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as database:
+    database.row_factory = sqlite3.Row
+    rows = database.execute(
+        "SELECT * FROM telemetry_queue WHERE rejected_at IS NOT NULL ORDER BY id"
+    )
+    records = []
+    for row in rows:
+        record = dict(row)
+        if isinstance(record["payload"], bytes):
+            record["payload_hex"] = record.pop("payload").hex()
+        records.append(record)
+with Path(sys.argv[2]).open("x", encoding="utf-8") as export:
+    json.dump(records, export, ensure_ascii=False, indent=2)
+'@ | .\.venv\Scripts\python.exe - $queue quarentena-evolver.json
+```
+
+Confira o arquivo exportado e substitua `123` pelo `id` do registro a remover.
+Repita somente para os registros que quer retirar da cota. Reinicie o simulador
+com o mesmo arquivo da fila.
+
+```powershell
+.\.venv\Scripts\python.exe -m sqlite3 $queue "DELETE FROM telemetry_queue WHERE id = 123 AND rejected_at IS NOT NULL"
+```
+
+### Exercitar uma queda
+
+Com um experimento ativo e as três séries recebendo dados, pare o Mosquitto por
+mais de 15 s. Observe a pausa de atualizações no monitoramento e o aumento das
+pendências no SQLite. Restaure o broker e compare os UUIDs e os horários de
+geração no SQLite e no PostgreSQL. Faça ensaios separados parando a ingestão e o
+TimescaleDB. Confira a tabela de leituras e os logs após cada recuperação.
+
+```powershell
+docker compose --env-file mqtt/.env -f mqtt/compose.yaml stop mosquitto
+docker compose --env-file mqtt/.env -f mqtt/compose.yaml up -d --wait mosquitto
+docker compose stop timescaledb
+docker compose up -d --wait timescaledb
+```
+
+Durante a queda, escolha um UUID pendente da consulta abaixo. Após a
+recuperação, verifique que ele saiu da fila e que a consulta central retornou
+uma única linha com o mesmo `generated_at`.
+
+```powershell
+.\.venv\Scripts\python.exe -m sqlite3 $queue "SELECT event_id, generated_at, payload FROM telemetry_queue WHERE rejected_at IS NULL ORDER BY id LIMIT 10"
+$eventId = 'UUID anotado durante a queda'
+@'
+WITH readings AS (
+    SELECT event_id, generated_at, received_at, experiment_id, 'temperature' AS series
+    FROM temperature_readings
+    UNION ALL
+    SELECT event_id, generated_at, received_at, experiment_id, 'ph' FROM ph_readings
+    UNION ALL
+    SELECT event_id, generated_at, received_at, experiment_id, 'od' FROM od_readings
+)
+SELECT r.*, e.allocation_id
+FROM readings r JOIN experiments e ON e.id = r.experiment_id
+WHERE r.event_id = :'event_id'::uuid
+ORDER BY r.generated_at;
+'@ | docker compose exec -T timescaledb psql -U evolver -d evolver -v ON_ERROR_STOP=1 -v "event_id=$eventId"
+```
+
+A [matriz de aceite](../docs/spec-store-and-forward.md#aceite) descreve os
+cenários de reinício, perda de ACK, troca de alocação e capacidade.
+
 ## Aplicação
 
 O simulador consulta os vials ativos via MQTT e publica OD, pH e temperatura simulados.

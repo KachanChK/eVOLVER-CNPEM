@@ -226,10 +226,11 @@ def resume_reading(connection: Connection, row, now: datetime):
         FROM od_readings od
         WHERE od.experiment_id = :id AND od.vial_id = :vial_id
           AND od.generated_at >= :started_at AND od.generated_at = :generated_at
-          AND od.event_id = :event_id AND od.allocation_verified AND NOT EXISTS (
+          AND od.event_id = :event_id AND od.allocation_verified AND od.control_eligible
+          AND NOT EXISTS (
             SELECT 1 FROM od_readings newer
             WHERE newer.experiment_id = od.experiment_id AND newer.vial_id = od.vial_id
-              AND newer.allocation_verified
+              AND newer.allocation_verified AND newer.control_eligible
               AND newer.generated_at BETWEEN od.generated_at AND :now
               AND (newer.generated_at > od.generated_at OR
                    (newer.producer_id = od.producer_id AND newer.sequence > od.sequence))

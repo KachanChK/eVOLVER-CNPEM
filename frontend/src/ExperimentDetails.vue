@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } fr
 import { RouterLink, useRouter } from 'vue-router'
 import { request } from './api'
 import TemperatureHistory from './TemperatureHistory.vue'
-import { historyWindow, PERIODS, readingAge, readingPoints } from './history.js'
+import { historyWindow, latestGeneratedAt, PERIODS, readingAge, readingPoints } from './history.js'
 import { experimentCode } from './experimentCode.js'
 import { commandAction, commandStatus, isFinal, isOld, odValue, pumpReason, pumpState, pumpTime } from './pumpHistory.js'
 import { formatOdLimits } from './odLimits.js'
@@ -92,15 +92,12 @@ const measurementPoints = computed(() => measurements.map((measure, index) => ({
   ...measure,
   points: readingPoints(displayedSeries.value[index], measure.key),
 })))
-const latestReceived = computed(() => liveSeries.value.map(series => series.reduce((last, reading) => {
-  const time = Date.parse(reading.received_at ?? reading.generated_at)
-  return Number.isFinite(time) ? Math.max(last, time) : last
-}, -Infinity)))
+const latestGenerated = computed(() => liveSeries.value.map(latestGeneratedAt))
 const currentReadings = computed(() => measurementPoints.value.map((measure, index) => ({
   ...measure,
   latest: measure.points.at(-1),
-  freshness: readingAge(latestReceived.value[index], now.value),
-  stale: Number.isFinite(latestReceived.value[index]) && now.value - latestReceived.value[index] > 15_000,
+  freshness: readingAge(latestGenerated.value[index], now.value),
+  stale: Number.isFinite(latestGenerated.value[index]) && now.value - latestGenerated.value[index] > 15_000,
 })))
 const historyOpen = ref(false)
 const historyMeasure = ref('')
@@ -382,7 +379,7 @@ onUnmounted(() => {
           <li v-if="experiment.ended_at">Fim · <time :datetime="experiment.ended_at">{{ dateTime.format(new Date(experiment.ended_at)) }}</time></li>
         </ul>
         <div v-if="!closing" class="actions detail-actions">
-          <p v-if="experiment.status === 'active' && !paused && !initialReadings && !updateError" class="live-status">
+          <p v-if="experiment.status === 'active' && !paused && !initialReadings && !updateError && currentReadings.some(measure => measure.latest && !measure.stale)" class="live-status">
             <img :src="liveDot" alt="" width="8" height="8" /> Ao vivo
           </p>
           <button v-if="experiment.status === 'active'" type="button" :disabled="pending || pendingPump" @click="change('inactivate')">Inativar</button>

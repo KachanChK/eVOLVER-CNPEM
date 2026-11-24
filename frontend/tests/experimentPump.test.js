@@ -88,6 +88,50 @@ const settle = async () => {
   await nextTick()
 }
 
+test('replayed telemetry stays stale in the dashboard until a fresh reading arrives', async (t) => {
+  const root = node('root')
+  const base = '/api/experiments/8'
+  const now = new Date().toISOString()
+  const old = new Date(Date.now() - 30_000).toISOString()
+  let generated = old
+  let poll
+  t.mock.method(globalThis, 'setInterval', (callback, ms) => {
+    if (ms === 5000) poll = callback
+    return 1
+  })
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url === base) {
+      return Response.json({ id: 8, name: 'Teste', vial_id: 1, status: 'active', started_at: old })
+    }
+    if (url === base + '/closure') return Response.json({ state: 'none' })
+    const reading = { generated_at: generated, received_at: now, value: 0.35, temperature_celsius: 37 }
+    if (url === base + '/pump/snapshot') {
+      return Response.json({
+        pump: { state: 'automatic', confirmed_state: 'off' },
+        latest_od: reading, od_readings: [reading], history: { transitions: [], commands: [] },
+      })
+    }
+    if (['/temperature-readings', '/readings/ph', '/readings/od'].some(path => url === base + path)) {
+      return Response.json([reading])
+    }
+    assert.fail(`Unexpected request ${url}`)
+  })
+  const app = renderer.createApp(ExperimentDetails, { id: '8' })
+  app.mount(root)
+  t.after(() => app.unmount())
+  await settle()
+
+  assert.equal(visibleText(root).match(/Última leitura gerada há/g)?.length, 3)
+  assert.doesNotMatch(visibleText(root), /Ao vivo/)
+
+  generated = now
+  await poll()
+  await settle()
+
+  assert.doesNotMatch(visibleText(root), /Última leitura gerada há/)
+  assert.match(visibleText(root), /Ao vivo/)
+})
+
 test('OD fallback matches the chart until recovery and stale polling cannot restore it', async (t) => {
   const root = node('root')
   const start = new Date().toISOString()
