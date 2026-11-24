@@ -135,8 +135,9 @@ séries antes de prosseguir.
 Mantenha a fila SQLite em disco local. O arquivo padrão é
 `telemetry.sqlite3` no diretório do estado das bombas. Com 12 vials, a coleta
 gera 72 eventos por segundo. A cota padrão de 259.200 inclui as pendências e
-os registros em quarentena. Considere o arquivo principal, `-wal` e `-shm` ao
-reservar espaço e monitore o espaço livre se houver histórico de filas maiores.
+os registros em quarentena. Reserve **160 MiB** para esse perfil, considerando
+o SQLite, `-wal` e `-shm`. A soma dos picos medidos foi de 136,03 MiB.
+Consulte a [medição da carga e a conciliação por ID](../docs/validacao-store-and-forward.md#capacidade-com-doze-vials).
 
 ### Inspecionar a fila
 
@@ -202,6 +203,29 @@ docker compose --env-file mqtt/.env -f mqtt/compose.yaml stop mosquitto
 docker compose --env-file mqtt/.env -f mqtt/compose.yaml up -d --wait mosquitto
 docker compose stop timescaledb
 docker compose up -d --wait timescaledb
+```
+
+Durante a queda, escolha um UUID pendente da consulta abaixo. Após a
+recuperação, verifique que ele saiu da fila e que a consulta central retornou
+uma única linha com o mesmo `generated_at`.
+
+```powershell
+.\.venv\Scripts\python.exe -m sqlite3 $queue "SELECT event_id, generated_at, payload FROM telemetry_queue WHERE rejected_at IS NULL ORDER BY id LIMIT 10"
+$eventId = 'UUID anotado durante a queda'
+@'
+WITH readings AS (
+    SELECT event_id, generated_at, received_at, experiment_id, 'temperature' AS series
+    FROM temperature_readings
+    UNION ALL
+    SELECT event_id, generated_at, received_at, experiment_id, 'ph' FROM ph_readings
+    UNION ALL
+    SELECT event_id, generated_at, received_at, experiment_id, 'od' FROM od_readings
+)
+SELECT r.*, e.allocation_id
+FROM readings r JOIN experiments e ON e.id = r.experiment_id
+WHERE r.event_id = :'event_id'::uuid
+ORDER BY r.generated_at;
+'@ | docker compose exec -T timescaledb psql -U evolver -d evolver -v ON_ERROR_STOP=1 -v "event_id=$eventId"
 ```
 
 A [matriz de aceite](../docs/spec-store-and-forward.md#aceite) descreve os

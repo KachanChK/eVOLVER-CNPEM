@@ -3,7 +3,7 @@
 Piloto local para cadastrar experimentos, simular medições de temperatura, pH e densidade óptica (OD) e acompanhar o histórico na interface.
 
 ```text
-Simulador → MQTT (Mosquitto) → ingestão → PostgreSQL/TimescaleDB → API → interface
+Simulador → fila SQLite → MQTT (Mosquitto) → ingestão → PostgreSQL/TimescaleDB → API → interface
 ```
 
 Os valores são simulados e não representam sensores ou medições científicas. O uso descrito abaixo é local, no Windows.
@@ -68,9 +68,9 @@ Em outro PowerShell, também na raiz, gere leituras:
 .\scripts\simular.ps1
 ```
 
-O simulador envia OD, pH e temperatura para todos os vials ativos em rodadas a cada 0,5 segundo, **sem limite de duração**. Para parar, pressione **Ctrl+C na janela do simulador**. A lista de experimentos ativos é consultada pela ingestão via MQTT a cada rodada: novos experimentos começam a receber medições e os encerrados deixam de recebê-las. Sem experimentos ativos, o simulador continua aguardando. Os gráficos são atualizados a cada cinco segundos.
+O simulador grava rodadas de OD, pH e temperatura a cada 0,5 segundo no SQLite, **sem limite de duração**. Descobre os vials ativos pela ingestão e usa a última lista confirmada durante uma queda. A ingestão confirma pelo MQTT cada gravação no PostgreSQL. Ao receber esse ACK, o simulador retira a pendência do SQLite. Para parar, pressione **Ctrl+C na janela do simulador**. Os gráficos são atualizados a cada cinco segundos.
 
-O simulador usa sequências independentes para os três tipos. Por padrão, uma nova execução gera outros valores. Para repetir uma sequência em testes, defina `SIMULATOR_SEED` em `simulator/.env`; com a mesma semente, configuração e sequência de vials ativos por rodada, os valores são reproduzíveis. Confirmações MQTT lentas podem atrasar as rodadas. O limite opcional `SIMULATOR_MAX_MESSAGES` continua disponível para testes curtos; deixe-o sem definir para simular continuamente.
+O simulador usa sequências independentes para os três tipos. Para repetir os valores em testes, use a mesma semente (`SIMULATOR_SEED`), configuração e sequência de vials e estados das bombas. O limite opcional `SIMULATOR_MAX_MESSAGES` conta as novas leituras gravadas no SQLite. Consulte [como exercitar uma queda e conferir o reenvio](operations/README.md#exercitar-uma-queda).
 
 **Inativar** libera o vial e mantém o histórico visível. **Excluir** oculta o experimento na interface e preserva os dados no banco.
 
