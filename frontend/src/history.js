@@ -4,7 +4,7 @@ export const PERIODS = [
   { label: '1 min', value: 60_000 },
   { label: '5 min', value: 300_000 },
   { label: '30 min', value: 1_800_000 },
-  { label: 'Tudo', value: null },
+  { label: 'Todo o tempo', value: null },
 ]
 
 export function timeStep(duration) {

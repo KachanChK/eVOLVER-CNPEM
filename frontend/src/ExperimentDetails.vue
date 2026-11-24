@@ -1,11 +1,20 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
 import { request } from './api'
 import TemperatureHistory from './TemperatureHistory.vue'
-import { historyWindow, PERIODS, readingPoints } from './history.js'
+import { historyWindow, PERIODS, readingAge, readingPoints } from './history.js'
+import { experimentCode } from './experimentCode.js'
 import { commandAction, commandStatus, isFinal, isOld, odValue, pumpReason, pumpState, pumpTime } from './pumpHistory.js'
 import { formatOdLimits } from './odLimits.js'
+import liveDot from './assets/live-dot.svg'
+import updateDot from './assets/update-dot.svg'
+import pauseIcon from './assets/pause.svg'
+import phDot from './assets/ph-dot.svg'
+import temperatureDot from './assets/temperature-dot.svg'
+import odDot from './assets/od-dot.svg'
+import expandIcon from './assets/expand.svg'
+import collapseIcon from './assets/collapse.svg'
 
 const props = defineProps({ id: { type: String, default: '' } })
 const emit = defineEmits(['changed'])
@@ -57,7 +66,7 @@ const pumpError = ref('')
 const pendingPump = ref(false)
 const pumpAction = computed(() => ['paused', 'pausing', 'off_unconfirmed'].includes(pump.value?.state)
   ? 'resume' : 'pause')
-const liveSeries = computed(() => [readings.value, phReadings.value, odReadings.value])
+const liveSeries = computed(() => [phReadings.value, readings.value, odReadings.value])
 const displayedSeries = computed(() => paused.value?.series ?? liveSeries.value)
 const window = computed(() => historyWindow(
   displayedSeries.value,
@@ -68,6 +77,59 @@ const window = computed(() => historyWindow(
 ))
 const rangeDate = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })
 const rangeLabel = computed(() => `${rangeDate.format(window.value.min)} — ${rangeDate.format(window.value.max)}`)
+const clockTime = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+const readingTime = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  second: '2-digit', fractionalSecondDigits: 3,
+})
+const readingNumber = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const measurements = [
+  { id: 'ph', title: 'pH', unit: 'pH', key: 'value', color: '#7546b6', icon: phDot, number: readingNumber },
+  { id: 'temperature', title: 'Temperatura', unit: '°C', key: 'temperature_celsius', color: '#a34b24', icon: temperatureDot, number: readingNumber },
+  { id: 'od', title: 'Densidade óptica', unit: 'OD', key: 'value', color: '#087d91', icon: odDot, number: odValue },
+]
+const measurementPoints = computed(() => measurements.map((measure, index) => ({
+  ...measure,
+  points: readingPoints(displayedSeries.value[index], measure.key),
+})))
+const latestReceived = computed(() => liveSeries.value.map(series => series.reduce((last, reading) => {
+  const time = Date.parse(reading.received_at ?? reading.generated_at)
+  return Number.isFinite(time) ? Math.max(last, time) : last
+}, -Infinity)))
+const currentReadings = computed(() => measurementPoints.value.map((measure, index) => ({
+  ...measure,
+  latest: measure.points.at(-1),
+  freshness: readingAge(latestReceived.value[index], now.value),
+  stale: Number.isFinite(latestReceived.value[index]) && now.value - latestReceived.value[index] > 15_000,
+})))
+const historyOpen = ref(false)
+const historyMeasure = ref('')
+const historyPage = ref(1)
+const historyPageSize = 50
+const historyRows = computed(() => {
+  if (!historyOpen.value) return []
+  const { min, max } = window.value
+  const series = measurementPoints.value.filter(measure => !historyMeasure.value || measure.id === historyMeasure.value)
+  return series.flatMap(measure => measure.points
+    .filter(point => point.x >= min && point.x <= max)
+    .map(({ x, y, reading }) => ({
+      key: `${measure.id}-${reading.event_id}-${x}`,
+      generated: x,
+      received: Date.parse(reading.received_at),
+      title: measure.title,
+      value: y,
+      number: measure.number,
+      unit: measure.unit,
+    }))).sort((a, b) => b.generated - a.generated || (b.received - a.received || 0))
+})
+const historyPages = computed(() => Math.max(1, Math.ceil(historyRows.value.length / historyPageSize)))
+const historyPageRows = computed(() => {
+  const offset = (historyPage.value - 1) * historyPageSize
+  return historyRows.value.slice(offset, offset + historyPageSize)
+})
+watch([period, paused, historyOpen, historyMeasure], () => { historyPage.value = 1 })
+watch(historyPages, count => { historyPage.value = Math.min(historyPage.value, count) })
+
 function togglePause() {
   if (paused.value) {
     paused.value = null
@@ -296,26 +358,36 @@ onUnmounted(() => {
 <template>
   <section v-if="!id" class="panel empty">
     <h1>Experimentos</h1>
-    <p class="muted">Selecione um experimento no menu para ver suas leituras.</p>
+    <p class="muted">Selecione um dos seus experimentos para ver suas leituras.</p>
   </section>
   <p v-else-if="loading" role="status">Carregando experimento…</p>
   <div v-else-if="error" class="panel" role="alert">
     <p>{{ error }}</p>
     <button type="button" @click="loadDetails">Tentar novamente</button>
   </div>
-  <template v-else-if="experiment">
+  <div v-else-if="experiment" class="experiment-dashboard">
     <header class="detail-header">
-      <div>
-        <p class="meta">Vial {{ experiment.vial_id }} · {{ experiment.status === 'active' ? 'Ativo' : 'Inativo' }}</p>
-        <h1 ref="heading" tabindex="-1">{{ experiment.name }}</h1>
-        <p class="muted">Tipo de cultura · {{ experiment.culture_type ?? 'Não informado' }}</p>
-        <p class="muted">Limites de OD · {{ formatOdLimits(experiment) }}</p>
-        <p class="muted">Início · {{ dateTime.format(new Date(experiment.started_at)) }}</p>
-        <p v-if="experiment.ended_at" class="muted">Fim · {{ dateTime.format(new Date(experiment.ended_at)) }}</p>
-      </div>
-      <div v-if="!closing" class="actions">
-        <button v-if="experiment.status === 'active'" type="button" :disabled="pending || pendingPump" @click="change('inactivate')">Inativar</button>
-        <button type="button" class="danger" :disabled="pending || pendingPump" @click="change('delete')">Excluir</button>
+      <nav class="breadcrumb" aria-label="Localização atual">
+        <RouterLink to="/">Experimentos</RouterLink>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page" translate="no">{{ experimentCode(experiment.id) }}</span>
+      </nav>
+      <h1 ref="heading" tabindex="-1">{{ experiment.name }}</h1>
+      <div class="detail-meta">
+        <ul>
+          <li class="vial">Vial {{ experiment.vial_id }} · {{ experiment.status === 'active' ? 'Ativo' : 'Inativo' }}</li>
+          <li>Tipo de cultura · {{ experiment.culture_type ?? 'Não informado' }}</li>
+          <li>Limites de OD · {{ formatOdLimits(experiment) }}</li>
+          <li>Início · <time :datetime="experiment.started_at">{{ dateTime.format(new Date(experiment.started_at)) }}</time></li>
+          <li v-if="experiment.ended_at">Fim · <time :datetime="experiment.ended_at">{{ dateTime.format(new Date(experiment.ended_at)) }}</time></li>
+        </ul>
+        <div v-if="!closing" class="actions detail-actions">
+          <p v-if="experiment.status === 'active' && !paused && !initialReadings && !updateError" class="live-status">
+            <img :src="liveDot" alt="" width="8" height="8" /> Ao vivo
+          </p>
+          <button v-if="experiment.status === 'active'" type="button" :disabled="pending || pendingPump" @click="change('inactivate')">Inativar</button>
+          <button type="button" class="danger" :disabled="pending || pendingPump" @click="change('delete')">Excluir</button>
+        </div>
       </div>
     </header>
     <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
@@ -330,6 +402,63 @@ onUnmounted(() => {
       <button v-if="closure.state === 'unconfirmed'" type="button" :disabled="pending"
         @click="change(closure.action)">Tentar desligar novamente</button>
     </section>
+    <section aria-labelledby="current-readings">
+      <h2 id="current-readings">{{ paused ? 'Leituras exibidas' : experiment.status === 'active' ? 'Leituras em tempo real' : 'Últimas leituras' }}</h2>
+      <div class="reading-cards">
+        <div v-for="measure in currentReadings" :key="measure.id" class="panel reading-card">
+          <h3>{{ measure.title }}</h3>
+          <p class="reading-value">
+            <strong>{{ measure.latest ? measure.number.format(measure.latest.y) : '—' }}</strong>
+            <span v-if="measure.latest">{{ measure.unit }}</span>
+          </p>
+          <p v-if="measure.latest" class="muted">
+            Última leitura às <time :datetime="measure.latest.reading.generated_at">{{ clockTime.format(measure.latest.x) }}</time>
+          </p>
+          <p v-else class="muted">{{ initialReadings ? 'Carregando…' : 'Sem leituras' }}</p>
+          <p v-if="measure.stale && experiment.status === 'active'" class="freshness stale">{{ measure.freshness }}</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="measurement-history" aria-labelledby="history-heading">
+      <div class="history-toolbar">
+        <div>
+          <h2 id="history-heading">Histórico das medidas</h2>
+          <p class="muted history-range">{{ rangeLabel }}</p>
+        </div>
+        <div class="period-control">
+          <span id="period-label">Período</span>
+          <div class="period-buttons" role="group" aria-labelledby="period-label">
+            <button v-for="choice in PERIODS" :key="choice.label" :aria-pressed="period === choice.value"
+              type="button" @click="period = choice.value">{{ choice.label }}</button>
+          </div>
+        </div>
+      </div>
+      <div class="history-toolbar history-secondary">
+        <p :class="['view-status', { paused }]" role="status">
+          <img v-if="!paused && experiment.status === 'active'" :src="updateDot" alt="" width="7" height="7" />
+          {{ paused ? 'Visualização pausada. A coleta de dados continua.' : experiment.status === 'active' ? 'Atualização a cada 5 s' : 'Histórico do experimento encerrado' }}
+        </p>
+        <div class="history-actions">
+          <label class="average-toggle"><input v-model="showAverage" type="checkbox" name="show_average"> Mostrar média de 5 s</label>
+          <button class="pause-button" type="button" :aria-pressed="!!paused" @click="togglePause">
+            <img v-if="!paused" :src="pauseIcon" alt="" width="15" height="15" />
+            {{ paused ? 'Retomar visualização' : 'Pausar visualização' }}
+          </button>
+        </div>
+      </div>
+      <p v-if="updateError" class="notice" role="alert">{{ updateError }}</p>
+      <p v-if="initialReadings" role="status">Carregando leituras…</p>
+      <div v-else class="history-panels">
+        <TemperatureHistory v-for="measure in measurementPoints" :key="measure.id"
+          :class="{ 'measurement-wide': measure.id === 'ph' }"
+          :points="measure.points" :title="measure.title" :unit="measure.unit" :color="measure.color" :icon="measure.icon"
+          :window="window" :show-average="showAverage"
+          :od-limits="measure.id === 'od' ? experiment : null"
+          :pump-history="measure.id === 'od' ? displayedPumpHistory : null" />
+      </div>
+    </section>
+
     <section class="pump-panel panel" aria-labelledby="pump-heading">
       <div class="pump-controls">
         <h2 id="pump-heading">Controle de OD</h2>
@@ -387,34 +516,53 @@ onUnmounted(() => {
       </dl>
       <p v-if="pumpError" class="error" role="alert">{{ pumpError }}</p>
     </section>
-    <section class="history-controls panel" aria-label="Controles dos gráficos">
-      <div class="history-toolbar">
-        <div>
-          <span class="control-label" id="period-label">Período dos três gráficos</span>
-          <div class="period-buttons" role="group" aria-labelledby="period-label">
-            <button v-for="choice in PERIODS" :key="choice.label" :aria-pressed="period === choice.value"
-              @click="period = choice.value">{{ choice.label }}</button>
+
+    <details class="panel readings-history" @toggle="historyOpen = $event.target.open">
+      <summary class="readings-summary">
+        <span>
+          <strong>Histórico de medições</strong>
+          <span class="muted">Leituras do período selecionado</span>
+        </span>
+        <span class="readings-disclosure">
+          {{ historyOpen ? 'Ocultar leituras' : 'Mostrar leituras' }}
+          <img :src="historyOpen ? collapseIcon : expandIcon" alt="" width="16" height="16" />
+        </span>
+      </summary>
+      <template v-if="historyOpen">
+        <label class="history-filter">
+          Medida
+          <select v-model="historyMeasure" name="measurement">
+            <option value="">Todas as medidas</option>
+            <option v-for="measure in measurements" :key="measure.id" :value="measure.id">{{ measure.title }}</option>
+          </select>
+        </label>
+        <p v-if="initialReadings" class="history-empty muted" role="status">Carregando leituras…</p>
+        <p v-else-if="!historyRows.length" class="history-empty muted">Sem leituras neste período.</p>
+        <template v-else>
+          <p class="table-scroll-hint muted">Role a tabela na horizontal para ver todas as colunas.</p>
+          <div class="table-scroll" tabindex="0" role="region" aria-label="Leituras do período selecionado">
+            <table>
+              <thead>
+                <tr><th scope="col">Gerada em</th><th scope="col">Recebida em</th><th scope="col">Medida</th><th scope="col">Valor</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in historyPageRows" :key="row.key">
+                  <td><time :datetime="new Date(row.generated).toISOString()">{{ readingTime.format(row.generated) }}</time></td>
+                  <td v-if="Number.isFinite(row.received)"><time :datetime="new Date(row.received).toISOString()">{{ readingTime.format(row.received) }}</time></td>
+                  <td v-else>—</td>
+                  <td>{{ row.title }}</td>
+                  <td>{{ row.number.format(row.value) }}&nbsp;{{ row.unit }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-        <button class="pause-button" :aria-pressed="!!paused" @click="togglePause">
-          {{ paused ? 'Retomar visualização' : 'Pausar visualização' }}
-        </button>
-      </div>
-      <div class="history-toolbar history-secondary">
-        <p :class="['view-status', { paused }]" role="status">
-          {{ paused ? 'Visualização pausada. A coleta de dados continua.' : experiment.status === 'active' ? 'Acompanhando agora · atualização a cada 5 s' : 'Histórico do experimento encerrado' }}
-        </p>
-        <label class="average-toggle"><input v-model="showAverage" type="checkbox"> Mostrar média de 5 s</label>
-      </div>
-      <p class="muted history-range">{{ rangeLabel }}</p>
-    </section>
-    <p v-if="updateError" class="notice" role="alert">{{ updateError }}</p>
-    <p v-if="initialReadings" role="status">Carregando leituras…</p>
-    <div v-else class="history-panels">
-      <TemperatureHistory :readings="displayedSeries[0]" :live-readings="readings" :window="window" :now="now" :paused="!!paused" :show-average="showAverage" />
-      <TemperatureHistory :readings="displayedSeries[1]" :live-readings="phReadings" :window="window" :now="now" :paused="!!paused" :show-average="showAverage" title="pH" value-key="value" unit="" color="#7546b6" />
-      <TemperatureHistory :readings="displayedSeries[2]" :live-readings="odReadings" :window="window" :now="now" :paused="!!paused" :show-average="showAverage" title="Densidade óptica (OD)" value-key="value" unit="" color="#087d78"
-        :od-limits="experiment" :pump-history="displayedPumpHistory" />
-    </div>
-  </template>
+          <nav v-if="historyPages > 1" class="table-pages" aria-label="Páginas do histórico de medições">
+            <button type="button" :disabled="historyPage === 1" @click="historyPage--">Mais recentes</button>
+            <span aria-live="polite">Página {{ historyPage }} de {{ historyPages }}</span>
+            <button type="button" :disabled="historyPage === historyPages" @click="historyPage++">Mais antigas</button>
+          </nav>
+        </template>
+      </template>
+    </details>
+  </div>
 </template>

@@ -12,17 +12,16 @@ const compiled = compileScript(descriptor, { id: 'experiment-details', inlineTem
 const asModule = (code) => `data:text/javascript,${encodeURIComponent(code)}`
 const chart = asModule(`
   import { h } from '${import.meta.resolve('vue')}'
-  import { readingPoints } from '${new URL('../src/history.js', import.meta.url).href}'
   export default {
-    props: ['readings', 'valueKey'],
+    props: ['points', 'title'],
     render() {
-      const latest = readingPoints(this.readings, this.valueKey).at(-1)?.reading
-      return h('chart', { count: this.readings.length, latest })
+      return h('chart', { count: this.points.length, latest: this.points.at(-1)?.reading, title: this.title })
     },
   }
 `)
 const router = asModule(`
   export const routes = []
+  export const RouterLink = (_props, { slots }) => slots.default()
   export const useRouter = () => ({ replace: (route) => routes.push(route) })
 `)
 const { routes } = await import(router)
@@ -33,6 +32,7 @@ const imports = {
   './api': new URL('./api.js', componentUrl).href,
 }
 const code = compiled.content.replace(/from (['"])([^'"]+)\1/g, (_, quote, path) => {
+  if (path.endsWith('.svg')) return `from ${JSON.stringify(asModule(`export default ${JSON.stringify(path)}`))}`
   return `from ${JSON.stringify(imports[path] ?? new URL(path, componentUrl).href)}`
 })
 const { default: ExperimentDetails } = await import(asModule(code))
@@ -40,6 +40,8 @@ const { default: ExperimentDetails } = await import(asModule(code))
 function node(type, text = '') {
   return {
     type, text, props: {}, children: [], parent: null,
+    get options() { return this.children.filter(child => child.type === 'option') },
+    get value() { return this.props.value },
     focus() { this.focused = true },
     addEventListener() {},
   }
@@ -89,7 +91,7 @@ const settle = async () => {
 test('OD fallback matches the chart until recovery and stale polling cannot restore it', async (t) => {
   const root = node('root')
   const start = new Date().toISOString()
-  const experiment = { id: 1, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start }
+  const experiment = { id: 8, name: 'Experimento de teste', vial_id: 1, status: 'active', started_at: start }
   const automatic = {
     pump: { state: 'automatic', ending: false, confirmed_state: 'on' },
     latest_od: { value: 0.4, generated_at: start },
@@ -119,7 +121,7 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
     return 1
   })
   t.mock.method(globalThis, 'fetch', async (url, options) => {
-    const base = '/api/experiments/1'
+    const base = '/api/experiments/8'
     if (url === base) return response(experiment)
     if (url === base + '/closure') return response({ state: 'none' })
     if (url === `${base}/pump/snapshot`) return getPump(options.signal)
@@ -136,7 +138,7 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
     }
     assert.fail(`Unexpected request ${url}`)
   })
-  const app = renderer.createApp(ExperimentDetails, { id: '1' })
+  const app = renderer.createApp(ExperimentDetails, { id: '8' })
   app.mount(root)
   t.after(() => app.unmount())
   const text = () => visibleText(root)
@@ -170,6 +172,7 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
 
   await settle()
   assert.match(text(), /Experimento de teste/)
+  assert.match(text(), /Experimentos\/EXP-008/)
   assert.match(text(), /Não foi possível atualizar o estado das bombas/)
   assert.deepEqual(chartCounts(), [0, 0, 0])
 
@@ -177,6 +180,11 @@ test('OD fallback matches the chart until recovery and stale polling cannot rest
   poll()
   await settle()
   assert.deepEqual(chartCounts(), [1, 1, 1])
+  assert.deepEqual(charts().map(el => el.props.title), ['pH', 'Temperatura', 'Densidade óptica'])
+  const history = descendants(root).find(el => el.type === 'details')
+  history.props.onToggle({ target: { open: true } })
+  await settle()
+  assert.equal(descendants(history).filter(el => el.type === 'tr').length, 4)
   assertOd(0.7, start)
   assert.match(text(), /Estado das bombasDesconhecido/)
   assert.match(text(), /Comando pendenteAguardando consulta/)

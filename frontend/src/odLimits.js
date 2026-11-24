@@ -1,5 +1,12 @@
 const MAX_OD_SCALE = 16_383
 
+export function formatOdInput(text, deleting = false) {
+  const value = text.trim()
+  if (deleting && value === '0') return ''
+  if (/^\d+$/.test(value)) return `0,${value.replace(/^0/, '')}`
+  return value.replace(/^(\d*)[.,]+(\d*)$/, (_, integer, decimals) => `${integer || '0'},${decimals}`)
+}
+
 function trimTrailingZeros(digits) {
   let end = digits.length
   while (digits[end - 1] === '0') end--
