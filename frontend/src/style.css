@@ -55,13 +55,14 @@ img { flex: none; }
   min-height: 2.75rem;
   padding: .625rem .75rem;
   border-radius: .5rem;
-  background: var(--navy);
-  color: #fff;
+  color: var(--navy);
   font-size: .875rem;
   font-weight: 700;
   text-decoration: none;
 }
-.system-link img { filter: brightness(0) invert(1); }
+.system-link + .system-link { margin-top: .25rem; }
+.system-link:is(.router-link-exact-active, .system-link-active) { background: var(--navy); color: #fff; }
+.system-link:is(.router-link-exact-active, .system-link-active) img { filter: brightness(0) invert(1); }
 .experiment-nav { display: flex; flex-direction: column; min-height: 6.5rem; border-top: 1px solid var(--line); padding-top: 1.375rem; }
 .sidebar-header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .625rem; font-size: .9375rem; font-weight: 700; }
 .sidebar-header span, .experiment-label { font-size: .75rem; font-weight: 500; }
@@ -265,7 +266,8 @@ td { color: var(--muted); }
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .system-link:hover, button.primary:enabled:hover { background: #203951; }
+  .system-link:hover { background: #eef2f7; }
+  .system-link:is(.router-link-exact-active, .system-link-active):hover, button.primary:enabled:hover { background: #203951; }
   .experiments a:hover, button:enabled:not(.primary, [aria-pressed="true"]):hover { background: #eef2f7; }
   .experiments a.router-link-exact-active:hover, .readings-summary:hover .readings-disclosure { background: #d9eaff; }
   .breadcrumb a:hover, .brand:hover { color: var(--blue); }

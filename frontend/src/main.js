@@ -9,6 +9,12 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: ExperimentDetails },
     { path: '/experimentos/:id', name: 'experiment', component: ExperimentDetails, props: true },
+    {
+      path: '/simulador-3d',
+      name: 'simulator-preview',
+      component: () => import('./simulator-preview/SimulatorPreview.vue'),
+    },
+    { path: '/simulador-3d.html', redirect: { name: 'simulator-preview' } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

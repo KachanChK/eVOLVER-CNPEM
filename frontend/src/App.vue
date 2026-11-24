@@ -4,11 +4,14 @@ import { useRouter } from 'vue-router'
 import { request } from './api'
 import { encodeExperiment, formatOdInput, parseOdLimits } from './odLimits.js'
 import { experimentCode } from './experimentCode.js'
+import VialPicker from './VialPicker.vue'
 import experimentsIcon from './assets/flask.svg'
+import simulatorIcon from './assets/cube.svg'
 import plusIcon from './assets/plus.svg'
 
 const router = useRouter()
 const experiments = ref([])
+const allocationSource = ref('demo')
 const vials = ref([])
 const loading = ref(true)
 const loadError = ref('')
@@ -17,6 +20,7 @@ const name = ref('')
 const cultureType = ref('')
 const cultureTypeError = ref('')
 const vialId = ref('')
+const vialNotice = ref('')
 const odLimits = reactive({ od_min: '', od_max: '' })
 const odErrors = ref({})
 const odFields = { od_min: 'OD mínima', od_max: 'OD máxima' }
@@ -46,10 +50,16 @@ async function refresh(background = false) {
     if (revision !== refreshRevision) return
     loadError.value = ''
     experiments.value = nextExperiments
+    allocationSource.value = 'live'
     vials.value = nextVials
-    if (!nextVials.some((vial) => vial.vial_id === vialId.value)) vialId.value = ''
+    if (vialId.value && !nextVials.some((vial) => vial.vial_id === vialId.value)) {
+      vialId.value = ''
+      if (nextVials.length) vialNotice.value = 'O vial selecionado ficou indisponível. Escolha outro.'
+    }
   } catch (error) {
-    if (!background && revision === refreshRevision) loadError.value = error.message
+    if (revision !== refreshRevision) return
+    if (allocationSource.value === 'live') allocationSource.value = 'stale'
+    if (!background) loadError.value = error.message
   } finally {
     if (background) backgroundRequest = false
     if (revision === refreshRevision) loading.value = false
@@ -61,6 +71,7 @@ function openForm() {
   cultureType.value = ''
   cultureTypeError.value = ''
   vialId.value = ''
+  vialNotice.value = ''
   Object.assign(odLimits, { od_min: '', od_max: '' })
   odErrors.value = {}
   formError.value = ''
@@ -91,7 +102,7 @@ function updateOdLimit(field, event) {
 }
 
 async function createExperiment() {
-  if (saving.value) return
+  if (saving.value || loading.value || loadError.value || !vialId.value) return
   formError.value = ''
   const limits = parseOdLimits(odLimits)
   odErrors.value = limits.errors
@@ -145,9 +156,13 @@ onUnmounted(() => clearInterval(refreshTimer))
       </RouterLink>
       <nav class="system-nav" aria-labelledby="system-nav-title">
         <p id="system-nav-title">Páginas do sistema</p>
-        <RouterLink class="system-link" to="/">
+        <RouterLink class="system-link" :class="{ 'system-link-active': $route.name === 'experiment' }" to="/">
           <img :src="experimentsIcon" alt="" width="20" height="20" />
           Experimentos
+        </RouterLink>
+        <RouterLink class="system-link" :to="{ name: 'simulator-preview' }">
+          <img :src="simulatorIcon" alt="" width="20" height="20" />
+          Prévia 3D
         </RouterLink>
       </nav>
       <nav class="experiment-nav" aria-labelledby="menu-title">
@@ -175,7 +190,7 @@ onUnmounted(() => clearInterval(refreshTimer))
       </nav>
       <div class="sidebar-actions">
         <p v-if="!loading && !loadError && !vials.length" class="message" role="status">{{ noVials }}</p>
-        <button class="primary new-experiment" type="button" :disabled="loading || !!loadError || !vials.length" @click="openForm">
+        <button class="primary new-experiment" type="button" :disabled="loading || !!loadError" @click="openForm">
           <img :src="plusIcon" alt="" width="18" height="18" />
           Novo experimento
         </button>
@@ -185,7 +200,12 @@ onUnmounted(() => clearInterval(refreshTimer))
     <main id="conteudo" tabindex="-1">
       <p class="notice" role="status" v-if="notice">{{ notice }}</p>
       <RouterView v-slot="{ Component, route }">
-        <component :is="Component" :key="route.path" @changed="changed" />
+        <component
+          :is="Component"
+          :key="route.path"
+          v-bind="route.name === 'simulator-preview' ? { experiments, allocationSource } : {}"
+          @changed="changed"
+        />
       </RouterView>
     </main>
   </div>
@@ -209,13 +229,14 @@ onUnmounted(() => clearInterval(refreshTimer))
         @input="cultureTypeError = ''"
       />
       <p v-if="cultureTypeError" id="culture-type-error" class="error" role="alert">{{ cultureTypeError }}</p>
-      <label for="vial">Vial</label>
-      <select id="vial" v-model="vialId" name="vial_id" required :disabled="loading || !vials.length">
-        <option value="" disabled>Selecione um vial</option>
-        <option v-for="vial in vials" :key="vial.vial_id" :value="vial.vial_id">
-          {{ vial.label ?? `Vial ${vial.vial_id}` }}
-        </option>
-      </select>
+      <VialPicker
+        v-model="vialId"
+        :available="vials"
+        :disabled="loading || saving || !!loadError"
+        @update:model-value="vialNotice = ''"
+      />
+      <p v-if="vialNotice" class="message" role="status">{{ vialNotice }}</p>
+      <p v-if="allocationSource === 'stale'" class="message" role="status">A disponibilidade dos vials está desatualizada.</p>
       <p id="od-limits-hint" class="muted">Limites obrigatórios de 0,10 a 0,80. A vírgula é inserida automaticamente.</p>
       <template v-for="(label, field) in odFields" :key="field">
         <label :for="field">{{ label }}</label>
