@@ -20,21 +20,17 @@ resultado `executed` com o `command_id` do grupo.
 
 ### Atualizar uma instalação existente
 
-Aplique as migrações Alembic até `20261122_04` e atualize a ingestão e o
-simulador juntos. A telemetria e os comandos do grupo usam o UUID da alocação
-descoberto via MQTT no campo existente `experiment_run_id`. Os tópicos, os
-IDs numéricos da API e o formato MQTT são preservados. O contrato limita
-`pump_id` a `1` e o simulador reaproveita o estado SQLite existente. Se a descoberta vier
-sem UUID, o simulador ainda envia o ID numérico e usa o grupo desligado.
-Comandos legados sem UUID são recusados.
+Aplique as migrações com `alembic upgrade head`. Inicie e verifique a ingestão
+atualizada antes de iniciar o simulador. A telemetria e os comandos do grupo
+usam o UUID da alocação no campo `experiment_run_id`. O simulador só confirma
+listas com UUID em todos os vials ativos e reaproveita o estado SQLite existente
+das bombas. O contrato limita `pump_id` a `1` e exige o UUID nos comandos do grupo.
 
 A ingestão aceita leituras com ID numérico ou sem identificador para o
-histórico, pela janela de tempo do experimento. Só a OD vinculada ao UUID
+histórico, pela janela de tempo do experimento. Só a OD ao vivo vinculada ao UUID
 pode participar do controle e da retomada do grupo. O UUID mantém leituras
 atrasadas na alocação original quando a janela ainda é válida. Um UUID
 desconhecido no banco recriado é recusado, mesmo com IDs numéricos repetidos.
-A ingestão antiga espera IDs numéricos na telemetria, e o simulador antigo
-espera a resposta de descoberta sem UUID.
 
 Mantenha o SQLite. As tabelas antigas continuam no arquivo. Como seus registros
 numéricos podem pertencer a outro banco, o simulador não os restaura nem
@@ -93,23 +89,14 @@ Na raiz, execute o simulador:
 .\scripts\simular.ps1
 ```
 
-O simulador executa continuamente, com rodadas a cada 0,5 segundo. Em cada rodada,
-consulta a ingestão via MQTT para descobrir os vials em uso e envia OD, pH e temperatura
-para cada um. Novos experimentos passam a receber medições automaticamente; experimentos
-encerrados deixam de recebê-las na próxima consulta. Sem vials ativos, continua aguardando.
-Para encerrar, pressione **Ctrl+C na janela do simulador**. Os demais serviços continuam
-funcionando. Confirmações MQTT lentas podem atrasar as rodadas; falhas de conexão ainda
-são informadas e encerram o programa.
+O simulador grava rodadas de OD, pH e temperatura a cada 0,5 segundo no
+SQLite. Descobre alocações e envia pendências em ciclos independentes da coleta.
+Durante uma indisponibilidade usa a última lista confirmada, inclusive depois de
+reiniciar. Uma lista confirmada vazia deixa a coleta aguardando novos experimentos.
+Para encerrar, pressione **Ctrl+C na janela do simulador**.
 
-O terminal mostra o valor de cada medição enviada, por exemplo:
-
-```text
-Frasco 1 | OD: 0.346191 | Enviado ao MQTT
-Frasco 1 | pH: 7.000101 | Enviado ao MQTT
-Frasco 1 | Temperatura: 37.002365 °C | Enviado ao MQTT
-```
-
-O envio ao MQTT não confirma que a medição foi gravada no banco.
+Os logs mostram o estado da coleta e do envio, a quantidade em quarentena,
+a contagem de pendências, a idade da mais antiga e as confirmações.
 
 Para um teste mais curto com uma medição de cada tipo:
 
@@ -117,12 +104,11 @@ Para um teste mais curto com uma medição de cada tipo:
 uv run --env-file simulator/.env --package evolver-cnpem-simulator python -m evolver_simulator --max-messages 3
 ```
 
-O limite conta medições geradas, não mensagens de consulta MQTT. Sem limite configurado,
-a execução continua até a interrupção por Ctrl+C. Cada medição é publicada no
-contrato `evolver/v1/{equipment_id}/telemetry`. A ingestão salva temperatura em
-`temperature_readings`, pH em `ph_readings` e OD em `od_readings`. O PUBACK
-confirma a entrega ao broker, não a gravação no banco: confira o log da ingestão ou
-consulte a tabela para verificar o salvamento.
+O limite conta medições novas confirmadas no SQLite. Ao atingir o limite, o
+simulador tenta concluir os envios por até 5 s e registra as pendências ao sair.
+Cada medição é publicada em `evolver/v1/{equipment_id}/telemetry`. A fila mantém
+o evento após o PUBACK do broker e remove a pendência ao receber a confirmação
+de gravação da ingestão.
 
 ## Ajustes opcionais
 
@@ -131,13 +117,17 @@ consulte a tabela para verificar o salvamento.
   Sem esse ajuste, cada execução começa com novas sequências.
 - `SIMULATOR_MAX_MESSAGES`: limite opcional de medições; `--max-messages` tem prioridade.
   Deixe ambos sem definir para executar sem limite.
+- `SIMULATOR_TELEMETRY_QUEUE_PATH` define o arquivo da fila. Por padrão é
+  `telemetry.sqlite3` no mesmo diretório do estado das bombas. Use disco local
+  e mantenha um simulador por arquivo.
+- `SIMULATOR_TELEMETRY_QUEUE_MAX_EVENTS` define a cota para pendências e
+  quarentena. A cota de 259.200 eventos cobre uma hora com 12 vials.
 - Para experimentar uma pausa, configure `SIMULATOR_PAUSE_AFTER_MESSAGES` e
   `SIMULATOR_PAUSE_SECONDS`. Para simular uma falha, use `SIMULATOR_FAIL_AFTER_MESSAGES`.
 
-As opções avançadas de pH e temperatura estão em `SimulatorSettings`.
-MQTT usa versão 5, QoS 1 e mensagens não retidas. Não há fila
-local nem confirmação de gravação no banco; se a ingestão ou o banco estiverem fora
-do ar, a temperatura pode não ser salva.
+Ao faltar espaço para gravar a rodada, a coleta pausa. O envio continua enquanto
+o SQLite estiver disponível e a coleta volta quando houver espaço suficiente.
+Consulte o [procedimento de inspeção e quarentena](../operations/README.md#recuperação-de-telemetria).
 
 ## Reproduzir dois ciclos de OD
 

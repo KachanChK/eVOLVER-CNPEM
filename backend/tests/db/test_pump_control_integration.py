@@ -21,6 +21,7 @@ from evolver.ingestion.control import (
     queue_safety_offs,
     record_result,
 )
+from evolver.ingestion.telemetry import FutureReading
 from evolver_contracts.models import (
     ExecutedCommandResult,
     ReceivedCommandResult,
@@ -47,7 +48,7 @@ def control_database(monkeypatch: pytest.MonkeyPatch):
     engine = create_engine(database_url)
     with engine.begin() as connection:
         connection.execute(text("""
-            TRUNCATE od_readings, pump_commands, pump_control, experiments
+            TRUNCATE telemetry_events, od_readings, pump_commands, pump_control, experiments
             RESTART IDENTITY CASCADE
         """))
     try:
@@ -546,7 +547,8 @@ class PumpRun:
         assert response.json()["state"] == state
 
     def od(
-        self, value: float, sequence: int, generated_at: datetime, *, legacy: bool = False,
+        self, value: float, sequence: int, generated_at: datetime, *,
+        legacy: bool = False, live: bool = True,
     ) -> UUID:
         event = TelemetryEvent(
             schema_version="1.0", event_id=uuid4(), producer_id="simulator-local-01",
@@ -556,6 +558,7 @@ class PumpRun:
         )
         assert store_v1_message(
             self.engine, "evolver/v1/evolver-sim-01/telemetry", event.model_dump_json().encode(),
+            live=live,
         ) == "gravada"
         return event.event_id
 
@@ -743,7 +746,8 @@ def test_resumption_persists_and_evaluates_od_when_off_executes(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("case", [
-    "older_sequence", "same_identity", "invalid_newer", "legacy_newer", "future", "reused_vial",
+    "older_sequence", "same_identity", "invalid_newer", "legacy_newer", "history", "future",
+    "reused_vial",
 ])
 def test_resume_uses_exact_accepted_od_cursor(control_database: Engine, case: str) -> None:
     with TestClient(app) as client:
@@ -759,8 +763,15 @@ def test_resume_uses_exact_accepted_od_cursor(control_database: Engine, case: st
             run.od(0.81, 3, timestamp)
         elif case == "legacy_newer":
             run.od(0.2, 3, run.now(), legacy=True)
+        elif case == "history":
+            historical = run.od(0.2, 3, run.now(), live=False)
+            with run.engine.connect() as connection:
+                assert connection.execute(text("""
+                    SELECT allocation_verified, control_eligible
+                    FROM od_readings WHERE event_id = :id
+                """), {"id": historical}).one() == (True, False)
         elif case == "future":
-            with pytest.raises(ValueError, match="experimento ativo"):
+            with pytest.raises(FutureReading):
                 run.od(0.2, 3, timestamp + timedelta(seconds=5))
         else:
             previous = run

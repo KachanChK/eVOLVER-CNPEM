@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import math
 import os
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
-from uuid import UUID
+from socket import IPPROTO_TCP, TCP_NODELAY
 
-from evolver_contracts.models import CommandResultPayload, TelemetryEvent
+from evolver_contracts.models import CommandResultPayload
 from evolver_contracts.pilot import (
     ACTIVE_VIALS_REQUEST,
     ACTIVE_VIALS_RESPONSE,
@@ -20,16 +20,18 @@ from paho.mqtt import client as mqtt
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
 from .control import (
     command_is_current,
-    consider_od,
     expire_commands,
     invalidate_controls,
     pending_commands,
     queue_safety_offs,
     record_result,
 )
+from .telemetry import store_v1_message as store_v1_message
+from .telemetry import telemetry_is_live, telemetry_outcome
 
 
 def active_vials(engine: Engine, payload: bytes) -> AllocationResponse:
@@ -51,149 +53,143 @@ def active_vials(engine: Engine, payload: bytes) -> AllocationResponse:
     return AllocationResponse.model_validate({"request_id": request.request_id, "vials": rows})
 
 
-def store_v1_message(engine: Engine, topic: str, payload: bytes) -> str:
-    """Associate a simulator reading with the vial allocation at generation time."""
-    message = TelemetryEvent.model_validate_json(payload)
-    if (
-        message.equipment_id != EQUIPMENT_ID
-        or topic != f"evolver/v1/{message.equipment_id}/telemetry"
-    ):
-        raise ValueError("equipamento não corresponde ao tópico")
-    if not message.vial_id.isascii() or not message.vial_id.isdecimal():
-        raise ValueError("vial inválido")
-    vial_id = int(message.vial_id)
-    if not 1 <= vial_id <= 12 or not math.isfinite(message.value):
-        raise ValueError("vial ou valor inválido")
-    run_id = message.experiment_run_id
-    experiment_id = allocation_id = None
-    if run_id is not None:
-        if run_id.isascii() and run_id.isdecimal():
-            experiment_id = int(run_id)
-            if not 1 <= experiment_id <= 2**63 - 1:
-                raise ValueError("experimento inválido")
-        else:
-            try:
-                allocation_id = UUID(run_id)
-            except ValueError as exc:
-                raise ValueError("experimento inválido") from exc
-    params = {
-        "vial_id": vial_id,
-        "equipment_id": message.equipment_id,
-        "generated_at": message.generated_at,
-        "received_at": None,
-        "event_id": message.event_id,
-        "value": message.value,
-        "measurement_type": message.measurement_type,
-        "producer_id": message.producer_id,
-        "sequence": message.sequence,
-        "expected_experiment_id": experiment_id,
-        "allocation_id": allocation_id,
-        "allocation_verified": allocation_id is not None,
-    }
-    with engine.begin() as connection:
-        params["received_at"] = connection.scalar(text("SELECT clock_timestamp()"))
-        allocation = connection.execute(
-            text("""
-            SELECT e.id FROM experiments e JOIN vials v ON v.vial_id = e.vial_id
-            WHERE e.vial_id = :vial_id AND v.equipment_id = :equipment_id
-              AND (CAST(:expected_experiment_id AS bigint) IS NULL
-                   OR e.id = :expected_experiment_id)
-              AND (CAST(:allocation_id AS uuid) IS NULL OR e.allocation_id = :allocation_id)
-              AND e.started_at <= :generated_at
-              AND (e.ended_at IS NULL OR :generated_at < e.ended_at)
-              AND :generated_at <= :received_at
-            FOR UPDATE OF e
-        """),
-            params,
-        ).scalar_one_or_none()
-        if allocation is None:
-            raise ValueError("não havia experimento ativo no horário da leitura")
-        params["experiment_id"] = allocation
-        if message.measurement_type == "temperature":
-            statement = """INSERT INTO temperature_readings
-                (event_id, generated_at, received_at, vial_id, experiment_id, temperature_celsius)
-                VALUES (:event_id, :generated_at, :received_at, :vial_id, :experiment_id, :value)
-                ON CONFLICT (event_id, generated_at) DO NOTHING"""
-        elif message.measurement_type == "ph":
-            statement = """INSERT INTO ph_readings
-                (event_id, generated_at, received_at, vial_id, experiment_id, ph_value)
-                VALUES (:event_id, :generated_at, :received_at, :vial_id, :experiment_id, :value)
-                ON CONFLICT (event_id, generated_at) DO NOTHING"""
-        else:
-            statement = """INSERT INTO od_readings
-                (event_id, generated_at, received_at, vial_id, experiment_id,
-                 od_value, producer_id, sequence, allocation_verified)
-                VALUES (:event_id, :generated_at, :received_at, :vial_id, :experiment_id,
-                        :value, :producer_id, :sequence, :allocation_verified)
-                ON CONFLICT (event_id, generated_at) DO NOTHING"""
-        result = connection.execute(text(statement), params)
-        if result.rowcount and message.measurement_type == "od" and allocation_id is not None:
-            consider_od(connection, params, params["received_at"])
-    return "gravada" if result.rowcount else "duplicada"
-
-
 def main() -> None:
-    database_url = os.environ["DATABASE_URL"]
-    password = os.environ["MQTT_INGESTION_PASSWORD"]
-    engine = create_engine(database_url)
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
-    client.username_pw_set("evolver-ingestion", password)
+    engine = create_engine(
+        os.environ["DATABASE_URL"], pool_pre_ping=True,
+        connect_args={"connect_timeout": 2, "options": "-c statement_timeout=3000"},
+    )
+    client = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5, reconnect_on_failure=False,
+    )
+    client.connect_timeout = 2
+    client.on_socket_open = lambda _client, _userdata, socket: socket.setsockopt(
+        IPPROTO_TCP, TCP_NODELAY, 1,
+    )
+    client.username_pw_set("evolver-ingestion", os.environ["MQTT_INGESTION_PASSWORD"])
+    host = os.getenv("MQTT_HOST", "127.0.0.1")
+    port = int(os.getenv("MQTT_PORT", "1883"))
+    command_results_topic = f"evolver/v1/{EQUIPMENT_ID}/command-results"
+    next_connect = next_database_poll = 0.0
+    invalidate_pending = safety_offs_pending = True
+    database_degraded = False
+    awaiting_puback = {}
+    history = ThreadPoolExecutor(max_workers=6)
+    pending_history: set[Future[tuple[str, str] | None]] = set()
+
+    def database_failed(exc: SQLAlchemyError) -> None:
+        nonlocal next_database_poll, invalidate_pending, safety_offs_pending, database_degraded
+        if not database_degraded:
+            print(f"Banco indisponível para ingestão; nova tentativa em 1 s: {exc}", flush=True)
+        database_degraded = True
+        next_database_poll = time.monotonic() + 1
+        invalidate_pending = safety_offs_pending = True
+        for future in pending_history:
+            future.cancel()
+
+    def publish_outcome(outcome: tuple[str, str] | None) -> None:
+        if outcome is not None and client.is_connected():
+            client.publish(*outcome, qos=1, retain=False)
 
     def on_connect(client, userdata, flags, reason_code, properties) -> None:
-        del userdata, flags, properties
+        nonlocal invalidate_pending, safety_offs_pending
         if reason_code.is_failure:
-            raise ConnectionError(f"MQTT connection rejected: {reason_code}")
-        with engine.begin() as connection:
-            invalidate_controls(connection)
-        client.subscribe(
-            [
-                ("evolver/v1/+/telemetry", 1),
-                (ACTIVE_VIALS_REQUEST, 1),
-                (f"evolver/v1/{EQUIPMENT_ID}/command-results", 1),
-            ]
-        )
-        with engine.begin() as connection:
-            queue_safety_offs(connection, datetime.now(UTC))
-        print("Ingestão MQTT pronta para telemetria e comandos.", flush=True)
+            print(f"Conexão MQTT recusada: {reason_code}", flush=True)
+            return
+        invalidate_pending = safety_offs_pending = True
+        client.subscribe([
+            ("evolver/v1/+/telemetry", 1),
+            (ACTIVE_VIALS_REQUEST, 1),
+            (command_results_topic, 1),
+        ])
+        print("Ingestão conectada ao MQTT.", flush=True)
+
+    def on_disconnect(client, userdata, flags, reason_code, properties) -> None:
+        nonlocal invalidate_pending, safety_offs_pending
+        invalidate_pending = safety_offs_pending = True
 
     def on_message(client, userdata, message) -> None:
-        del userdata
+        if message.retain or (invalidate_pending and time.monotonic() < next_database_poll):
+            return
         try:
             if message.topic == ACTIVE_VIALS_REQUEST:
                 response = active_vials(engine, message.payload)
                 client.publish(ACTIVE_VIALS_RESPONSE, response.model_dump_json(), qos=1)
-                return
-            if message.topic == f"evolver/v1/{EQUIPMENT_ID}/command-results":
+            elif message.topic == command_results_topic:
                 result = TypeAdapter(CommandResultPayload).validate_json(message.payload)
                 if result.equipment_id != EQUIPMENT_ID:
                     raise ValueError("equipamento não corresponde ao resultado")
                 with engine.begin() as connection:
                     record_result(connection, result)
-                return
-            status = store_v1_message(engine, message.topic, message.payload)
-            print(f"Medição {status}: {message.topic}", flush=True)
-        except Exception as exc:
-            print(f"Mensagem não gravada: {exc}", flush=True)
+            elif telemetry_is_live(message.properties):
+                publish_outcome(telemetry_outcome(
+                    engine, message, control_ready=not (invalidate_pending or safety_offs_pending),
+                ))
+            elif len(pending_history) < 128:
+                pending_history.add(
+                    history.submit(telemetry_outcome, engine, message, control_ready=False),
+                )
+        except SQLAlchemyError as exc:
+            database_failed(exc)
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"Mensagem sem desfecho: {exc}", flush=True)
 
     client.on_connect = on_connect
-    def on_disconnect(client, userdata, flags, reason_code, properties) -> None:
-        del client, userdata, flags, reason_code, properties
-        with engine.begin() as connection:
-            invalidate_controls(connection)
-
     client.on_disconnect = on_disconnect
     client.on_message = on_message
-    awaiting_puback = {}
     try:
-        client.connect(os.getenv("MQTT_HOST", "127.0.0.1"), int(os.getenv("MQTT_PORT", "1883")))
-        client.loop_start()
+        network_open = False
         while True:
-            now = datetime.now(UTC)
-            with engine.begin() as connection:
-                expire_commands(connection, now)
-                commands = pending_commands(connection, now) if client.is_connected() else []
-            for command in commands:
+            monotonic_now = time.monotonic()
+            if not network_open and monotonic_now >= next_connect:
                 try:
+                    network_open = client.connect(host, port) == mqtt.MQTT_ERR_SUCCESS
+                except OSError as exc:
+                    print(f"Broker MQTT indisponível; nova tentativa em 1 s: {exc}", flush=True)
+                next_connect = time.monotonic() + 1
+            if network_open:
+                timeout = 0.01 if pending_history else 0.05
+                network_open = client.loop(timeout=timeout) == mqtt.MQTT_ERR_SUCCESS
+            else:
+                time.sleep(0.05)
+
+            for future in tuple(pending_history):
+                if not future.done():
+                    continue
+                pending_history.remove(future)
+                if future.cancelled():
+                    continue
+                try:
+                    publish_outcome(future.result())
+                except SQLAlchemyError as exc:
+                    if isinstance(exc, DBAPIError) and getattr(exc.orig, "sqlstate", None) in (
+                        "40001", "40P01", "55P03", "57014",
+                    ):
+                        print(f"Telemetria histórica sem desfecho: {exc.orig}", flush=True)
+                    else:
+                        database_failed(exc)
+                except (ValueError, OSError, RuntimeError) as exc:
+                    print(f"Mensagem sem desfecho: {exc}", flush=True)
+
+            if time.monotonic() < next_database_poll:
+                continue
+            next_database_poll = time.monotonic() + 0.2
+            now = datetime.now(UTC)
+            connected = client.is_connected()
+            try:
+                with engine.begin() as connection:
+                    if invalidate_pending:
+                        invalidate_controls(connection)
+                    expire_commands(connection, now)
+                    if connected and safety_offs_pending:
+                        queue_safety_offs(connection, now)
+                    commands = pending_commands(connection, now) if connected else []
+                if database_degraded:
+                    print("Conexão da ingestão com o banco recuperada.", flush=True)
+                    database_degraded = False
+                invalidate_pending = False
+                if connected:
+                    safety_offs_pending = False
+                for command in commands:
                     with engine.begin() as connection:
                         if not command_is_current(connection, command):
                             continue
@@ -213,21 +209,23 @@ def main() -> None:
                         )
                     if info.rc == mqtt.MQTT_ERR_SUCCESS:
                         awaiting_puback[command.command_id] = (info, command.expires_at)
-                except (RuntimeError, OSError) as exc:
-                    print(f"Comando sem confirmação de transporte: {exc}", flush=True)
-            for command_id, (info, expires_at) in list(awaiting_puback.items()):
-                if info.is_published():
-                    with engine.begin() as connection:
-                        connection.execute(text("""
-                            UPDATE pump_commands SET puback_at = clock_timestamp()
-                            WHERE command_id = :command_id
-                        """), {"command_id": command_id})
-                elif expires_at > now:
-                    continue
-                del awaiting_puback[command_id]
-            time.sleep(0.2)
+                for command_id, (info, expires_at) in list(awaiting_puback.items()):
+                    if info.is_published():
+                        with engine.begin() as connection:
+                            connection.execute(text("""
+                                UPDATE pump_commands SET puback_at = clock_timestamp()
+                                WHERE command_id = :command_id
+                            """), {"command_id": command_id})
+                    elif expires_at > now:
+                        continue
+                    del awaiting_puback[command_id]
+            except SQLAlchemyError as exc:
+                database_failed(exc)
+            except (RuntimeError, OSError) as exc:
+                print(f"Comando sem confirmação de transporte: {exc}", flush=True)
     finally:
-        client.loop_stop()
+        client.disconnect()
+        history.shutdown(wait=True, cancel_futures=True)
         engine.dispose()
 
 

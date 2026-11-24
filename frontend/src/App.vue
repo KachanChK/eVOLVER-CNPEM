@@ -2,7 +2,10 @@
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from './api'
-import { encodeExperiment, parseOdLimits } from './odLimits.js'
+import { encodeExperiment, formatOdInput, parseOdLimits } from './odLimits.js'
+import { experimentCode } from './experimentCode.js'
+import experimentsIcon from './assets/flask.svg'
+import plusIcon from './assets/plus.svg'
 
 const router = useRouter()
 const experiments = ref([])
@@ -69,7 +72,19 @@ function validateCultureType(event) {
   event.target.focus()
 }
 
-function updateOdErrors() {
+function updateOdLimit(field, event) {
+  if (event.isComposing) return
+  const input = event.target
+  const { value, selectionStart } = input
+  const formatted = formatOdInput(value, event.inputType?.startsWith('delete'))
+  if (formatted !== value) {
+    const caret = event.inputType === 'deleteContentBackward' && selectionStart <= 1
+      ? selectionStart
+      : selectionStart + formatted.length - value.length
+    input.value = formatted
+    input.setSelectionRange(Math.max(0, caret), Math.max(0, caret))
+  }
+  odLimits[field] = formatted
   if (odErrors.value.od_min || odErrors.value.od_max) {
     odErrors.value = parseOdLimits(odLimits).errors
   }
@@ -122,37 +137,52 @@ onUnmounted(() => clearInterval(refreshTimer))
 </script>
 
 <template>
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
   <div class="workspace">
     <aside class="sidebar">
-      <RouterLink class="brand" to="/">eVOLVER <span>CNPEM</span></RouterLink>
-      <div class="sidebar-header">
-        <h2 id="menu-title">Experimentos</h2>
-        <button class="primary" :disabled="loading || !!loadError || !vials.length" @click="openForm">
-          Criar experimento
-        </button>
-      </div>
-      <p v-if="loading" class="muted" role="status">Carregando experimentos…</p>
-      <div v-else-if="loadError" class="message" role="alert">
-        <p>{{ loadError }}</p>
-        <button @click="refresh()">Tentar novamente</button>
-      </div>
-      <p v-else-if="!vials.length" class="message" role="status">
-        {{ noVials }}
-      </p>
-      <nav aria-labelledby="menu-title">
+      <RouterLink class="brand" to="/" translate="no">
+        <strong>eVOLVER</strong> <span class="muted">CNPEM</span>
+      </RouterLink>
+      <nav class="system-nav" aria-labelledby="system-nav-title">
+        <p id="system-nav-title">Páginas do sistema</p>
+        <RouterLink class="system-link" to="/">
+          <img :src="experimentsIcon" alt="" width="20" height="20" />
+          Experimentos
+        </RouterLink>
+      </nav>
+      <nav class="experiment-nav" aria-labelledby="menu-title">
+        <div class="sidebar-header">
+          <p id="menu-title">Seus experimentos</p>
+          <span v-if="!loadError && (!loading || experiments.length)" class="muted">{{ experiments.length }} no total</span>
+        </div>
+        <p v-if="loading && !experiments.length" class="muted" role="status">Carregando experimentos…</p>
+        <div v-else-if="loadError" class="message" role="alert">
+          <p>{{ loadError }}</p>
+          <button type="button" @click="refresh()">Tentar novamente</button>
+        </div>
         <ul class="experiments">
           <li v-for="experiment in experiments" :key="experiment.id">
             <RouterLink :to="{ name: 'experiment', params: { id: experiment.id } }">
-              <strong>{{ experiment.name }}</strong>
-              <span>Vial {{ experiment.vial_id }} · {{ experiment.status === 'active' ? 'Ativo' : 'Inativo' }}</span>
+              <span class="experiment-label">
+                <span translate="no">{{ experimentCode(experiment.id) }}</span>
+                <span>{{ experiment.status === 'active' ? 'Ativo' : 'Inativo' }}</span>
+              </span>
+              <strong class="experiment-name" :title="experiment.name">{{ experiment.name }}</strong>
             </RouterLink>
           </li>
         </ul>
         <p v-if="!loading && !loadError && !experiments.length" class="muted">Nenhum experimento cadastrado.</p>
       </nav>
+      <div class="sidebar-actions">
+        <p v-if="!loading && !loadError && !vials.length" class="message" role="status">{{ noVials }}</p>
+        <button class="primary new-experiment" type="button" :disabled="loading || !!loadError || !vials.length" @click="openForm">
+          <img :src="plusIcon" alt="" width="18" height="18" />
+          Novo experimento
+        </button>
+      </div>
     </aside>
 
-    <main>
+    <main id="conteudo" tabindex="-1">
       <p class="notice" role="status" v-if="notice">{{ notice }}</p>
       <RouterView v-slot="{ Component, route }">
         <component :is="Component" :key="route.path" @changed="changed" />
@@ -161,14 +191,15 @@ onUnmounted(() => clearInterval(refreshTimer))
   </div>
 
   <dialog ref="dialog" aria-labelledby="create-title" @cancel="saving && $event.preventDefault()">
-    <form @submit.prevent="createExperiment">
+    <form autocomplete="off" @submit.prevent="createExperiment">
       <h2 id="create-title">Novo experimento</h2>
       <label for="name">Nome</label>
-      <input id="name" v-model="name" type="text" maxlength="120" required autofocus />
+      <input id="name" v-model="name" name="name" type="text" maxlength="120" required />
       <label for="culture-type">Tipo de cultura</label>
       <input
         id="culture-type"
         v-model="cultureType"
+        name="culture_type"
         type="text"
         required
         pattern=".*[^\s\u0085].*"
@@ -179,18 +210,18 @@ onUnmounted(() => clearInterval(refreshTimer))
       />
       <p v-if="cultureTypeError" id="culture-type-error" class="error" role="alert">{{ cultureTypeError }}</p>
       <label for="vial">Vial</label>
-      <select id="vial" v-model="vialId" required :disabled="loading || !vials.length">
+      <select id="vial" v-model="vialId" name="vial_id" required :disabled="loading || !vials.length">
         <option value="" disabled>Selecione um vial</option>
         <option v-for="vial in vials" :key="vial.vial_id" :value="vial.vial_id">
           {{ vial.label ?? `Vial ${vial.vial_id}` }}
         </option>
       </select>
-      <p id="od-limits-hint" class="muted">Limites obrigatórios de 0,10 a 0,80. Use vírgula decimal.</p>
+      <p id="od-limits-hint" class="muted">Limites obrigatórios de 0,10 a 0,80. A vírgula é inserida automaticamente.</p>
       <template v-for="(label, field) in odFields" :key="field">
         <label :for="field">{{ label }}</label>
         <input
           :id="field"
-          v-model="odLimits[field]"
+          :value="odLimits[field]"
           :name="field"
           type="text"
           inputmode="decimal"
@@ -199,7 +230,8 @@ onUnmounted(() => clearInterval(refreshTimer))
           aria-required="true"
           :aria-invalid="odErrors[field] ? 'true' : undefined"
           :aria-describedby="odErrors[field] ? `od-limits-hint ${field}-error` : 'od-limits-hint'"
-          @input="updateOdErrors"
+          @input="updateOdLimit(field, $event)"
+          @compositionend="updateOdLimit(field, $event)"
         />
         <p v-if="odErrors[field]" :id="`${field}-error`" class="error" role="alert">
           {{ odErrors[field] }}

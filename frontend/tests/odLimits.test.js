@@ -1,6 +1,27 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { encodeExperiment, formatOdLimits, parseOdLimits } from '../src/odLimits.js'
+import { encodeExperiment, formatOdInput, formatOdLimits, parseOdLimits } from '../src/odLimits.js'
+
+test('adds the decimal comma while typing or pasting OD without rounding', () => {
+  for (const [input, formatted] of [
+    ['', ''],
+    ['0', '0,'],
+    ['1', '0,1'],
+    ['17', '0,17'],
+    ['017', '0,17'],
+    ['64', '0,64'],
+    [' 0.64 ', '0,64'],
+    [',17', '0,17'],
+    ['0,,17', '0,17'],
+    ['0,.64', '0,64'],
+    ['0,123456789', '0,123456789'],
+    ['0,17x', '0,17x'],
+  ]) {
+    assert.equal(formatOdInput(input), formatted)
+  }
+  assert.equal(formatOdInput('0', true), '')
+  assert.equal(formatOdInput('0,', true), '0,')
+})
 
 test('accepts comma decimals including the endpoints and sends numbers', () => {
   for (const [minimum, maximum, expected] of [

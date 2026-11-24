@@ -20,6 +20,7 @@ class SimulatorSettings(BaseSettings):
         extra="ignore",
         frozen=True,
         populate_by_name=True,
+        allow_inf_nan=False,
     )
 
     # Conexão com o broker MQTT.
@@ -41,6 +42,13 @@ class SimulatorSettings(BaseSettings):
     pump_state_path: Path = Field(
         default=Path.home() / ".evolver-simulator" / "pump-state.sqlite3",
         validation_alias="SIMULATOR_PUMP_STATE_PATH",
+    )
+    telemetry_queue_path: Path = Field(
+        default_factory=lambda data: data["pump_state_path"].with_name("telemetry.sqlite3"),
+        validation_alias="SIMULATOR_TELEMETRY_QUEUE_PATH",
+    )
+    telemetry_queue_max_events: PositiveInt = Field(
+        default=259_200, validation_alias="SIMULATOR_TELEMETRY_QUEUE_MAX_EVENTS",
     )
 
     # Identidade, frascos e ritmo das medições.
@@ -97,6 +105,8 @@ class SimulatorSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_simulated_scenario(self) -> Self:
+        if self.telemetry_queue_path.resolve() == self.pump_state_path.resolve():
+            raise ValueError("a fila de telemetria deve usar um arquivo separado")
         pause_is_partial = (self.pause_after_messages is None) != (self.pause_seconds is None)
         if pause_is_partial:
             raise ValueError(

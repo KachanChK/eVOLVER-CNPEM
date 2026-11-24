@@ -95,6 +95,10 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
                 historical_experiment,
                 value,
             )
+            assert connection.execute(text("""
+                SELECT measurement_type, generated_at, payload_hash
+                FROM telemetry_events WHERE event_id = :id
+            """), {"id": historical_ids[kind]}).one() == (kind, historical_time, None)
         assert connection.scalar(text("SELECT to_regclass('public.other_readings')")) is None
         assert (
             connection.execute(
@@ -295,8 +299,12 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
             "sequence": 1,
         }
         # A delayed reading must stay with the old experiment after vial reuse.
-        assert store_v1_message(engine, v1_topic, json.dumps(v1).encode()) == "gravada"
-        assert store_v1_message(engine, v1_topic, json.dumps(v1).encode()) == "duplicada"
+        raw_v1 = json.dumps(v1).encode()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(
+                lambda _: store_v1_message(engine, v1_topic, raw_v1), range(2),
+            ))
+        assert sorted(outcomes) == ["duplicada", "gravada"]
         assert client.get(f"{first_url}/readings/ph").json()[0]["value"] == 7.1
         assert client.get(f"{second_url}/readings/ph").json() == []
         with pytest.raises(ValueError, match="experimento ativo"):
@@ -306,11 +314,17 @@ def test_temperature_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
                 json.dumps(
                     {
                         **v1,
+                        "event_id": str(uuid4()),
                         "experiment_run_id": str(first["id"]),
                         "generated_at": newer_time,
                     }
                 ).encode(),
             )
+        for change in (
+            {"generated_at": newer_time}, {"measurement_type": "od"}, {"value": 7.2},
+        ):
+            with pytest.raises(ValueError, match="event_id"):
+                store_v1_message(engine, v1_topic, json.dumps({**v1, **change}).encode())
         for kind, value in [("od", 0.42), ("temperature", 36.8)]:
             event = {
                 **v1,
