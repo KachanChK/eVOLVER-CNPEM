@@ -1,6 +1,7 @@
 """Messages for active vial allocation queries."""
 
-from typing import Annotated
+from decimal import Decimal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +19,15 @@ class AllocationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: UUID
+    include_test_state: bool = False
+
+
+class PumpTestState(BaseModel):
+    automatic: bool
+    confirmed_state: Literal["on", "off", "unknown"]
+    od_min: Decimal | None
+    od_max: Decimal | None
+    pending: bool
 
 
 class ActiveVial(BaseModel):
@@ -26,7 +36,13 @@ class ActiveVial(BaseModel):
     vial_id: VialID
     experiment_id: DatabaseID
     allocation_id: UUID | None = None
+    experiment_name: str | None = None
+    pump_test: PumpTestState | None = None
 
 
-class AllocationResponse(AllocationRequest):
+class AllocationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
     vials: list[ActiveVial] = Field(max_length=12)
+    od_alert_range: tuple[float, float] | None = None

@@ -1,15 +1,18 @@
 <script setup>
-import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from './api'
+import { createAlertFeed } from './alerts.js'
 import { encodeExperiment, formatOdInput, MAX_OD_INPUT_DECIMALS, parseOdLimits } from './odLimits.js'
 import { experimentCode } from './experimentCode.js'
 import VialPicker from './VialPicker.vue'
+import AlertDetails from './AlertDetails.vue'
 import experimentsIcon from './assets/flask.svg'
 import simulatorIcon from './assets/cube.svg'
 import plusIcon from './assets/plus.svg'
 
 const router = useRouter()
+const alertFeed = createAlertFeed(request, () => router.currentRoute.value.name === 'alerts')
 const experiments = ref([])
 const allocationSource = ref('demo')
 const vials = ref([])
@@ -144,9 +147,16 @@ async function changed(message) {
 
 onMounted(() => {
   refresh()
+  alertFeed.start()
   refreshTimer = setInterval(() => refresh(true), 5000)
 })
-onUnmounted(() => clearInterval(refreshTimer))
+onUnmounted(() => {
+  alertFeed.stop()
+  clearInterval(refreshTimer)
+})
+watch(() => router.currentRoute.value.name, (route) => {
+  if (route === 'alerts') void alertFeed.poll()
+})
 </script>
 
 <template>
@@ -161,6 +171,13 @@ onUnmounted(() => clearInterval(refreshTimer))
         <RouterLink class="system-link" :class="{ 'system-link-active': $route.name === 'experiment' }" to="/">
           <img :src="experimentsIcon" alt="" width="20" height="20" />
           Experimentos
+        </RouterLink>
+        <RouterLink class="system-link alerts-link" :to="{ name: 'alerts' }">
+          <span class="alerts-link-icon" aria-hidden="true">!</span>
+          Alertas
+          <span v-if="alertFeed.state.hasUnread" class="alerts-unread">
+            <span class="alerts-sr-only">com alertas não lidos</span>
+          </span>
         </RouterLink>
         <RouterLink class="system-link" :to="{ name: 'simulator-preview' }">
           <img :src="simulatorIcon" alt="" width="20" height="20" />
@@ -205,12 +222,24 @@ onUnmounted(() => clearInterval(refreshTimer))
         <component
           :is="Component"
           :key="route.path"
-          v-bind="route.name === 'simulator-preview' ? { experiments, allocationSource } : {}"
+          v-bind="route.name === 'simulator-preview' ? { experiments, allocationSource }
+            : route.name === 'alerts' ? { feed: alertFeed } : {}"
           @changed="changed"
         />
       </RouterView>
     </main>
   </div>
+
+  <aside class="alert-notices" aria-label="Alertas recentes" aria-live="polite" aria-relevant="additions text">
+    <article v-for="alert in alertFeed.state.notices" :id="'alert-notice-' + alert.id"
+             :key="alert.id" class="panel alert-notice">
+      <AlertDetails :alert="alert" />
+      <button type="button" :aria-label="'Fechar alerta de ' + alert.experiment_name + ', vial ' + alert.vial_id"
+              @click="alertFeed.dismiss(alert.id)">
+        <span aria-hidden="true">×</span>
+      </button>
+    </article>
+  </aside>
 
   <dialog ref="dialog" aria-labelledby="create-title" @cancel="saving && $event.preventDefault()">
     <form autocomplete="off" @submit.prevent="createExperiment">

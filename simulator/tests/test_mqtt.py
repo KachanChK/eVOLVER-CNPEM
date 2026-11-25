@@ -19,14 +19,70 @@ from evolver_contracts.pilot import (
     ACTIVE_VIALS_RESPONSE,
     TELEMETRY_MODE_PROPERTY,
     ActiveVial,
+    AllocationResponse,
+    PumpTestState,
 )
 from evolver_simulator.config import SimulatorSettings
 from evolver_simulator.mqtt import MqttConnectionError, MqttPublisher, MqttPublishError
 from evolver_simulator.runner import SimulatorRunner
+from evolver_simulator.scenarios import Scenarios
 from evolver_simulator.telemetry import SimulatedTelemetryGenerator
 
 ALLOCATION_41 = str(UUID(int=41))
 ALLOCATION_42 = str(UUID(int=42))
+
+
+def test_test_center_pump_failure_replays_after_window_and_restart(tmp_path):
+    settings = make_settings(pump_state_path=tmp_path / "pump.sqlite3")
+    clock = [0.0]
+    scenarios = Scenarios(lambda: clock[0])
+    vial = ActiveVial.model_validate(allocation_payload())
+    vial.pump_test = PumpTestState(
+        automatic=True, confirmed_state="off", od_min=Decimal(".2"),
+        od_max=Decimal(".7"), pending=False,
+    )
+    scenarios.update(AllocationResponse(
+        request_id=uuid4(), vials=[vial], od_alert_range=(.1, .8),
+    ), 1)
+    scenarios.start("pump", ALLOCATION_41)
+    now = datetime.now(UTC)
+    command = PumpCommand(
+        schema_version="1.0", command_id=uuid4(), equipment_id="evolver-sim-01",
+        experiment_run_id=ALLOCATION_41, author_id="evolver-od-control",
+        created_at=now, expires_at=now + timedelta(seconds=10),
+        target_type="pump", pump_id=1, action="turn_on",
+    )
+
+    def apply(publisher, fake, message):
+        publisher._handle_command(message.model_dump_json().encode())
+        return json.loads(fake.publish_calls[-1][1]["payload"])
+
+    fake = FakeClient(allocation_response=[allocation_payload(), allocation_payload(42, 2)])
+    publisher = MqttPublisher(settings, client_factory=lambda **_: fake, scenarios=scenarios)
+    with closing(publisher):
+        publisher.connect()
+        for _ in range(2):
+            result = apply(publisher, fake, command)
+            assert result["status"] == "failed" and result["reason_code"] == "simulation_error"
+            assert not publisher.pump_is_on(vial)
+        other = command.model_copy(update={
+            "command_id": uuid4(), "experiment_run_id": ALLOCATION_42,
+        })
+        assert apply(publisher, fake, other)["status"] == "executed"
+
+    clock[0] = 60
+    fake = FakeClient(allocation_response=[allocation_payload()])
+    publisher = MqttPublisher(settings, client_factory=lambda **_: fake, scenarios=scenarios)
+    with closing(publisher):
+        publisher.connect()
+        replayed = apply(publisher, fake, command)
+        assert replayed["command_id"] == str(command.command_id)
+        assert replayed["status"] == "failed" and replayed["reason_code"] == "simulation_error"
+        recovery = command.model_copy(update={
+            "command_id": uuid4(), "action": "turn_off",
+            "created_at": now + timedelta(microseconds=1),
+        })
+        assert apply(publisher, fake, recovery)["status"] == "executed"
 
 
 def allocation_payload(experiment_id: int = 41, vial_id: int = 1) -> dict[str, int | str]:

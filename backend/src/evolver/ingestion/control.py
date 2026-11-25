@@ -12,6 +12,8 @@ from evolver_contracts.pilot import EQUIPMENT_ID
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from .alerts import emit_alert, resolve_alert
+
 FRESH_FOR = timedelta(seconds=10)
 COMMAND_FOR = timedelta(seconds=10)
 AUTHOR_ID = "evolver-od-control"
@@ -36,7 +38,11 @@ def consider_od(connection: Connection, reading: dict, now: datetime) -> None:
             SELECT e.id, e.vial_id, e.od_min, e.od_max, e.ended_at,
                    c.paused, c.ending, c.confirmed_state, c.last_generated_at,
                    c.last_producer_id, c.last_sequence,
-                   c.pending_command_id, c.reconcile_required, c.resume_pending
+                   c.pending_command_id, c.reconcile_required, c.resume_pending,
+                   EXISTS (
+                       SELECT 1 FROM alerts a WHERE a.allocation_id = e.allocation_id
+                         AND a.type = 'pump' AND a.resolved_at IS NULL
+                   ) AS recovering
             FROM experiments e JOIN pump_control c ON c.experiment_id = e.id
             WHERE e.id = :experiment_id FOR UPDATE OF e, c
         """),
@@ -74,6 +80,8 @@ def consider_od(connection: Connection, reading: dict, now: datetime) -> None:
         reading,
     )
     if not is_fresh_od(reading["generated_at"], now) or row.pending_command_id is not None:
+        return
+    if row.recovering:
         return
     if restarted or (row.reconcile_required and not row.paused):
         connection.execute(text("""
@@ -115,12 +123,54 @@ def queue_safety_offs(connection: Connection, now: datetime) -> None:
         JOIN pump_control c ON c.experiment_id = e.id
         WHERE e.ended_at IS NULL AND (c.paused OR c.ending OR c.resume_pending)
           AND c.pending_command_id IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM alerts a WHERE a.allocation_id = e.allocation_id
+                AND a.type = 'pump' AND a.resolved_at IS NULL
+          )
         ORDER BY e.id
         FOR UPDATE OF e, c
     """)).mappings().all()
     for row in rows:
         reason = "resume_reconcile" if row.resume_pending else "reconcile"
         queue_command(connection, row.id, row.vial_id, "turn_off", None, now, reason)
+
+
+def pump_alert_open(connection: Connection, experiment_id: int) -> bool:
+    return connection.scalar(text("""
+        SELECT EXISTS (
+            SELECT 1 FROM alerts a JOIN experiments e USING (allocation_id)
+            WHERE e.id = :id AND a.type = 'pump' AND a.resolved_at IS NULL
+        )
+    """), {"id": experiment_id})
+
+
+def queue_alert_recoveries(connection: Connection, now: datetime) -> None:
+    rows = connection.execute(text("""
+        SELECT e.id, e.vial_id, c.resume_pending FROM experiments e
+        JOIN pump_control c ON c.experiment_id = e.id
+        WHERE e.ended_at IS NULL AND c.pending_command_id IS NULL
+          AND EXISTS (
+              SELECT 1 FROM alerts a WHERE a.allocation_id = e.allocation_id
+                AND a.type = 'pump' AND a.resolved_at IS NULL
+          )
+        ORDER BY e.id FOR UPDATE OF e, c
+    """)).mappings().all()
+    for row in rows:
+        latest = connection.scalar(text("""
+            SELECT max(created_at) FROM pump_commands WHERE experiment_id = :id
+        """), {"id": row.id})
+        if (latest is None or now - latest >= COMMAND_FOR) and pump_alert_open(connection, row.id):
+            reason = "resume_reconcile" if row.resume_pending else "reconcile"
+            queue_command(connection, row.id, row.vial_id, "turn_off", None, now, reason)
+
+
+def report_pump_alert(connection: Connection, row, command_id, status: str, reason: str) -> None:
+    emit_alert(connection, row.experiment_id, "pump", {
+        "command_id": str(command_id),
+        "action": "turn_on" if row.desired_state == "on" else "turn_off",
+        "status": status,
+        "reason_code": reason,
+    })
 
 
 def queue_command(
@@ -343,30 +393,37 @@ def expire_commands(
                 ) ORDER BY e.id FOR UPDATE
             )
             UPDATE pump_commands SET result_status = CASE
-                WHEN reason = 'resume' AND sent_at IS NULL THEN 'superseded'
+                WHEN reason = 'resume' AND sent_at IS NULL
+                  AND puback_at IS NULL AND received_at IS NULL THEN 'superseded'
                 ELSE 'unknown' END, result_at = :now
             WHERE result_status IN ('pending', 'received')
               AND expires_at <= :now
               AND experiment_id IN (SELECT id FROM affected)
-            RETURNING command_id, experiment_id, desired_state, reason, result_status
+            RETURNING command_id, experiment_id, desired_state, reason, result_status,
+                      puback_at IS NOT NULL OR received_at IS NOT NULL AS dispatched
         """), {"now": now, "id": experiment_id},
     ).mappings().all()
     for row in rows:
+        if row.result_status == "unknown" and row.dispatched:
+            report_pump_alert(connection, row, row.command_id, "unconfirmed", "timeout")
+        recovering = pump_alert_open(connection, row.experiment_id)
         cleared = connection.execute(text("""
             UPDATE pump_control SET pending_command_id = NULL,
                 confirmed_state = CASE WHEN :result_status = 'unknown' THEN 'unknown'
                     ELSE confirmed_state END,
                 desired_state = CASE WHEN :result_status = 'superseded' THEN 'off'
                     ELSE desired_state END,
-                reconcile_required = reconcile_required OR resume_pending OR
+                reconcile_required = reconcile_required OR :recovering OR resume_pending OR
                     (:reason = 'resume' AND :result_status = 'unknown')
             WHERE experiment_id = :experiment_id AND pending_command_id = :command_id
-        """), row)
+        """), dict(row, recovering=recovering))
         if cleared.rowcount:
             control = connection.execute(text("""
                 SELECT vial_id, ending, paused, reconcile_required, resume_pending FROM pump_control
                 WHERE experiment_id = :experiment_id FOR UPDATE
             """), row).mappings().one()
+            if recovering and not control.ending:
+                continue
             if control.resume_pending and row.desired_state == "off":
                 if row.reason != "resume_reconcile":
                     queue_command(connection, row.experiment_id, control.vial_id,
@@ -392,19 +449,36 @@ def record_result(connection: Connection, result) -> None:
     ).mappings().one_or_none()
     if row is None:
         return
-    lock_control(connection, row.experiment_id)
+    control = lock_control(connection, row.experiment_id)
     row = connection.execute(text("""
-        SELECT experiment_id, desired_state, result_status, reason FROM pump_commands
+        SELECT experiment_id, desired_state, result_status, reason, created_at FROM pump_commands
         WHERE command_id = :command_id
     """), {"command_id": result.command_id}).mappings().one()
-    if row.result_status not in ("pending", "received"):
+    reason = getattr(result, "reason_code", None)
+    failure = result.status == "failed" or (result.status == "rejected" and reason == "expired")
+    late_failure = (
+        row.result_status == "unknown" and failure and control.ended_at is None
+        and not connection.scalar(text("""
+            SELECT EXISTS (
+                SELECT 1 FROM pump_commands WHERE experiment_id = :id AND created_at > :created
+                  AND desired_state = 'off' AND result_status = 'executed'
+            )
+        """), {"id": row.experiment_id, "created": row.created_at})
+    )
+    if row.result_status not in ("pending", "received") and not late_failure:
         return
     connection.execute(text("""
         UPDATE pump_commands SET result_status = :status, result_at = :at,
+            received_at = coalesce(received_at, :received_at),
             result_detail = :detail WHERE command_id = :command_id
     """), {"status": result.status, "at": result.reported_at,
+           "received_at": result.reported_at if result.status == "received" else None,
            "detail": result.detail, "command_id": result.command_id})
+    if failure:
+        status = "failed" if result.status == "failed" else "unconfirmed"
+        report_pump_alert(connection, row, result.command_id, status, reason)
     if result.status != "received":
+        recovering = pump_alert_open(connection, row.experiment_id)
         updated = connection.execute(text("""
             UPDATE pump_control SET
                 confirmed_state = CASE WHEN :status = 'executed'
@@ -414,16 +488,19 @@ def record_result(connection: Connection, result) -> None:
                     THEN :desired_state ELSE 'unknown' END,
                 reconcile_required = CASE WHEN :status = 'executed'
                     AND :desired_state = 'off' THEN false
-                    ELSE reconcile_required OR resume_pending
+                    ELSE reconcile_required OR :recovering OR resume_pending
                         OR (:reason = 'resume' AND :status <> 'executed') END,
                 pending_command_id = NULL
             WHERE experiment_id = :experiment_id AND pending_command_id = :command_id
         """), {"status": result.status, "desired_state": row.desired_state, "reason": row.reason,
-               "experiment_id": row.experiment_id, "command_id": result.command_id})
+               "experiment_id": row.experiment_id, "command_id": result.command_id,
+               "recovering": recovering})
         if not updated.rowcount:
             return
         control = lock_control(connection, row.experiment_id)
         if row.desired_state == "off" and result.status == "executed":
+            now = connection.scalar(text("SELECT clock_timestamp()"))
+            resolve_alert(connection, row.experiment_id, "pump", now)
             if control.ending:
                 connection.execute(text("""
                     WITH closure AS (SELECT clock_timestamp() AS at)
@@ -435,15 +512,13 @@ def record_result(connection: Connection, result) -> None:
                 connection.execute(text("""
                     UPDATE pump_control SET resume_pending = false WHERE experiment_id = :id
                 """), {"id": row.experiment_id})
-                now = connection.scalar(text("SELECT clock_timestamp()"))
                 queue_resume_on(connection, control, now)
-        elif row.desired_state == "off" and control.resume_pending:
+        elif not recovering and row.desired_state == "off" and control.resume_pending:
             if row.reason != "resume_reconcile":
                 now = connection.scalar(text("SELECT clock_timestamp()"))
                 queue_command(connection, row.experiment_id, control.vial_id,
                               "turn_off", None, now, "resume_reconcile")
-        elif row.desired_state == "on":
-            if control.ending or control.paused:
-                queue_command(connection, row.experiment_id, control.vial_id,
-                              "turn_off", None, datetime.now(UTC),
-                              "ending" if control.ending else "pause")
+        elif row.desired_state == "on" and (control.ending or (not recovering and control.paused)):
+            queue_command(connection, row.experiment_id, control.vial_id,
+                          "turn_off", None, datetime.now(UTC),
+                          "ending" if control.ending else "pause")

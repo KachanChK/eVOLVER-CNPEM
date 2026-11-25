@@ -89,6 +89,11 @@ Na raiz, execute o simulador:
 .\scripts\simular.ps1
 ```
 
+A **Central de testes** abre junto com a coleta. Selecione um experimento e vial
+ativos para reproduzir uma condição na página **Alertas**. Fechar a janela mantém
+a coleta em execução. Para iniciar sem janela, use `simular.ps1 -Headless` ou
+`python -m evolver_simulator --headless`.
+
 O simulador grava rodadas de OD, pH e temperatura a cada 0,5 segundo no
 SQLite. Descobre alocações e envia pendências em ciclos independentes da coleta.
 Durante uma indisponibilidade usa a última lista confirmada, inclusive depois de

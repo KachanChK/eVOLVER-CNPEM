@@ -26,6 +26,7 @@ from .mqtt import (
     PumpStateError,
 )
 from .queue import TelemetryQueue
+from .scenarios import Scenarios
 from .telemetry import MEASUREMENT_TYPES, SimulatedTelemetryGenerator
 
 LOGGER = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ TICK_SECONDS = 0.025
 ACK_TIMEOUT = 5.0
 LIVE_WINDOW = 2.0
 WINDOW = 128
-LIVE_RESERVATION = 12 * len(MEASUREMENT_TYPES)
+HISTORY_WINDOW = 12 * len(MEASUREMENT_TYPES)
 
 
 class SimulatedFailureError(RuntimeError):
@@ -108,7 +109,8 @@ class Delivery:
                 self.retry(row_id, now)
         self.send(session, WINDOW - len(self.waiting), live=True)
         historical = sum(not attempt.live for attempt in self.waiting.values())
-        available = min(WINDOW - len(self.waiting), WINDOW - LIVE_RESERVATION - historical)
+        # Leave room for live batches and discovery even when the outbox is backlogged.
+        available = min(WINDOW - len(self.waiting), HISTORY_WINDOW - historical)
         self.send(session, available, live=False)
 
     def send(self, session: int, limit: int, *, live: bool) -> None:
@@ -156,11 +158,13 @@ class SimulatorRunner:
         publisher: MqttPublisher | None = None,
         stop_event: threading.Event | None = None,
         clock: Callable[[], float] = monotonic,
+        scenarios: Scenarios | None = None,
     ) -> None:
         self._settings = settings
-        self._publisher = publisher or MqttPublisher(settings)
+        self._publisher = publisher or MqttPublisher(settings, scenarios=scenarios)
         self._stop_event = stop_event or threading.Event()
         self._clock = clock
+        self._scenarios = scenarios
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -178,6 +182,7 @@ class SimulatorRunner:
 
     def _run(self, queue: TelemetryQueue, connector: ThreadPoolExecutor, limit: int | None) -> int:
         publisher = self._publisher
+        scenarios = self._scenarios
         delivery = Delivery(queue, publisher, self._clock)
         try:
             cached = queue.last_allocation()
@@ -185,6 +190,7 @@ class SimulatorRunner:
             LOGGER.warning("Lista de alocações local inválida: %s", exc)
             cached = None
         allocations: list[ActiveVial] | None = cached.vials if cached is not None else None
+        allocation_ids = [vial.allocation_id for vial in allocations or []]
         generator = SimulatedTelemetryGenerator(
             self._settings, allocations or [], pump_is_on=publisher.pump_is_on,
         )
@@ -235,13 +241,17 @@ class SimulatorRunner:
                                 except sqlite3.Error as exc:
                                     LOGGER.warning("Lista de alocações não persistida: %s", exc)
                                 else:
-                                    if vials != allocations:
+                                    next_ids = [vial.allocation_id for vial in vials]
+                                    if next_ids != allocation_ids:
                                         vial_ids = [vial.vial_id for vial in vials]
                                         LOGGER.info("Vials confirmados: %s", vial_ids)
                                         generator.update_allocations(vials)
-                                        allocations = vials
+                                        allocation_ids = next_ids
+                                    allocations = vials
                                     if now - query_at < 1:
-                                        fresh_session, fresh_until = session, query_at + 1
+                                        fresh_session, fresh_until = session, now + 1
+                                        if scenarios and scenarios.update(response, fresh_until):
+                                            queue.release_held()
                         query = None
                 if (
                     session is not None and query is None and now >= next_discovery
@@ -249,7 +259,10 @@ class SimulatorRunner:
                 ):
                     next_discovery = now + ROUND_INTERVAL_SECONDS
                     try:
-                        query = publisher.request_allocations(session)
+                        query = (
+                            publisher.request_allocations(session, include_test_state=True)
+                            if scenarios else publisher.request_allocations(session)
+                        )
                         query_at = now
                     except (MqttConnectionError, MqttPublishError) as exc:
                         LOGGER.warning("Consulta de alocações indisponível: %s", exc)
@@ -274,12 +287,18 @@ class SimulatorRunner:
                             live_session = session if fresh and not staged else None
                             if not staged:
                                 staged = [generator.next_event() for _ in range(size)]
+                            events, scenario = (staged, None)
+                            hold = scenarios.hold(ROUND_INTERVAL_SECONDS) if scenarios else None
+                            if scenarios and live_session is not None:
+                                events, scenario = scenarios.adjust(staged)
                             if queue.append(
-                                staged, session=live_session, live_until=now + LIVE_WINDOW,
+                                events, session=live_session, live_until=now + LIVE_WINDOW,
+                                hold=hold,
                             ):
+                                if scenarios and scenario:
+                                    scenarios.reading_written(scenario)
                                 written += size
                                 staged = []
-                                fresh_session = None
                             else:
                                 state = f"pausada: cota da fila insuficiente para {size} leituras"
                     except sqlite3.Error as exc:
