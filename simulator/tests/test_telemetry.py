@@ -144,10 +144,11 @@ def test_od_steps_and_saturates_at_both_limits(baseline: float, noise: float) ->
 
     initial = sample()
     assert initial == baseline
-    for direction, step, limit in [(False, 0.02, 0.80), (True, -0.05, 0.10)]:
+    for direction, step, limit in [(False, 0.004, 0.80), (True, -0.030, 0.10)]:
         pump_on = direction
         previous = initial
-        for _ in range(80):
+        reached_limit = False
+        for _ in range(250):
             current = sample()
             assert 0.10 <= current <= 0.80
             bounds = sorted(
@@ -155,8 +156,9 @@ def test_od_steps_and_saturates_at_both_limits(baseline: float, noise: float) ->
                 for offset in (-noise, noise)
             )
             assert round(bounds[0], 6) <= current <= round(bounds[1], 6)
+            reached_limit = reached_limit or current == limit
             previous = current
-        assert previous == limit
+        assert reached_limit
         initial = previous
 
 

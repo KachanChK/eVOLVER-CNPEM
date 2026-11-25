@@ -2,7 +2,7 @@
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from './api'
-import { encodeExperiment, formatOdInput, parseOdLimits } from './odLimits.js'
+import { encodeExperiment, formatOdInput, MAX_OD_INPUT_DECIMALS, parseOdLimits } from './odLimits.js'
 import { experimentCode } from './experimentCode.js'
 import VialPicker from './VialPicker.vue'
 import experimentsIcon from './assets/flask.svg'
@@ -28,6 +28,8 @@ const saving = ref(false)
 const formError = ref('')
 const notice = ref('')
 const noVials = 'Todos os vials estão em uso. Inative ou exclua um experimento para liberar um vial.'
+const nameMaxLength = 40
+const cultureTypeMaxLength = 30
 
 let refreshRevision = 0
 let backgroundRequest = false
@@ -87,7 +89,7 @@ function updateOdLimit(field, event) {
   if (event.isComposing) return
   const input = event.target
   const { value, selectionStart } = input
-  const formatted = formatOdInput(value, event.inputType?.startsWith('delete'))
+  const formatted = formatOdInput(value, event.inputType?.startsWith('delete')) ?? odLimits[field]
   if (formatted !== value) {
     const caret = event.inputType === 'deleteContentBackward' && selectionStart <= 1
       ? selectionStart
@@ -213,18 +215,25 @@ onUnmounted(() => clearInterval(refreshTimer))
   <dialog ref="dialog" aria-labelledby="create-title" @cancel="saving && $event.preventDefault()">
     <form autocomplete="off" @submit.prevent="createExperiment">
       <h2 id="create-title">Novo experimento</h2>
-      <label for="name">Nome</label>
-      <input id="name" v-model="name" name="name" type="text" maxlength="120" required />
-      <label for="culture-type">Tipo de cultura</label>
+      <div class="field-label">
+        <label for="name">Nome</label>
+        <span id="name-count" class="field-count muted">{{ name.length }}/{{ nameMaxLength }}</span>
+      </div>
+      <input id="name" v-model="name" name="name" type="text" :maxlength="nameMaxLength" aria-describedby="name-count" required />
+      <div class="field-label">
+        <label for="culture-type">Tipo de cultura</label>
+        <span id="culture-type-count" class="field-count muted">{{ cultureType.length }}/{{ cultureTypeMaxLength }}</span>
+      </div>
       <input
         id="culture-type"
         v-model="cultureType"
         name="culture_type"
         type="text"
+        :maxlength="cultureTypeMaxLength"
         required
         pattern=".*[^\s\u0085].*"
         :aria-invalid="cultureTypeError ? 'true' : undefined"
-        :aria-describedby="cultureTypeError ? 'culture-type-error' : undefined"
+        :aria-describedby="cultureTypeError ? 'culture-type-count culture-type-error' : 'culture-type-count'"
         @invalid.prevent="validateCultureType"
         @input="cultureTypeError = ''"
       />
@@ -237,20 +246,24 @@ onUnmounted(() => clearInterval(refreshTimer))
       />
       <p v-if="vialNotice" class="message" role="status">{{ vialNotice }}</p>
       <p v-if="allocationSource === 'stale'" class="message" role="status">A disponibilidade dos vials está desatualizada.</p>
-      <p id="od-limits-hint" class="muted">Limites obrigatórios de 0,10 a 0,80. A vírgula é inserida automaticamente.</p>
       <template v-for="(label, field) in odFields" :key="field">
-        <label :for="field">{{ label }}</label>
+        <div class="field-label">
+          <label :for="field">{{ label }}</label>
+          <span :id="`${field}-count`" class="field-count muted">
+            {{ odLimits[field].split(',')[1]?.length ?? 0 }}/{{ MAX_OD_INPUT_DECIMALS }} decimais
+          </span>
+        </div>
         <input
           :id="field"
           :value="odLimits[field]"
           :name="field"
           type="text"
-          inputmode="decimal"
+          inputmode="numeric"
           autocomplete="off"
           spellcheck="false"
           aria-required="true"
           :aria-invalid="odErrors[field] ? 'true' : undefined"
-          :aria-describedby="odErrors[field] ? `od-limits-hint ${field}-error` : 'od-limits-hint'"
+          :aria-describedby="`${field}-count od-limits-hint${odErrors[field] ? ` ${field}-error` : ''}`"
           @input="updateOdLimit(field, $event)"
           @compositionend="updateOdLimit(field, $event)"
         />
@@ -258,6 +271,7 @@ onUnmounted(() => clearInterval(refreshTimer))
           {{ odErrors[field] }}
         </p>
       </template>
+      <p id="od-limits-hint" class="muted">Limites obrigatórios de 0,10 a 0,80.</p>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
       <p v-if="!loading && !loadError && !vials.length" class="message" role="status">{{ noVials }}</p>
       <div class="actions">

@@ -4,7 +4,7 @@ import { Chart, Filler, LineElement, LinearScale, PointElement, Tooltip } from '
 import { Line } from 'vue-chartjs'
 import { chartPoints, missingIntervals, movingAverage, timeStep } from './history.js'
 
-import { commandAction, commandStatus, isFinal, odValue, pumpPeriods, pumpTime } from './pumpHistory.js'
+import { isFinal, odValue, pumpPeriods } from './pumpHistory.js'
 import { formatOdLimits } from './odLimits.js'
 import limitsIcon from './assets/limits.svg'
 
@@ -203,31 +203,6 @@ const options = computed(() => ({
         <span><i class="legend-result" aria-hidden="true"></i> Resultado registrado</span>
       </template>
     </div>
-    <details v-if="periods.length || commands.length" class="pump-history">
-      <summary>Ver períodos e comandos das bombas</summary>
-      <ul v-if="periods.length">
-        <li v-for="(interval, index) in periods" :key="index">
-          {{ pumpTime.format(interval.start) }} a {{ pumpTime.format(interval.end) }}
-          · {{ interval.paused ? 'Automação pausada' : 'Automação ativa' }}
-          <template v-if="interval.confirmed_state === 'on'"> · Bombas ligadas com confirmação</template>
-        </li>
-      </ul>
-      <div v-if="commands.length" class="table-scroll" tabindex="0" role="region" aria-label="Comandos das bombas">
-        <table>
-          <thead><tr><th scope="col">Comando</th><th scope="col">Intenção</th><th scope="col">Resultado</th></tr></thead>
-          <tbody>
-            <tr v-for="command in commands" :key="command.command_id">
-              <td><code translate="no">{{ command.command_id }}</code></td>
-              <td>{{ commandAction(command) }} · {{ pumpTime.format(new Date(command.created_at)) }}</td>
-              <td>
-                {{ commandStatus[command.result_status] ?? command.result_status }}
-                <template v-if="command.result_at"> · {{ pumpTime.format(new Date(command.result_at)) }}</template>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </details>
     <p v-if="reduced" class="chart-note">Exibição resumida, com os maiores e menores valores preservados. Todas as leituras estão na tabela.</p>
   </section>
 </template>

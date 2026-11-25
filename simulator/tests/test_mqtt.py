@@ -441,14 +441,14 @@ def test_pump_state_survives_restart_and_stays_isolated_by_experiment(
         return od.value
 
     assert sample_od() == 0.35
-    assert sample_od() == 0.30
+    assert sample_od() == 0.32
     restarted._handle_command(turn_on.model_dump_json().encode())
     assert restarted._pump_states == {(ALLOCATION_41, 1): True}
     assert json.loads(restarted_fake.publish_calls[-1][1]["payload"])["status"] == "executed"
     restarted._handle_command(command(ALLOCATION_41, "turn_off").model_dump_json().encode())
     assert restarted._pump_states == {(ALLOCATION_41, 1): False}
     # The controller uses this same turn_off command when it pauses the experiment.
-    assert sample_od() == 0.32
+    assert sample_od() == 0.324
     restarted.close()
 
     next_fake = FakeClient(allocation_response=[allocation_payload(42)])
@@ -602,7 +602,7 @@ def test_recreated_database_can_reuse_numeric_ids(
             settings, [allocation], pump_is_on=restarted.pump_is_on,
         )
         events = [generator.next_event() for _ in range(6)]
-        assert [event.value for event in events if event.measurement_type == "od"] == [0.35, 0.37]
+        assert [event.value for event in events if event.measurement_type == "od"] == [0.35, 0.354]
         delayed = previous.model_copy(update={"command_id": uuid4()})
         for command in (previous, delayed):
             restarted._handle_command(command.model_dump_json().encode())
@@ -680,7 +680,6 @@ def test_od_completes_two_controller_cycles(
     publisher = MqttPublisher(settings, client_factory=lambda **_kwargs: fake)
     runner = SimulatorRunner(settings, publisher=publisher)
     state = "off"
-    issued_at = datetime.now(UTC)
     previous = None
     actions = []
     thresholds = []
@@ -694,11 +693,8 @@ def test_od_completes_two_controller_cycles(
             return info
         value = event.value
         assert 0.10 <= value <= 0.80
-        if previous is not None:
-            if state == "on":
-                assert value < previous
-            else:
-                assert value > previous
+        if previous is not None and state == "on":
+            assert value < previous
         previous = value
         if len(actions) == 4:
             assert state == "off"
@@ -707,7 +703,7 @@ def test_od_completes_two_controller_cycles(
         action = action_for_od(state, Decimal(str(value)), Decimal(minimum), Decimal(maximum))
         if action is None:
             return info
-        now = issued_at + timedelta(microseconds=len(actions))
+        now = datetime.now(UTC)
         command = PumpCommand(
             schema_version="1.0", command_id=uuid4(), equipment_id=settings.equipment_id,
             experiment_run_id=ALLOCATION_41, author_id="evolver-od-control", created_at=now,
@@ -727,7 +723,7 @@ def test_od_completes_two_controller_cycles(
         return info
 
     monkeypatch.setattr(publisher, "publish", publish)
-    assert runner.run(max_messages=360) < 360
+    assert runner.run(max_messages=1200) < 1200
     assert actions == ["turn_on", "turn_off"] * 2
     print(f"limiares={minimum}/{maximum} transições={thresholds} próxima subida={previous}")
 

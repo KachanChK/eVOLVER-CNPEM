@@ -1,10 +1,14 @@
 const MAX_OD_SCALE = 16_383
+export const MAX_OD_INPUT_DECIMALS = 3
 
 export function formatOdInput(text, deleting = false) {
   const value = text.trim()
-  if (deleting && value === '0') return ''
-  if (/^\d+$/.test(value)) return `0,${value.replace(/^0/, '')}`
-  return value.replace(/^(\d*)[.,]+(\d*)$/, (_, integer, decimals) => `${integer || '0'},${decimals}`)
+  if (!value || (deleting && value === '0')) return ''
+  if (/^\d+$/.test(value)) return `0,${value.replace(/^0/, '').slice(0, MAX_OD_INPUT_DECIMALS)}`
+  const parts = /^(\d*)[.,]+(\d*)$/.exec(value)
+  if (!parts) return null
+  const [, integer, decimals] = parts
+  return `${integer || '0'},${decimals.slice(0, MAX_OD_INPUT_DECIMALS)}`
 }
 
 function trimTrailingZeros(digits) {

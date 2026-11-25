@@ -461,12 +461,8 @@ COPY driver.py .
         cmd("docker", "stop", "--time", "8", f"{name}-simulador-ciclos")
         assert cycles.wait(timeout=15) == 0
         page.get_by_role("button", name="Tudo", exact=True).click()
-        page.get_by_text("Ver períodos e comandos das bombas").click()
-        expect(page.get_by_role("region", name="Comandos das bombas").get_by_text(
-            "Executado no simulador", exact=False
-        ).first).to_be_visible()
+        expect(page.get_by_text("Ver períodos e comandos das bombas", exact=True)).to_have_count(0)
         capture("02-dois-ciclos")
-        page.get_by_text("Ver períodos e comandos das bombas").click()
 
         sim = simulator("simulador-controlado", "driver.py", "--worker", interactive=True)
         ports = [api_port, db_port]

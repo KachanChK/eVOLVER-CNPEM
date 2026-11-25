@@ -50,13 +50,13 @@ Revise estas variáveis no ambiente ou no arquivo `.env`:
 ### Dinâmica de OD
 
 A primeira leitura de OD de cada par vial/experimento usa `SIMULATOR_OD_BASELINE`
-(padrão 0,35). Nas próximas leituras a OD sobe **0,02 por amostra** com o grupo
-desligado e desce **0,05 por amostra** com o grupo ligado. O passo se aplica uma
-vez por amostra para todo o grupo. Na cadência de 0,5 s,
-as taxas nominais são 0,04 OD/s na subida e 0,10 OD/s na descida. A OD satura em
+(padrão 0,35). Nas próximas leituras a OD tende a subir **0,004 por amostra** com o
+grupo desligado e desce **0,030 por amostra** com o grupo ligado. O passo se aplica
+uma vez por amostra para todo o grupo. Na cadência de 0,5 s,
+as taxas nominais são 0,008 OD/s na subida e 0,060 OD/s na descida. A OD satura em
 **[0,10; 0,80]**, inclusive. O ruído de OD altera o passo em até
 `SIMULATOR_OD_NOISE` em cada sentido (padrão 0,005, máximo 0,01, zero desabilita).
-A direção permanece a mesma até a saturação, inclusive com limiares próximos.
+Com ruído acima de 0,004, a OD pode cair pontualmente com o grupo desligado.
 Se houver atraso nas rodadas, aplica-se um passo por amostra gerada.
 
 Um novo experimento no mesmo vial começa na OD inicial e com o grupo desligado.
@@ -141,5 +141,5 @@ uv run --frozen --all-packages pytest -q -s simulator/tests/test_mqtt.py -k two_
 O teste liga a regra de histerese do backend ao simulador por um cliente MQTT de
 teste. Usa a semente 71 e ruído de 0,01. Para cada par de limiares, imprime as
 quatro leituras que acionaram `turn_on`, `turn_off`, `turn_on` e `turn_off`,
-seguidas da primeira leitura da nova subida. Verifica a correlação dos resultados
-com cada comando e a direção e faixa de todas as amostras.
+seguidas da primeira leitura com o grupo desligado. Verifica a correlação dos
+resultados com cada comando, a queda com o grupo ligado e a faixa das amostras.

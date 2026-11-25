@@ -16,8 +16,8 @@ from .config import SimulatorSettings
 Clock = Callable[[], datetime]
 UuidFactory = Callable[[], UUID]
 MEASUREMENT_TYPES = ("od", "ph", "temperature")
-OD_RISE_PER_SAMPLE = 0.02
-OD_FALL_PER_SAMPLE = 0.05
+OD_RISE_PER_SAMPLE = 0.004
+OD_FALL_PER_SAMPLE = 0.030
 
 
 def utc_now() -> datetime:
