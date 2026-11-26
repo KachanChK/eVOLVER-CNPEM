@@ -1,4 +1,10 @@
-param([switch]$Headless)
+[CmdletBinding(DefaultParameterSetName = 'Simulacao')]
+param(
+    [Parameter(ParameterSetName = 'Simulacao')]
+    [switch]$Headless,
+    [Parameter(ParameterSetName = 'ResetSqlite')]
+    [switch]$ResetSqlite
+)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -7,9 +13,12 @@ if (-not (Test-Path $python)) { throw 'Ambiente .venv ausente. Execute uv sync -
 if (-not (Test-Path (Join-Path $root 'simulator\.env'))) { throw 'Configure simulator/.env antes de simular.' }
 Push-Location $root
 try {
-    $mode = if ($Headless) { '--headless' } else { '--test-center' }
+    $mode = if ($ResetSqlite) { '--reset-sqlite' } elseif ($Headless) { '--headless' } else { '--test-center' }
     & $python -m evolver_simulator --env-file simulator/.env $mode
-    if ($LASTEXITCODE -ne 0) { throw 'O simulador não concluiu a execução.' }
+    if ($LASTEXITCODE -ne 0) {
+        if ($ResetSqlite) { throw 'Falha ao limpar o SQLite do simulador.' }
+        throw 'O simulador terminou com erro.'
+    }
 } finally {
     Pop-Location
 }

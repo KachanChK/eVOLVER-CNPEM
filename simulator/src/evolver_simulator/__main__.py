@@ -43,6 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="abre a Central de testes junto com a coleta")
     mode.add_argument("--headless", dest="test_center", action="store_false",
                       help="executa sem janela (padrão)")
+    mode.add_argument("--reset-sqlite", action="store_true",
+                      help="apaga o estado das bombas e a fila; pare o simulador antes")
     parser.set_defaults(test_center=False)
     return parser
 
@@ -59,6 +61,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValidationError as exc:
         LOGGER.error("Configuracao invalida: %s", exc)
         return 2
+
+    if args.reset_sqlite:
+        try:
+            for database in (settings.pump_state_path, settings.telemetry_queue_path):
+                for suffix in ("", "-journal", "-wal", "-shm"):
+                    Path(f"{database}{suffix}").unlink(missing_ok=True)
+        except OSError as exc:
+            LOGGER.error("Falha ao limpar o SQLite. Verifique se o simulador está parado. %s", exc)
+            return 1
+        LOGGER.info("Estado das bombas e fila de telemetria limpos.")
+        return 0
 
     scenarios = Scenarios() if args.test_center else None
     runner = SimulatorRunner(settings, scenarios=scenarios) if scenarios else SimulatorRunner(

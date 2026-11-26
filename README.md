@@ -71,19 +71,10 @@ docker compose stop
    docker compose down --volumes
    ```
 
-3. Apague os arquivos SQLite do simulador e seus arquivos auxiliares. Ajuste os caminhos abaixo se configurou `SIMULATOR_PUMP_STATE_PATH` ou `SIMULATOR_TELEMETRY_QUEUE_PATH` em `simulator/.env` ou no ambiente. Por padrão, a fila fica no mesmo diretório do estado das bombas.
+3. Com o simulador parado, execute o comando abaixo na raiz do repositório. Ele limpa o estado das bombas simuladas e a fila de telemetria pendente, incluindo os arquivos auxiliares do SQLite. Os caminhos seguem a configuração do simulador em `simulator/.env` e nas variáveis de ambiente. Os bancos são recriados ao iniciar o simulador.
 
    ```powershell
-   $estadoSimulador = Join-Path $env:USERPROFILE '.evolver-simulator\pump-state.sqlite3'
-   $filaTelemetria = Join-Path (Split-Path -Parent $estadoSimulador) 'telemetry.sqlite3'
-   foreach ($bancoLocal in @($estadoSimulador, $filaTelemetria)) {
-       foreach ($sufixo in @('', '-journal', '-wal', '-shm')) {
-           $arquivo = "$bancoLocal$sufixo"
-           if (Test-Path -LiteralPath $arquivo -PathType Leaf) {
-               Remove-Item -LiteralPath $arquivo -ErrorAction Stop
-           }
-       }
-   }
+   .\scripts\simular.ps1 -ResetSqlite
    ```
 
 4. Para limpar também os logs e as saídas locais de testes, apague a pasta `.local` na raiz do repositório. Os arquivos `.env` e as dependências instaladas podem ser reutilizados.
