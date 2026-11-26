@@ -14,6 +14,40 @@ from evolver_simulator.mqtt import AllocationQuery
 from evolver_simulator.runner import SimulatorRunner
 
 
+@pytest.mark.parametrize("override_queue", [False, True])
+def test_reset_sqlite_clears_the_configured_databases_and_sidecars(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, override_queue: bool
+) -> None:
+    for name in list(os.environ):
+        if name.startswith(("MQTT_", "SIMULATOR_")):
+            monkeypatch.delenv(name)
+    env_file = tmp_path / "simulator.env"
+    env_file.write_text(
+        "MQTT_SIMULATOR_PASSWORD=test\nSIMULATOR_PUMP_STATE_PATH=estado.sqlite3\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    queue = "telemetry.sqlite3"
+    if override_queue:
+        queue = "fila.sqlite3"
+        monkeypatch.setenv("SIMULATOR_TELEMETRY_QUEUE_PATH", queue)
+    sqlite_files = [
+        tmp_path / f"{database}{suffix}"
+        for database in ("estado.sqlite3", queue)
+        for suffix in ("", "-journal", "-wal", "-shm")
+    ]
+    for path in sqlite_files:
+        path.touch()
+    other_file = tmp_path / "outro.sqlite3"
+    other_file.touch()
+
+    args = ["--env-file", str(env_file), "--reset-sqlite"]
+    assert cli.main(args) == 0
+    assert all(not path.exists() for path in sqlite_files)
+    assert other_file.exists()
+    assert cli.main(args) == 0
+
+
 @pytest.mark.parametrize("stop_signal", [signal.SIGINT, signal.SIGTERM])
 def test_cli_stops_cleanly_on_signal_and_restores_handlers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stop_signal: signal.Signals
