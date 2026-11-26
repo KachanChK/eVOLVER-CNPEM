@@ -592,7 +592,7 @@ def test_telemetry_and_commands_target_the_allocation_after_database_identity_re
         generator = SimulatedTelemetryGenerator(
             settings, [old_allocation], clock=lambda: generated_at,
         )
-        for _ in range(23 * 3):
+        for _ in range(113 * 3):
             generator.next_event()
         old.od(0.7, 1, old.now())
         previous, = old.queued()

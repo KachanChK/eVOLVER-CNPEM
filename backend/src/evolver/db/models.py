@@ -24,6 +24,7 @@ from sqlalchemy import (
     Uuid,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 OD_MIN = Decimal("0.10")
@@ -101,6 +102,42 @@ class TelemetryEventRecord(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     measurement_type: Mapped[str] = mapped_column(String(11))
     payload_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+
+
+class AlertMonitoring(Base):
+    __tablename__ = "alert_monitoring"
+
+    allocation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("experiments.allocation_id"), primary_key=True,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    temperature_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ph_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    od_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+    __table_args__ = (
+        Index("uq_alerts_open", "allocation_id", "type", unique=True,
+              postgresql_where=text("resolved_at IS NULL")),
+        Index("ix_alerts_visible", "emitted_at", "id",
+              postgresql_where=text("archived_at IS NULL")),
+        Index("ix_alerts_unread", "id",
+              postgresql_where=text("archived_at IS NULL AND read_at IS NULL")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    allocation_id: Mapped[UUID] = mapped_column(ForeignKey("experiments.allocation_id"))
+    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id"))
+    experiment_name: Mapped[str] = mapped_column(String(120))
+    vial_id: Mapped[int] = mapped_column(ForeignKey("vials.vial_id"))
+    type: Mapped[str] = mapped_column(String(24))
+    emitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    details: Mapped[dict] = mapped_column(JSONB)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TemperatureReading(Base):
@@ -202,6 +239,7 @@ class PumpCommandRecord(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     puback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     result_status: Mapped[str] = mapped_column(String(16), nullable=False)
     result_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     result_detail: Mapped[str | None] = mapped_column(Text)

@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
+from .alerts import FRESH_FOR, monitor_reading
 from .control import consider_od
 
 TELEMETRY_TOPIC = re.compile(r"evolver/v1/([A-Za-z0-9][A-Za-z0-9._-]{0,63})/telemetry")
@@ -167,7 +168,8 @@ def store_v1_message(
         columns = f"event_id, generated_at, received_at, vial_id, experiment_id, {value_column}"
         values = ":event_id, :generated_at, :received_at, :vial_id, allocation.id, :value"
         decides_od = is_od and params["allocation_verified"] and params["control_eligible"]
-        lock = "UPDATE" if decides_od else "SHARE"
+        checks_alert = live and allocation_id is not None and received_at - generated_at < FRESH_FOR
+        lock = "UPDATE" if decides_od or checks_alert else "SHARE"
         if is_od:
             columns += ", producer_id, sequence, allocation_verified, control_eligible"
             values += ", :producer_id, :sequence, :allocation_verified, :control_eligible"
@@ -189,8 +191,10 @@ def store_v1_message(
             raise PermanentRejection(
                 "invalid_origin", "não havia experimento ativo no horário da leitura",
             )
+        params["experiment_id"] = experiment_id
+        if checks_alert:
+            monitor_reading(connection, params, received_at)
         if decides_od:
-            params["experiment_id"] = experiment_id
             consider_od(connection, params, received_at)
     return "gravada"
 

@@ -68,7 +68,8 @@ class TelemetryQueue:
             database.execute("""
                 CREATE TEMP TABLE delivery (
                     id INTEGER PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0,
-                    eligible_at REAL NOT NULL DEFAULT 0, live_until REAL, session INTEGER
+                    eligible_at REAL NOT NULL DEFAULT 0, live_until REAL, session INTEGER,
+                    held_until REAL
                 )
             """)
             database.execute("CREATE INDEX delivery_live ON delivery (session, live_until, id)")
@@ -103,6 +104,7 @@ class TelemetryQueue:
 
     def append(
         self, events: list[TelemetryEvent], *, session: int | None, live_until: float,
+        hold: tuple[str, float] | None = None,
     ) -> bool:
         with self.database:
             if not self.has_room(len(events)):
@@ -118,13 +120,23 @@ class TelemetryQueue:
                         timespec="microseconds",
                     ), event.model_dump_json(),
                 )).lastrowid
-                if session is not None:
+                if hold and event.experiment_run_id == hold[0]:
+                    self.database.execute(
+                        "INSERT INTO delivery (id, held_until) VALUES (?, ?)", (row_id, hold[1]),
+                    )
+                elif session is not None:
                     self.database.execute(
                         "INSERT INTO delivery (id, live_until, session) VALUES (?, ?, ?)",
                         (row_id, live_until, session),
                     )
         self._event_count += len(events)
         return True
+
+    def release_held(self) -> None:
+        with self.database:
+            self.database.execute("""
+                UPDATE delivery SET held_until = NULL WHERE held_until IS NOT NULL
+            """)
 
     def eligible(
         self, now: float, session: int, limit: int, *, live: bool,
@@ -141,6 +153,7 @@ class TelemetryQueue:
                 SELECT q.*, coalesce(d.attempts, 0) AS attempts
                 FROM telemetry_queue q LEFT JOIN delivery d USING (id)
                 WHERE q.rejected_at IS NULL AND coalesce(d.eligible_at, 0) <= :now
+                  AND (d.held_until IS NULL OR d.held_until <= :now)
                   AND NOT coalesce({is_live}, 0) ORDER BY q.id LIMIT :limit
             """
         params = {"now": now, "session": session, "limit": limit}

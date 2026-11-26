@@ -12,6 +12,7 @@ from uuid import UUID
 from evolver.db.models import (
     OD_MAX,
     OD_MIN,
+    Alert,
     Experiment,
     OdReading,
     PhReading,
@@ -21,9 +22,10 @@ from evolver.db.models import (
     Vial,
 )
 from evolver.db.queries import get_temperature_history
+from evolver.ingestion.alerts import lock_alert_writes
 from evolver.ingestion.control import expire_commands, pause_control, queue_command, resume_control
 from evolver_contracts.pilot import EQUIPMENT_ID, VialID
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -37,7 +39,7 @@ from pydantic import (
     WithJsonSchema,
     field_validator,
 )
-from sqlalchemy import create_engine, func, select, text, update
+from sqlalchemy import create_engine, func, select, text, tuple_, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -63,6 +65,7 @@ def get_session(request: Request) -> Iterator[Session]:
 
 Database = Annotated[Session, Depends(get_session)]
 ExperimentID = Annotated[int, Path(gt=0, le=2**63 - 1)]
+AlertID = Annotated[int, Field(ge=0, le=2**63 - 1)]
 OdLimit = Annotated[
     Decimal,
     Field(strict=True, allow_inf_nan=False, ge=OD_MIN, le=OD_MAX),
@@ -233,6 +236,35 @@ class PumpSnapshotView(BaseModel):
     ended_at: datetime | None
 
 
+class AlertView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    allocation_id: UUID
+    experiment_id: int
+    experiment_name: str
+    vial_id: int
+    type: Literal["temperature", "ph", "od", "missing_data", "pump"]
+    emitted_at: datetime
+    details: dict
+    read_at: datetime | None
+    resolved_at: datetime | None
+
+
+class AlertFeed(BaseModel):
+    items: list[AlertView]
+    next_before: int | None
+    new: list[AlertView]
+    open_missing: list[AlertView]
+    cursor: int
+    archived_through: int
+    has_unread: bool
+
+
+class AlertCursor(BaseModel):
+    cursor: AlertID
+
+
 @app.exception_handler(RequestValidationError)
 async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
     # Keep Decimal values in validation errors serializable, including NaN and infinity.
@@ -243,6 +275,55 @@ async def invalid_request(request: Request, exc: RequestValidationError) -> JSON
 @app.exception_handler(OperationalError)
 async def database_unavailable(request: Request, exc: OperationalError) -> JSONResponse:
     return JSONResponse(status_code=503, content={"detail": "Banco de dados indisponível."})
+
+
+@app.get("/api/alerts", response_model=AlertFeed)
+def list_alerts(
+    db: Database,
+    before: Annotated[int | None, Query(gt=0, le=2**63 - 1)] = None,
+    after: Annotated[int | None, Query(ge=0, le=2**63 - 1)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> AlertFeed:
+    db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+    visible = select(Alert).where(Alert.archived_at.is_(None))
+    history = visible.order_by(Alert.emitted_at.desc(), Alert.id.desc()).limit(limit + 1)
+    if before is not None:
+        anchor = select(Alert.emitted_at).where(Alert.id == before).scalar_subquery()
+        history = history.where(tuple_(Alert.emitted_at, Alert.id) < tuple_(anchor, before))
+    rows = list(db.scalars(history))
+    cursor = db.scalar(select(func.max(Alert.id))) or 0
+    new = []
+    if after is not None:
+        new = list(db.scalars(visible.where(Alert.id > after).order_by(Alert.id).limit(101)))
+        if len(new) > 100:
+            new = new[:100]
+            cursor = new[-1].id
+    open_missing = list(db.scalars(visible.where(
+        Alert.type == "missing_data", Alert.resolved_at.is_(None),
+    ))) if after is not None else []
+    return AlertFeed(
+        items=rows[:limit], next_before=rows[limit - 1].id if len(rows) > limit else None,
+        new=new, cursor=cursor, open_missing=open_missing,
+        archived_through=db.scalar(
+            select(func.max(Alert.id)).where(Alert.archived_at.is_not(None))
+        ) or 0,
+        has_unread=db.scalar(select(visible.where(Alert.read_at.is_(None)).exists())),
+    )
+
+
+@app.post("/api/alerts/read", status_code=204)
+@app.post("/api/alerts/clear", status_code=204)
+def acknowledge_alerts(data: AlertCursor, db: Database, request: Request) -> Response:
+    lock_alert_writes(db.connection())
+    clear = request.url.path.endswith("/clear")
+    query = update(Alert).where(Alert.archived_at.is_(None), Alert.id <= data.cursor)
+    if clear:
+        query = query.values(archived_at=func.clock_timestamp())
+    else:
+        query = query.where(Alert.read_at.is_(None)).values(read_at=func.clock_timestamp())
+    db.execute(query)
+    db.commit()
+    return Response(status_code=204)
 
 
 def visible_experiment(db: Session, experiment_id: int, *, lock: bool = False) -> Experiment:

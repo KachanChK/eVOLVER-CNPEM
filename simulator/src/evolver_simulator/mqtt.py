@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 import paho.mqtt.client as mqtt
 from evolver_contracts.models import (
     ExecutedCommandResult,
+    FailedCommandResult,
     PumpCommand,
     ReceivedCommandResult,
     RejectedCommandResult,
@@ -36,6 +37,7 @@ from evolver_contracts.pilot import (
 from pydantic import ValidationError
 
 from .config import SimulatorSettings
+from .scenarios import Scenarios
 
 LOGGER = logging.getLogger(__name__)
 PUMP_GROUP_MEMBERS = (1, 2, 3)
@@ -70,9 +72,11 @@ class MqttPublisher:
         settings: SimulatorSettings,
         *,
         client_factory: ClientFactory = mqtt.Client,
+        scenarios: Scenarios | None = None,
     ) -> None:
         self._settings = settings
         self._client_factory = client_factory
+        self._scenarios = scenarios
         self._client: mqtt.Client | None = None
         self._session = 0
         self._connect_finished = threading.Event()
@@ -174,9 +178,6 @@ class MqttPublisher:
         if session != self.session:
             return
         active = next((v for v in allocations if str(v.allocation_id) == allocation_id), None)
-        if active is None:
-            self._send_command_result(command, "rejected", "invalid_payload", session=session)
-            return
         try:
             with closing(self._state_database()) as database:
                 previous = database.execute(
@@ -184,9 +185,15 @@ class MqttPublisher:
                     WHERE allocation_id = ? AND command_id = ?""",
                     (allocation_id, str(command.command_id)),
                 ).fetchone()
-                if previous:
+                if previous and (active is not None or previous[0] == "failed"):
                     self._send_command_result(command, *previous, session=session)
                     return
+                if active is None:
+                    self._send_command_result(
+                        command, "rejected", "invalid_payload", session=session,
+                    )
+                    return
+                scenario = None
                 with database:
                     reason = "expired" if command.is_expired_at(datetime.now(UTC)) else None
                     if reason is None:
@@ -201,20 +208,26 @@ class MqttPublisher:
                         """, (allocation_id, issued_at)).rowcount
                         if not advanced:
                             reason = "invalid_payload"
-                        else:
+                        elif self._scenarios is not None:
+                            scenario = self._scenarios.pump_failure(allocation_id)
+                        if reason is None and scenario is None:
                             state = command.action == "turn_on"
                             database.execute(
                                 "INSERT OR REPLACE INTO allocation_pump_states "
                                 "VALUES (?, ?, ?)",
                                 (allocation_id, active.vial_id, state),
                             )
+                    status = "rejected" if reason else "executed"
+                    if scenario is not None:
+                        status, reason = "failed", "simulation_error"
                     database.execute(
                         "INSERT INTO completed_allocation_commands VALUES (?, ?, ?, ?)",
-                        (allocation_id, str(command.command_id),
-                         "rejected" if reason else "executed", reason),
+                        (allocation_id, str(command.command_id), status, reason),
                     )
+                if scenario is not None:
+                    self._scenarios.failure_written(scenario)
                 if reason:
-                    self._send_command_result(command, "rejected", reason, session=session)
+                    self._send_command_result(command, status, reason, session=session)
                     return
                 with self._pump_state_lock:
                     self._pump_states[allocation_id, active.vial_id] = state
@@ -268,6 +281,8 @@ class MqttPublisher:
             result = ReceivedCommandResult(status="received", **fields)
         elif status == "executed":
             result = ExecutedCommandResult(status="executed", **fields)
+        elif status == "failed":
+            result = FailedCommandResult(status="failed", reason_code=reason, **fields)
         else:
             result = RejectedCommandResult(status="rejected", reason_code=reason, **fields)
         info = self._publish(
@@ -367,13 +382,20 @@ class MqttPublisher:
         with self._pump_state_lock:
             return self._pump_states.get((str(allocation.allocation_id), allocation.vial_id), False)
 
-    def request_allocations(self, session: int) -> AllocationQuery:
+    def request_allocations(
+        self, session: int, *, include_test_state: bool = False,
+    ) -> AllocationQuery:
         query = AllocationQuery(uuid4(), session)
-        request = AllocationRequest(request_id=query.request_id)
+        request = AllocationRequest(
+            request_id=query.request_id, include_test_state=include_test_state,
+        )
         with self._allocation_lock:
             self._queries[query.request_id] = query
         try:
-            self._publish(ACTIVE_VIALS_REQUEST, request.model_dump_json(), session=session)
+            self._publish(
+                ACTIVE_VIALS_REQUEST, request.model_dump_json(exclude_defaults=True),
+                session=session,
+            )
         except (MqttConnectionError, MqttPublishError):
             self.cancel_query(query)
             raise

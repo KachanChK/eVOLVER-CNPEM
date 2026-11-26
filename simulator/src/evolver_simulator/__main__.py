@@ -15,6 +15,8 @@ from .config import SimulatorSettings
 from .mqtt import MqttConnectionError, MqttPublishError
 from .queue import QueueIdentityError
 from .runner import SimulatedFailureError, SimulatorRunner
+from .scenarios import Scenarios
+from .test_center import TestCenterError, run_with_center
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="encerra apos gravar este total de medicoes novas e tentar confirmar o envio",
     )
     parser.add_argument("--env-file", type=Path, help="arquivo de configuracao do simulador")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--test-center", dest="test_center", action="store_true",
+                      help="abre a Central de testes junto com a coleta")
+    mode.add_argument("--headless", dest="test_center", action="store_false",
+                      help="executa sem janela (padrão)")
+    parser.set_defaults(test_center=False)
     return parser
 
 
@@ -52,7 +60,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOGGER.error("Configuracao invalida: %s", exc)
         return 2
 
-    runner = SimulatorRunner(settings)
+    scenarios = Scenarios() if args.test_center else None
+    runner = SimulatorRunner(settings, scenarios=scenarios) if scenarios else SimulatorRunner(
+        settings,
+    )
 
     def request_stop(signum: int, _frame: object) -> None:
         LOGGER.info("Sinal %s recebido; encerrando de forma limpa", signum)
@@ -64,12 +75,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         LOGGER.info("Simulacao iniciada. Pressione Ctrl+C para parar.")
-        runner.run(max_messages=args.max_messages)
+        if scenarios:
+            run_with_center(runner, scenarios, args.max_messages)
+        else:
+            runner.run(max_messages=args.max_messages)
     except SimulatedFailureError as exc:
         LOGGER.error("Cenario de falha simulada concluido: %s", exc)
         return 3
     except (MqttConnectionError, MqttPublishError) as exc:
         LOGGER.error("Falha no transporte MQTT: %s", exc)
+        return 1
+    except TestCenterError as exc:
+        LOGGER.error("%s", exc)
         return 1
     except (OSError, sqlite3.Error, QueueIdentityError) as exc:
         LOGGER.error("Fila de telemetria indisponível: %s", exc)
