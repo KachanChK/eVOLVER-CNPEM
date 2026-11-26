@@ -118,7 +118,7 @@ main { width: min(100%, 100rem); min-width: 0; justify-self: center; padding: 1.
   gap: .75rem;
 }
 .alerts-header h1 { text-wrap: balance; }
-.alerts-page button:hover:enabled:not(.primary), .alert-notice button:hover:enabled {
+.alerts-page button:hover:enabled:not(.primary), .notification-card button:hover:enabled {
   background: var(--selected);
 }
 .alerts-page button.primary:hover:enabled { background: #203951; }
@@ -135,7 +135,7 @@ main { width: min(100%, 100rem); min-width: 0; justify-self: center; padding: 1.
 .alert-details strong { font-size: 1rem; color: var(--navy); }
 .alert-details p, .alert-details time { font-size: .875rem; }
 .alert-details time { display: block; margin-top: .25rem; font-variant-numeric: tabular-nums; }
-.alert-notices {
+.notification-stack {
   position: fixed;
   z-index: 3;
   inset: max(.75rem, env(safe-area-inset-top)) max(.75rem, env(safe-area-inset-right)) auto auto;
@@ -147,17 +147,45 @@ main { width: min(100%, 100rem); min-width: 0; justify-self: center; padding: 1.
   overflow: auto;
   pointer-events: none;
 }
-.alert-notice.panel {
+.notification-card.panel {
+  --notification-accent: #a51f30;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: .5rem;
   padding: .75rem;
-  border-inline-start: .25rem solid #a51f30;
+  border-inline-start: .25rem solid var(--notification-accent);
+  background: var(--notification-background, var(--surface));
   box-shadow: 0 .2rem .7rem #17283d26;
   pointer-events: auto;
 }
-.alert-notice button { min-width: 2.75rem; padding: 0; font-size: 1.375rem; }
+.notification-card[data-tone="success"] {
+  --notification-accent: #176443;
+  --notification-background: #e8f5ed;
+}
+.notification-card[data-tone="warning"] {
+  --notification-accent: #775218;
+  --notification-background: #fff4df;
+}
+.notification-card[data-tone="info"] {
+  --notification-accent: #004889;
+  --notification-background: #e7f1ff;
+}
+.notification-card button { min-width: 2.75rem; padding: 0; font-size: 1.375rem; }
+.action-notice { display: flex; align-items: center; gap: .625rem; min-height: 2.75rem; overflow-wrap: anywhere; }
+.action-notice-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--notification-accent);
+  font-size: .875rem;
+  font-weight: 700;
+  line-height: 1;
+}
 .experiment-dashboard { display: grid; gap: 1.5rem; container-type: inline-size; }
 .panel { min-width: 0; padding: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: .875rem; }
 .empty h1 { margin-bottom: .5rem; }
@@ -199,7 +227,7 @@ button.primary:enabled:active { background: #203951; }
 button, a, summary { touch-action: manipulation; }
 .danger, .error { color: #a51f30; }
 .message, .notice { border-radius: .625rem; padding: .65rem .75rem; background: #eaf1f9; overflow-wrap: anywhere; }
-.message, main > .notice { margin-bottom: .75rem; }
+.message { margin-bottom: .75rem; }
 .message button, .notice button { margin-top: .5rem; }
 dialog {
   width: min(29rem, calc(100% - 2rem));

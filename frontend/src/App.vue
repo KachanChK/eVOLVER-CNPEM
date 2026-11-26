@@ -7,6 +7,7 @@ import { encodeExperiment, formatOdInput, MAX_OD_INPUT_DECIMALS, parseOdLimits }
 import { experimentCode } from './experimentCode.js'
 import VialPicker from './VialPicker.vue'
 import AlertDetails from './AlertDetails.vue'
+import NotificationCard from './NotificationCard.vue'
 import experimentsIcon from './assets/flask.svg'
 import simulatorIcon from './assets/cube.svg'
 import plusIcon from './assets/plus.svg'
@@ -29,7 +30,7 @@ const odErrors = ref({})
 const odFields = { od_min: 'OD mínima', od_max: 'OD máxima' }
 const saving = ref(false)
 const formError = ref('')
-const notice = ref('')
+const actionNotices = ref([])
 const noVials = 'Todos os vials estão em uso. Inative ou exclua um experimento para liberar um vial.'
 const nameMaxLength = 40
 const cultureTypeMaxLength = 30
@@ -37,6 +38,7 @@ const cultureTypeMaxLength = 30
 let refreshRevision = 0
 let backgroundRequest = false
 let refreshTimer
+let nextNoticeId = 0
 
 async function refresh(background = false) {
   if (background && (loading.value || backgroundRequest)) return
@@ -131,7 +133,7 @@ async function createExperiment() {
     })
     dialog.value.close()
     await router.push({ name: 'experiment', params: { id: experiment.id } })
-    await changed('Experimento criado.')
+    await changed('Experimento criado.', 'success')
   } catch (error) {
     formError.value = error.message
     if (error.status === 409) await refresh()
@@ -140,9 +142,13 @@ async function createExperiment() {
   }
 }
 
-async function changed(message) {
-  notice.value = message
+async function changed(message, tone) {
+  if (message) actionNotices.value.unshift({ id: ++nextNoticeId, message, tone })
   await refresh()
+}
+
+function dismissActionNotice(id) {
+  actionNotices.value = actionNotices.value.filter((notice) => notice.id !== id)
 }
 
 onMounted(() => {
@@ -217,7 +223,6 @@ watch(() => router.currentRoute.value.name, (route) => {
     </aside>
 
     <main id="conteudo" tabindex="-1">
-      <p class="notice" role="status" v-if="notice">{{ notice }}</p>
       <RouterView v-slot="{ Component, route }">
         <component
           :is="Component"
@@ -230,15 +235,23 @@ watch(() => router.currentRoute.value.name, (route) => {
     </main>
   </div>
 
-  <aside class="alert-notices" aria-label="Alertas recentes" aria-live="polite" aria-relevant="additions text">
-    <article v-for="alert in alertFeed.state.notices" :id="'alert-notice-' + alert.id"
-             :key="alert.id" class="panel alert-notice">
+  <aside class="notification-stack" aria-label="Notificações recentes" aria-live="polite" aria-relevant="additions text">
+    <NotificationCard v-for="notice in actionNotices" :key="'action-' + notice.id" :tone="notice.tone"
+                      :duration="5000" :close-label="'Fechar notificação: ' + notice.message"
+                      @dismiss="dismissActionNotice(notice.id)">
+      <div class="action-notice">
+        <span class="action-notice-icon" aria-hidden="true">
+          {{ { success: '✓', warning: '!', info: 'i' }[notice.tone] }}
+        </span>
+        <strong>{{ notice.message }}</strong>
+      </div>
+    </NotificationCard>
+    <NotificationCard v-for="alert in alertFeed.state.notices" :id="'alert-notice-' + alert.id"
+                      :key="'alert-' + alert.id"
+                      :close-label="'Fechar alerta de ' + alert.experiment_name + ', vial ' + alert.vial_id"
+                      @dismiss="alertFeed.dismiss(alert.id)">
       <AlertDetails :alert="alert" />
-      <button type="button" :aria-label="'Fechar alerta de ' + alert.experiment_name + ', vial ' + alert.vial_id"
-              @click="alertFeed.dismiss(alert.id)">
-        <span aria-hidden="true">×</span>
-      </button>
-    </article>
+    </NotificationCard>
   </aside>
 
   <dialog ref="dialog" aria-labelledby="create-title" @cancel="saving && $event.preventDefault()">
