@@ -242,13 +242,13 @@ async function applyClosure(next, announce = false) {
       (previous?.state === 'completed' && previous.action === next.action && !announce)) return
 
   if (next.action === 'delete') {
-    emit('changed', 'Experimento excluído da interface.')
+    emit('changed', 'Experimento excluído da interface.', 'info')
     await router.replace({ name: 'home' })
   } else {
     if (experiment.value) {
       experiment.value = { ...experiment.value, status: 'inactive', ended_at: next.ended_at }
     }
-    if (announce || previous?.action) emit('changed', 'Experimento inativado. Vial liberado.')
+    if (announce || previous?.action) emit('changed', 'Experimento inativado. Vial liberado.', 'warning')
   }
 }
 
@@ -292,7 +292,7 @@ async function change(action) {
     if (disposed) return
     if (result?.state === 'pending') {
       await applyClosure(result)
-      emit('changed', '')
+      emit('changed')
     } else if (deleting ? result === undefined : result?.status === 'inactive' && result.ended_at) {
       if (!deleting) experiment.value = result
       await applyClosure({ state: 'completed', action, ended_at: result?.ended_at }, true)
