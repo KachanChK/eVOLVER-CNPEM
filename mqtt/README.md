@@ -26,4 +26,4 @@ Não use `docker compose down -v` como rotina, pois `-v` apaga a persistência l
 do broker.
 
 O roteiro completo para observar medições saindo do simulador e chegando a
-um assinante está em [plano-mqtt-independente.md](../docs/plano-mqtt-independente.md).
+um assinante está em [plano-mqtt-independente.md](../docs/legacy/plano-mqtt-independente.md).

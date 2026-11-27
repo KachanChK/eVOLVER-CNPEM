@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Self
 
 from pydantic import Field, PositiveFloat, PositiveInt, field_validator, model_validator
@@ -19,6 +20,7 @@ class SimulatorSettings(BaseSettings):
         extra="ignore",
         frozen=True,
         populate_by_name=True,
+        allow_inf_nan=False,
     )
 
     # Conexão com o broker MQTT.
@@ -37,6 +39,17 @@ class SimulatorSettings(BaseSettings):
         default=10.0, validation_alias="MQTT_PUBLISH_TIMEOUT_SECONDS"
     )
     mqtt_simulator_password: str = Field(min_length=1, validation_alias="MQTT_SIMULATOR_PASSWORD")
+    pump_state_path: Path = Field(
+        default=Path.home() / ".evolver-simulator" / "pump-state.sqlite3",
+        validation_alias="SIMULATOR_PUMP_STATE_PATH",
+    )
+    telemetry_queue_path: Path = Field(
+        default_factory=lambda data: data["pump_state_path"].with_name("telemetry.sqlite3"),
+        validation_alias="SIMULATOR_TELEMETRY_QUEUE_PATH",
+    )
+    telemetry_queue_max_events: PositiveInt = Field(
+        default=259_200, validation_alias="SIMULATOR_TELEMETRY_QUEUE_MAX_EVENTS",
+    )
 
     # Identidade, frascos e ritmo das medições.
     equipment_id: str = Field(
@@ -51,10 +64,12 @@ class SimulatorSettings(BaseSettings):
     )
     seed: int | None = Field(default=None, validation_alias="SIMULATOR_SEED")
 
-    # Valores simulados: base, tamanho da onda e ruído de cada medição.
-    od_baseline: float = Field(default=0.35, ge=0.0, validation_alias="SIMULATOR_OD_BASELINE")
-    od_variation: float = Field(default=0.08, ge=0.0, validation_alias="SIMULATOR_OD_VARIATION")
-    od_noise: float = Field(default=0.005, ge=0.0, le=0.1, validation_alias="SIMULATOR_OD_NOISE")
+    od_baseline: float = Field(
+        default=0.35, ge=0.10, le=0.80, validation_alias="SIMULATOR_OD_BASELINE"
+    )
+    od_noise: float = Field(default=0.005, ge=0.0, le=0.01, validation_alias="SIMULATOR_OD_NOISE")
+
+    # Ondas e ruído independentes da bomba.
     ph_baseline: float = Field(default=7.0, validation_alias="SIMULATOR_PH_BASELINE")
     ph_variation: float = Field(default=0.15, ge=0.0, validation_alias="SIMULATOR_PH_VARIATION")
     ph_noise: float = Field(default=0.02, ge=0.0, validation_alias="SIMULATOR_PH_NOISE")
@@ -90,6 +105,8 @@ class SimulatorSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_simulated_scenario(self) -> Self:
+        if self.telemetry_queue_path.resolve() == self.pump_state_path.resolve():
+            raise ValueError("a fila de telemetria deve usar um arquivo separado")
         pause_is_partial = (self.pause_after_messages is None) != (self.pause_seconds is None)
         if pause_is_partial:
             raise ValueError(

@@ -15,7 +15,7 @@ O eVOLVER é uma plataforma modular de cultivo microbiano contínuo que monitora
 | Densidade óptica (OD) | **Read** | Receber e registrar valores numéricos simulados, com horário e identificação da origem. |
 | pH | **Read** | Receber e registrar valores numéricos simulados, com horário e identificação da origem. |
 | Temperatura | **Read/Write** | Receber temperatura medida e enviar um valor desejado (*setpoint*) ao simulador. Manter os dois valores separados. |
-| Bombas 1, 2 e 3 | **Write** | Enviar comandos independentes às três bombas simuladas. Tipo de ação e parâmetros (ligar/desligar, duração, vazão etc.) ainda precisam de definição; não presumir leitura de estado físico nem volume efetivo. |
+| Grupo de bombas `[1, 2, 3]` | **Write** | Ligar ou desligar as três bombas simuladas em uma única operação, com um comando e um resultado comuns. [Spec 7](spec-7-bombas-sincronizadas.md) |
 
 ## O que as pesquisas mostram
 
@@ -48,15 +48,15 @@ O repositório e o FigJam acima **não são entregáveis, etapas anteriores ou e
 | **PostgreSQL + TimescaleDB** | **Confirmado** | Persistência de metadados, eventos e séries temporais; consultas recentes e históricas. A interface recebe atualizações pelo backend, não diretamente do banco. |
 | **Backend Python** | **Confirmado** | API, ingestão, validação, regras de acesso, consulta, alertas e entrega de atualizações ao navegador. FastAPI, definido no T03. |
 | **Interface web** | **Confirmado** | Painel de dispositivos e culturas, experimentos, gráficos, estado de conexão, histórico e operações simuladas. Vue 3 + Vite e Chart.js, definidos no T03. |
-| **Dados mockados / simulador externo** | **Confirmado nesta fase** | Gerar OD, pH e temperatura; aceitar comandos simulados de temperatura e das três bombas; reproduzir falhas e reconexão de maneira controlada. |
+| **Dados mockados / simulador externo** | **Confirmado nesta fase** | Gerar OD, pH e temperatura, executar comandos simulados de temperatura e do grupo de bombas e reproduzir falhas e reconexão de maneira controlada. |
 | **Store and Forward** | **Confirmado** | Persistir telemetria pendente no produtor externo, reenviar após reconexão e removê-la somente depois de confirmação de gravação central. Limite de armazenamento e tratamento de disco cheio são detalhes de implementação. |
-| **Controle de temperatura e três bombas** | **Confirmado no protótipo simulado** | Expor operações Write no simulador e rastrear pedido, aceitação e resultado simulado. Controle físico futuro depende de validação separada. |
+| **Controle de temperatura e do grupo de bombas** | **Confirmado no protótipo simulado** | Expor operações Write no simulador e rastrear pedido, aceitação e resultado simulado. Controle físico futuro depende de validação separada. |
 
 ## Arquitetura conceitual para o software externo
 
 ```mermaid
 flowchart LR
-    SIM["Simulador externo<br/>OD, pH, temperatura e 3 bombas"]
+    SIM["Simulador externo<br/>OD, pH, temperatura e grupo de bombas"]
     SF["Fila durável local<br/>Store and Forward"]
     MQ["Mosquitto / MQTT"]
     IN["Serviço Python de ingestão<br/>validação e deduplicação"]
@@ -101,11 +101,11 @@ Comandos Write exigem política diferente: não executar automaticamente comando
 
 Uma mensagem de medição deveria identificar: `schema_version`, `event_id`, `equipment_id`, `vial_id`/posição, `experiment_run_id` (quando houver), tipo de medida (`od`, `ph` ou `temperature`), valor numérico, horário de geração e sequência/ordem da origem. A ingestão acrescenta o **horário de recebimento**. Faixas, unidades e calibrações científicas não são necessárias para testar o software com dados mockados; podem ser adicionadas se houver integração física futura. Os valores de exemplo podem ser arbitrários, desde que variem de modo previsível para testar gráficos e cenários de falha.
 
-Para comandos de temperatura e das bombas `1`, `2` e `3`: `command_id`, alvo, ação, parâmetros, execução experimental, autor, instante de criação, prazo de validade e estados separados de **solicitado → aceito/rejeitado → enviado → recebido → executado/falhou/resultado desconhecido**. A operação simulada precisa devolver uma resposta correlacionada por `command_id`. Reenviar um comando de bomba sem saber o resultado anterior pode provocar duas ações em uma integração física; a política de repetição deve ser específica por comando. A associação entre usuário e comando deve ser auditável.
+Os comandos de temperatura e do grupo de bombas registram `command_id`, alvo, ação, parâmetros, execução experimental, autor, instante de criação, prazo de validade e estados separados de **solicitado → aceito/rejeitado → enviado → recebido → executado/falhou/resultado desconhecido**. O simulador devolve a resposta com o mesmo `command_id`. No contrato `1.0`, `pump_id: 1` identifica o grupo `[1, 2, 3]`. A associação entre usuário e comando deve ser auditável.
 
 ## Produto e escopo incremental propostos
 
-**Primeiro piloto com dados simulados:** inventário de equipamentos/posições; cadastro de experimentos e culturas; simulador e contrato de mensagens; ingestão robusta de **OD, pH e temperatura**; Write de **setpoint de temperatura e três bombas simuladas**; Store and Forward; gráficos atuais e históricos; indicação de frescor e qualidade; eventos de conexão; exportação de dados; backup e restauração testados. Validar fluxos e consistência com cenários reproduzíveis do simulador. Dados mockados não validam precisão científica nem comportamento físico.
+**Primeiro piloto com dados simulados:** inventário de equipamentos/posições; cadastro de experimentos e culturas; simulador e contrato de mensagens; ingestão robusta de **OD, pH e temperatura**; Write de **setpoint de temperatura e do grupo de bombas**; Store and Forward; gráficos atuais e históricos; indicação de frescor e qualidade; eventos de conexão; exportação de dados; backup e restauração testados. Validar fluxos e consistência com cenários reproduzíveis do simulador. Dados mockados não validam precisão científica nem comportamento físico.
 
 **Etapa seguinte, condicionada:** integração com equipamento real e eventual execução de rotinas experimentais, somente se a interface física suportar leitura/comandos com resposta verificável, houver responsável técnico para limites e houver uma única autoridade de controle. Gestão de calibrações e métricas derivadas pode ser desenhada com o simulador, mas só pode ser validada cientificamente com referências aprovadas. Turbidostato e quimiostato são modos documentados na plataforma original, mas sua implementação neste software não foi definida.
 
@@ -113,7 +113,7 @@ Para comandos de temperatura e das bombas `1`, `2` e `3`: `command_id`, alvo, a�
 
 ## Questões a resolver antes de implementar
 
-1. **Semântica dos comandos simulados:** definir se cada bomba receberá liga/desliga, duração ou outro comando simples e como o simulador responderá. Isso é necessário para implementar Write, mesmo que os números e unidades sejam arbitrários.
+1. **Semântica dos comandos simulados:** o grupo de bombas recebe `turn_on` ou `turn_off` e devolve um único resultado por comando. [Spec 7](spec-7-bombas-sincronizadas.md)
 2. **Store and Forward:** escolher capacidade da fila local e comportamento ao atingir o limite; verificar reenvio após perda de conexão e reinício, sem duplicar leituras.
 3. **Operação:** definir onde os serviços rodarão e como serão feitos backup, recuperação e acesso à interface. O painel deve atualizar a cada dado ou evento relevante, na medida do possível, e mostrar quando a informação estiver antiga.
 4. **Aceite da fase atual:** verificar com cenários mockados ingestão, histórico, desconexão, reenvio sem duplicatas e rastreabilidade dos comandos simulados.
@@ -121,7 +121,7 @@ Para comandos de temperatura e das bombas `1`, `2` e `3`: `command_id`, alvo, a�
 
 ## Próximos passos recomendados
 
-1. Fechar o contrato mockado: OD Read, pH Read, temperatura Read/Write e três bombas Write; definir tipos de mensagem e respostas dos comandos. Usar valores sintéticos simples, sem compromisso com escalas ou unidades científicas.
+1. Manter o contrato mockado para OD Read, pH Read, temperatura Read/Write e grupo de bombas Write, com tipos de mensagem e respostas versionados. Usar valores sintéticos simples, sem compromisso com escalas ou unidades científicas.
 2. Manter o [quadro](https://github.com/users/KachanChK/projects/4/views/2) alinhado ao simulador externo, com datas ajustadas à disponibilidade real da equipe.
 3. Construir simulador externo com fila durável, versionar mensagens e validar ingestão e confirmação após commit com Mosquitto, Python e PostgreSQL/TimescaleDB. Exercitar desconexão, reinício, duplicação e dados atrasados.
 4. Mostrar ao laboratório um painel com séries mockadas, fila pendente e rastreabilidade dos comandos simulados; depois definir se haverá integração física.

@@ -18,7 +18,7 @@ Definir exatamente o que será mostrado no piloto local, usando dados e comandos
 - Execução na máquina local dos serviços necessários à demonstração: simulador, transporte de mensagens, serviço que recebe os dados, banco, API e interface, conforme a arquitetura definida para a implementação.
 - Leituras simuladas de **OD**, **pH** e **temperatura medida**, identificadas por origem e pelos horários em que foram geradas e recebidas.
 - **Setpoint de temperatura** (valor desejado) enviado como comando ao simulador e exibido separadamente da temperatura medida.
-- Comandos independentes de **ligar e desligar as bombas 1, 2 e 3**, sem afirmar leitura de estado físico, vazão ou volume dispensado.
+- Um comando por ação para **ligar ou desligar o grupo de bombas `[1, 2, 3]`** no simulador. [Spec 7](spec-7-bombas-sincronizadas.md)
 - Consulta da última leitura e das leituras anteriores, com aviso quando a conexão cair ou o dado exibido estiver antigo.
 - Fila gravada localmente no simulador para guardar leituras ainda não confirmadas e reenviá-las após a reconexão (*Store and Forward*). O simulador só remove um item depois que a aplicação confirma que ele foi gravado no banco; reenviar o mesmo `event_id` não duplica o registro.
 - Registro de cada comando, da solicitação à resposta e ao resultado simulado, usando o mesmo `command_id` para ligar essas etapas.
@@ -33,6 +33,19 @@ Definir exatamente o que será mostrado no piloto local, usando dados e comandos
 - Alegação de que um comando publicado foi executado fisicamente. Resultado significa apenas resposta do simulador.
 - Metas de quantidade de equipamentos, volume de dados ou tempo de resposta para produção. O tamanho e o ritmo da demonstração serão definidos e anotados antes do teste.
 
+## Controle automático de OD
+
+O aceite original do piloto excluía a execução de rotinas experimentais
+automáticas. A Spec 6 acrescentou o controle de OD por histerese, com pausa,
+retomada, reconciliação e encerramento confirmado. A Spec 7 aplica esse controle
+ao grupo fixo de bombas por alocação. [Controle de OD](controle-od.md)
+
+O aceite exige observação da jornada de ponta a ponta com MQTT,
+TimescaleDB, ingestão, API, simulador e interface. A evidência de execução
+confirma o estado do grupo simulado. A atuação, calibração, vazão e volume em
+equipamento físico dependem de validação própria. Os critérios abaixo
+preservam o histórico do aceite original.
+
 ## Classes de prioridade
 
 ### P0 — necessário para o aceite do piloto
@@ -42,7 +55,7 @@ Definir exatamente o que será mostrado no piloto local, usando dados e comandos
 3. Consultar a última leitura e o histórico; colocar leituras atrasadas no horário em que foram geradas.
 4. Avisar quando a conexão cair ou a última leitura envelhecer, sem apresentá-la como atual.
 5. Guardar leituras pendentes em fila, reenviá-las sem duplicar registros e confirmar somente depois da gravação no banco.
-6. Enviar setpoint e ligar/desligar cada bomba simulada; guardar identificador, resposta e histórico de cada comando.
+6. Enviar setpoint e ligar/desligar o grupo de bombas simuladas, guardando identificador, resposta e histórico de cada comando.
 7. Fazer backup, restaurar e conferir os dados e vínculos recuperados.
 8. Executar os testes locais da tabela abaixo, guardar evidências e anotar configurações e pendências.
 
@@ -54,7 +67,7 @@ Definir exatamente o que será mostrado no piloto local, usando dados e comandos
 - Alertas científicos, análises avançadas, alta disponibilidade, implantação remota e metas de produção.
 - Escala além do cenário local de demonstração definido para o teste.
 
-Itens posteriores devem manter as garantias P0: cada evento tem identidade estável, entra no histórico pelo horário de geração, não é gravado duas vezes e só sai da fila após confirmação da gravação; leituras e comandos continuam separados e rastreáveis. Depois de uma reconexão, um comando antigo de bomba não pode ser executado automaticamente. Comandos expirados ou sem resposta devem aparecer com esse estado.
+Itens posteriores devem manter as garantias P0: cada evento tem identidade estável, entra no histórico pelo horário de geração, não é gravado duas vezes e só sai da fila após confirmação da gravação; leituras e comandos continuam separados e rastreáveis. Depois de uma reconexão, um comando antigo do grupo não pode ser executado automaticamente. Comandos expirados ou sem resposta devem aparecer com esse estado.
 
 ## Critérios e roteiro de demonstração
 
@@ -68,7 +81,7 @@ Executar o roteiro em ambiente local limpo ou anotar quais dados já existiam. A
 | A4 — Store and Forward | Restabelecer a comunicação; comparar os IDs da fila antes e depois do reenvio, o histórico no banco e os registros de confirmação da aplicação. | Cada evento válido pendente aparece no histórico com o mesmo `event_id` e horário de geração; o horário de recebimento mostra a chegada posterior. O item só sai da fila após a confirmação emitida depois da gravação no banco. Registrar fila, consulta e confirmação para os mesmos IDs. |
 | A5 — Duplicatas | Reenviar um `event_id` já gravado, inclusive em um teste no qual a confirmação anterior não chega ao simulador. | A consulta ao banco retorna um único registro lógico para esse ID. A aplicação identifica a repetição e pode confirmar o registro existente; guardar consulta e registro da confirmação. |
 | A6 — Dados atrasados | Depois de gravar uma leitura, enviar outra da mesma fonte e tipo com horário de geração anterior. | A leitura atrasada entra no histórico com seu horário de geração e um horário de recebimento posterior. A consulta da última leitura continua mostrando o evento gerado mais recentemente. Guardar as duas consultas. |
-| A7 — Comandos | Enviar um setpoint e comandos de ligar e desligar para cada uma das bombas 1, 2 e 3; consultar o histórico de comandos e as respostas. Testar também um comando de bomba que expire durante uma desconexão. | Cada pedido registra `command_id`, alvo, ação e autor disponível no piloto; a resposta do simulador usa o mesmo ID. É possível conferir a ação de cada bomba separadamente. A tela diferencia pedido, aceitação/rejeição, envio, recebimento e resultado simulado ou desconhecido. O comando expirado não é executado após reconexão. Guardar pedidos, respostas e consulta de auditoria. |
+| A7 — Comandos | Enviar um setpoint e completar um ciclo de ligar e desligar o grupo `[1, 2, 3]`. Consultar o histórico e as respostas e testar um comando do grupo que expire durante uma desconexão. | O ciclo registra dois comandos. Cada pedido registra `command_id`, alvo, ação e autor, e a resposta usa o mesmo ID. A tela distingue intenção, recebimento e resultado. O expirado é rejeitado na reconexão. Guardar pedidos, respostas e consulta de auditoria. |
 | A8 — Restauração | Antes do backup, anotar a contagem e os IDs das leituras, comandos e metadados usados no teste. Fazer o backup, restaurar em outro ambiente local de verificação e repetir as mesmas consultas. | Contagens e IDs conferem com o inventário anterior; última leitura e histórico continuam acessíveis, e comandos e eventos mantêm seus vínculos com os metadados. Guardar comandos/procedimento usados, inventário anterior e consultas após a restauração. |
 
 **Resultado do aceite:** o executor da demonstração registra, para cada ID de A1 a A8, aprovado, reprovado ou bloqueado; anexa a evidência indicada, versão/configuração usada e o que divergiu do esperado. Se um requisito P0 falhar, o piloto não é aceito: registrar a pendência e o próximo passo. Um cenário bloqueado também precisa da causa registrada e de nova execução antes da decisão final. A decisão final cabe ao responsável pelo aceite (ver abaixo).
@@ -82,7 +95,7 @@ Executar o roteiro em ambiente local limpo ou anotar quais dados já existiam. A
 ## Pendências explícitas para revisão
 
 1. Indicar nominalmente o responsável pela decisão de aceite, o executor da demonstração e os revisores.
-2. Aprovar a semântica mínima dos comandos: setpoint de temperatura e ações liga/desliga nas bombas 1, 2 e 3; parâmetros adicionais de bomba ficam fora até decisão explícita.
+2. Validar o setpoint de temperatura e as ações de ligar e desligar o grupo de bombas com um comando por ação. [Spec 7](spec-7-bombas-sincronizadas.md)
 3. Fixar, antes da execução, número de fontes/posições simuladas, duração e cadência do teste, além do limite da fila. São parâmetros de demonstração, não objetivos de produção.
 4. Definir o procedimento de backup/restauração, o local de verificação e qual inventário/contagens serão usados como evidência, de acordo com a implementação local.
 5. Definir onde serão guardadas evidências e o registro final do aceite; estabelecer o tempo após o qual uma leitura será marcada como antiga.

@@ -8,6 +8,7 @@ other=evolver-sim-02
 sim_pw=$MQTT_SIMULATOR_PASSWORD
 ing_pw=$MQTT_INGESTION_PASSWORD
 api_pw=$MQTT_API_PASSWORD
+health_pw=$MQTT_HEALTH_PASSWORD
 failures=0
 
 sub() {
@@ -43,11 +44,11 @@ check() {
 
 echo "Consulta de alocações do simulador"
 check "simulador -> ingestão: consulta de vials ativos" "request" \
-  "$(exchange evolver-ingestion "$ing_pw" "evolver/dev/$eq/active-vials/request" \
-    "$eq" "$sim_pw" "evolver/dev/$eq/active-vials/request" request)"
+  "$(exchange evolver-ingestion "$ing_pw" "evolver/v1/$eq/active-vials/request" \
+    "$eq" "$sim_pw" "evolver/v1/$eq/active-vials/request" request)"
 check "ingestão -> simulador: vials ativos" "response" \
-  "$(exchange "$eq" "$sim_pw" "evolver/dev/$eq/active-vials/response" \
-    evolver-ingestion "$ing_pw" "evolver/dev/$eq/active-vials/response" response)"
+  "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/active-vials/response" \
+    evolver-ingestion "$ing_pw" "evolver/v1/$eq/active-vials/response" response)"
 
 echo "Fluxos previstos no contrato"
 check "simulador -> ingestão: telemetry" "t1" \
@@ -62,6 +63,9 @@ check "ingestão -> simulador: telemetry/rejection" "j1" \
 check "API -> simulador: commands" "c1" \
   "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/commands" \
     evolver-api "$api_pw" "evolver/v1/$eq/commands" c1)"
+check "ingestão -> simulador: commands" "c2" \
+  "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/commands" \
+    evolver-ingestion "$ing_pw" "evolver/v1/$eq/commands" c2)"
 check "simulador -> ingestão: command-results" "r1" \
   "$(exchange evolver-ingestion "$ing_pw" "evolver/v1/+/command-results" \
     "$eq" "$sim_pw" "evolver/v1/$eq/command-results" r1)"
@@ -76,9 +80,9 @@ check "simulador não lê ACK de outro equipamento" "" \
 check "simulador não publica comandos" "" \
   "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/commands" \
     "$eq" "$sim_pw" "evolver/v1/$eq/commands" x)"
-check "ingestão não publica comandos" "" \
+check "identidade de saúde não publica comandos" "" \
   "$(exchange "$eq" "$sim_pw" "evolver/v1/$eq/commands" \
-    evolver-ingestion "$ing_pw" "evolver/v1/$eq/commands" x)"
+    evolver-health "$health_pw" "evolver/v1/$eq/commands" x)"
 
 if mosquitto_pub -V mqttv5 -h "$host" -t evolver/health -m x -q 1 2>/dev/null; then
   anonymous=aceito

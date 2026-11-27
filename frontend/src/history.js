@@ -4,7 +4,7 @@ export const PERIODS = [
   { label: '1 min', value: 60_000 },
   { label: '5 min', value: 300_000 },
   { label: '30 min', value: 1_800_000 },
-  { label: 'Tudo', value: null },
+  { label: 'Todo o tempo', value: null },
 ]
 
 export function timeStep(duration) {
@@ -13,9 +13,10 @@ export function timeStep(duration) {
   return steps.find(step => step >= duration / 5) ?? Math.ceil(duration / 5 / 86_400_000) * 86_400_000
 }
 
-export function historyWindow(series, duration, now, endedAt) {
+export function historyWindow(series, duration, now, endedAt, startedAt) {
   const end = Number.isFinite(Date.parse(endedAt)) ? Date.parse(endedAt) : now
-  let first = end
+  const start = Date.parse(startedAt)
+  let first = Number.isFinite(start) ? Math.min(start, end) : end
   for (const readings of series) {
     for (const reading of readings) {
       const time = Date.parse(reading.generated_at)
@@ -29,6 +30,13 @@ export function readingPoints(readings, valueKey) {
   return readings.map(reading => ({ x: Date.parse(reading.generated_at), y: reading[valueKey], reading }))
     .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y))
     .sort((a, b) => a.x - b.x)
+}
+
+export function latestGeneratedAt(readings) {
+  return readings.reduce((latest, reading) => {
+    const generated = Date.parse(reading.generated_at)
+    return Number.isFinite(generated) ? Math.max(latest, generated) : latest
+  }, -Infinity)
 }
 
 export function splitSegments(points, gap = GAP_MS) {
@@ -101,10 +109,10 @@ export function movingAverage(points, duration = 5_000) {
 export function readingAge(timestamp, now) {
   if (!Number.isFinite(timestamp)) return 'Ainda sem leituras'
   const seconds = Math.max(0, Math.floor((now - timestamp) / 1_000))
-  if (seconds < 2) return 'Última leitura recebida agora'
-  if (seconds < 60) return `Última leitura recebida há ${seconds} s`
-  if (seconds < 3_600) return `Última leitura recebida há ${Math.floor(seconds / 60)} min`
+  if (seconds < 2) return 'Última leitura gerada agora'
+  if (seconds < 60) return `Última leitura gerada há ${seconds} s`
+  if (seconds < 3_600) return `Última leitura gerada há ${Math.floor(seconds / 60)} min`
   const hours = Math.floor(seconds / 3_600)
-  if (hours < 24) return `Última leitura recebida há ${hours} h`
-  return `Última leitura recebida há ${Math.floor(hours / 24)} dia(s)`
+  if (hours < 24) return `Última leitura gerada há ${hours} h`
+  return `Última leitura gerada há ${Math.floor(hours / 24)} dia(s)`
 }
